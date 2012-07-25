@@ -6,9 +6,9 @@
 #include <iostream>
 
 typedef struct OpenCL {
-    cl::Context &context;
-    cl::CommandQueue &queue;
-    cl::Program &program;
+    cl::Context context;
+    cl::CommandQueue queue;
+    cl::Program program;
 } OpenCL;
 
 
