@@ -7,9 +7,9 @@ int main(int argc, char ** argv) {
     ocl.context = createCLContextFromArguments(argc, argv);
 
     // Select first device
-    vector<Device> devices = context.getInfo<CL_CONTEXT_DEVICES>();
+    cl::vector<cl::Device> devices = ocl.context.getInfo<CL_CONTEXT_DEVICES>();
     std::cout << "Using device: " << devices[0].getInfo<CL_DEVICE_NAME>() << std::endl;
-    ocl.queue = CommandQueue(context, devices[0]);
+    ocl.queue = cl::CommandQueue(ocl.context, devices[0]);
 
     // Query the size of available memory
     unsigned int memorySize = devices[0].getInfo<CL_DEVICE_GLOBAL_MEM_SIZE>();
