@@ -15,12 +15,18 @@ int main(int argc, char ** argv) {
     unsigned int memorySize = devices[0].getInfo<CL_DEVICE_GLOBAL_MEM_SIZE>();
     std::cout << "Available memory on selected device " << (double)memorySize/(1024*1024) << " MB "<< std::endl;
 
-    // Compile and create program
-    ocl.program = buildProgramFromSource(ocl.context, "kernels.cl");
-
     // Parse parameters from program arguments
     std::map<std::string, std::string> parameters = getParameters(argc, argv);
     std::string filename = argv[1];
+
+    // Compile and create program
+    if((int)devices[0].getInfo<CL_DEVICE_EXTENSIONS>().find("cl_khr_3d_image_writes") > -1) {
+        ocl.program = buildProgramFromSource(ocl.context, "kernels.cl");
+        parameters["3d_write"] = "true";
+    } else {
+        ocl.program = buildProgramFromSource(ocl.context, "kernels_no_3d_wriet.cl");
+        std::cout << "Writing to 3D textures is not supported on the selected device." << std::endl;
+    }
 
     // Read dataset and transfer to device
     SIPL::int3 size;

@@ -24,5 +24,6 @@ cl::Image3D readDatasetAndTransfer(OpenCL, std::string, std::map<std::string, st
 
 std::map<std::string, std::string> getParameters(int argc, char ** argv);
 
+TubeSegmentation runCircleFittingMethod(OpenCL, cl::Image3D dataset, std::map<std::string, std::string> parameters);
 
 #endif
