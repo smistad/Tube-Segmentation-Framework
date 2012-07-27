@@ -24,7 +24,7 @@ int main(int argc, char ** argv) {
         ocl.program = buildProgramFromSource(ocl.context, "kernels.cl");
         parameters["3d_write"] = "true";
     } else {
-        ocl.program = buildProgramFromSource(ocl.context, "kernels_no_3d_wriet.cl");
+        ocl.program = buildProgramFromSource(ocl.context, "kernels_no_3d_write.cl");
         std::cout << "Writing to 3D textures is not supported on the selected device." << std::endl;
     }
 
@@ -34,6 +34,8 @@ int main(int argc, char ** argv) {
 
     // Run specified method on dataset
     TubeSegmentation TS;
+
+    TS = runCircleFittingMethod(ocl, dataset, size, parameters);
 
     // Visualize result (and store)
     SIPL::Volume<SIPL::float3> * result = new SIPL::Volume<SIPL::float3>(size.x, size.y, size.z);

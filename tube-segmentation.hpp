@@ -16,14 +16,15 @@ typedef struct OpenCL {
 typedef struct TubeSegmentation {
     float *Fx, *Fy, *Fz; // The GVF vector field
     float *TDF; // The TDF response
-    bool *centerline;
-    bool *segmentation;
+    float *radius;
+    char *centerline;
+    char *segmentation;
 } TubeSegmentation;
 
 cl::Image3D readDatasetAndTransfer(OpenCL, std::string, std::map<std::string, std::string>, SIPL::int3 *);
 
 std::map<std::string, std::string> getParameters(int argc, char ** argv);
 
-TubeSegmentation runCircleFittingMethod(OpenCL, cl::Image3D dataset, std::map<std::string, std::string> parameters);
+TubeSegmentation runCircleFittingMethod(OpenCL, cl::Image3D dataset, SIPL::int3 size, std::map<std::string, std::string> parameters);
 
 #endif
