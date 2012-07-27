@@ -18,20 +18,24 @@ int main(int argc, char ** argv) {
     // Compile and create program
     ocl.program = buildProgramFromSource(ocl.context, "kernels.cl");
 
+    // Parse parameters from program arguments
+    std::map<std::string, std::string> parameters = getParameters(argc, argv);
+    std::string filename = argv[1];
+
     // Read dataset and transfer to device
-    readDatasetAndTransfer(ocl, filename, parameters);
+    SIPL::int3 size;
+    cl::Image3D dataset = readDatasetAndTransfer(ocl, filename, parameters, &size);
 
-    // Do cropping if required
-
-    // Run specified method
+    // Run specified method on dataset
+    TubeSegmentation TS;
 
     // Visualize result (and store)
-    SIPL::Volume<SIPL::float3> * result = SIPL::Volume<SIPL::float3>();
+    SIPL::Volume<SIPL::float3> * result = new SIPL::Volume<SIPL::float3>(size.x, size.y, size.z);
     for(int i = 0; i < result->getTotalSize(); i++) {
         SIPL::float3 v;
-        v.x = T.tdf[i];
-        v.y = T.centerline[i];
-        v.z = T.segmentation[i];
+        v.x = TS.TDF[i];
+        v.y = TS.centerline[i] ? 1.0:0.0;
+        v.z = TS.segmentation[i] ? 1.0:0.0;
     }
     result->showMIP(SIPL::Y);
 
