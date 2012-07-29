@@ -5,7 +5,7 @@
 #include "SIPL/Core.hpp"
 #include <iostream>
 #include <string>
-#include <map>
+#include <unordered_map>
 
 typedef struct OpenCL {
     cl::Context context;
@@ -21,10 +21,12 @@ typedef struct TubeSegmentation {
     char *segmentation;
 } TubeSegmentation;
 
-cl::Image3D readDatasetAndTransfer(OpenCL, std::string, std::map<std::string, std::string>, SIPL::int3 *);
+typedef std::unordered_map<std::string, std::string> paramList;
 
-std::map<std::string, std::string> getParameters(int argc, char ** argv);
+cl::Image3D readDatasetAndTransfer(OpenCL, std::string, paramList, SIPL::int3 *);
 
-TubeSegmentation runCircleFittingMethod(OpenCL, cl::Image3D dataset, SIPL::int3 size, std::map<std::string, std::string> parameters);
+paramList getParameters(int argc, char ** argv);
+
+TubeSegmentation runCircleFittingMethod(OpenCL, cl::Image3D dataset, SIPL::int3 size, paramList);
 
 #endif

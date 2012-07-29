@@ -16,7 +16,7 @@ int main(int argc, char ** argv) {
     std::cout << "Available memory on selected device " << (double)memorySize/(1024*1024) << " MB "<< std::endl;
 
     // Parse parameters from program arguments
-    std::map<std::string, std::string> parameters = getParameters(argc, argv);
+    paramList parameters = getParameters(argc, argv);
     std::string filename = argv[1];
 
     // Compile and create program
