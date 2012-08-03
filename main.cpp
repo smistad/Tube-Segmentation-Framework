@@ -2,6 +2,7 @@
 
 
 int main(int argc, char ** argv) {
+    SIPL::Init();
     OpenCL ocl; 
 
     ocl.context = createCLContextFromArguments(argc, argv);
@@ -9,7 +10,7 @@ int main(int argc, char ** argv) {
     // Select first device
     cl::vector<cl::Device> devices = ocl.context.getInfo<CL_CONTEXT_DEVICES>();
     std::cout << "Using device: " << devices[0].getInfo<CL_DEVICE_NAME>() << std::endl;
-    ocl.queue = cl::CommandQueue(ocl.context, devices[0]);
+    ocl.queue = cl::CommandQueue(ocl.context, devices[0], CL_QUEUE_PROFILING_ENABLE);
 
     // Query the size of available memory
     unsigned int memorySize = devices[0].getInfo<CL_DEVICE_GLOBAL_MEM_SIZE>();
@@ -28,14 +29,18 @@ int main(int argc, char ** argv) {
         std::cout << "Writing to 3D textures is not supported on the selected device." << std::endl;
     }
 
-    // Read dataset and transfer to device
     SIPL::int3 size;
-    cl::Image3D dataset = readDatasetAndTransfer(ocl, filename, parameters, &size);
-
-    // Run specified method on dataset
     TubeSegmentation TS;
+    try {
+        // Read dataset and transfer to device
+        cl::Image3D dataset = readDatasetAndTransfer(ocl, filename, parameters, &size);
 
-    TS = runCircleFittingMethod(ocl, dataset, size, parameters);
+        // Run specified method on dataset
+        TS = runCircleFittingMethod(ocl, dataset, size, parameters);
+    } catch(cl::Error e) {
+        std::cout << "OpenCL error: " << getCLErrorString(e.err()) << std::endl;
+        return 0;
+    }
 
     // Visualize result (and store)
     SIPL::Volume<SIPL::float3> * result = new SIPL::Volume<SIPL::float3>(size.x, size.y, size.z);
@@ -44,6 +49,7 @@ int main(int argc, char ** argv) {
         v.x = TS.TDF[i];
         v.y = TS.centerline[i] ? 1.0:0.0;
         v.z = TS.segmentation[i] ? 1.0:0.0;
+        result->set(i,v);
     }
     result->showMIP(SIPL::Y);
 
