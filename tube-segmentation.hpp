@@ -27,6 +27,6 @@ cl::Image3D readDatasetAndTransfer(OpenCL, std::string, paramList, SIPL::int3 *)
 
 paramList getParameters(int argc, char ** argv);
 
-TubeSegmentation runCircleFittingMethod(OpenCL, cl::Image3D dataset, SIPL::int3 size, paramList);
+TubeSegmentation runCircleFittingAndRidgeTraversal(OpenCL, cl::Image3D dataset, SIPL::int3 size, paramList);
 
 #endif

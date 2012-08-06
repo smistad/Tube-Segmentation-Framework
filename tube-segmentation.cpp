@@ -21,7 +21,7 @@ T * readFromRaw(std::string filename, int SIZE_X, int SIZE_Y, int SIZE_Z) {
     return data;
 }
 
-//#define TIMING
+#define TIMING
 
 #ifdef TIMING
 #define INIT_TIMER auto timerStart = std::chrono::high_resolution_clock::now();
@@ -843,8 +843,7 @@ float * createBlurMask(float sigma, int * maskSizePointer) {
     return mask;
 }
 
-
-TubeSegmentation runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 size, paramList parameters) {
+TubeSegmentation runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 size, paramList parameters, Image3D &vectorField, Image3D &TDF, Image3D &radiusImage) {
     // Set up parameters
     const int GVFIterations = getParami(parameters, "gvf-iterations", 250);
     const float radiusMin = getParamf(parameters, "radius-min", 0.5);
@@ -855,7 +854,6 @@ TubeSegmentation runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 
     const bool no3Dwrite = parameters.count("3d_write") == 0;
     const float MU = getParamf(parameters, "gvf-mu", 0.05);
     const int vectorSign = getParamstr(parameters, "mode", "black") == "black" ? -1 : 1;
-    const std::string storageDirectory = getParamstr(parameters, "storage-dir", "/home/smistad/");
 
 
     cl::size_t<3> offset;
@@ -871,10 +869,7 @@ TubeSegmentation runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 
     Kernel blurVolumeWithGaussianKernel(ocl.program, "blurVolumeWithGaussian");
     Kernel createVectorFieldKernel(ocl.program, "createVectorField");
     Kernel circleFittingTDFKernel(ocl.program, "circleFittingTDF");
-    Kernel dilateKernel = Kernel(ocl.program, "dilate");
-    Kernel erodeKernel = Kernel(ocl.program, "erode");
-    Kernel initGrowKernel = Kernel(ocl.program, "initGrowing");
-    Kernel growKernel = Kernel(ocl.program, "grow");
+    Kernel combineKernel = Kernel(ocl.program, "combine");
 
     cl::Event startEvent, endEvent;
     cl_ulong start, end;
@@ -905,7 +900,6 @@ TubeSegmentation runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 
 #ifdef TIMING
     ocl.queue.enqueueMarker(&startEvent);
 #endif
-    Image3D vectorField;
     if(no3Dwrite) {
         // Create auxillary buffer
         Buffer vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(float)*totalSize);
@@ -962,11 +956,11 @@ TubeSegmentation runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 
     ocl.queue.enqueueMarker(&startEvent);
 #endif
     // Run circle fitting TDF kernel
-    Buffer bufferT = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
-    Buffer bufferRadius = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
+    Buffer TDFsmall = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
+    Buffer radiusSmall = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
     circleFittingTDFKernel.setArg(0, vectorField);
-    circleFittingTDFKernel.setArg(1, bufferT);
-    circleFittingTDFKernel.setArg(2, bufferRadius);
+    circleFittingTDFKernel.setArg(1, TDFsmall);
+    circleFittingTDFKernel.setArg(2, radiusSmall);
     circleFittingTDFKernel.setArg(3, radiusMin);
     circleFittingTDFKernel.setArg(4, 3.0f);
     circleFittingTDFKernel.setArg(5, 0.5f);
@@ -978,10 +972,6 @@ TubeSegmentation runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 
             NullRange
     );
     // Transfer buffer back to host
-    float * Tsmall = new float[totalSize];
-    float * Radiussmall = new float[totalSize];
-    ocl.queue.enqueueReadBuffer(bufferT, CL_FALSE, 0, sizeof(float)*totalSize, Tsmall);
-    ocl.queue.enqueueReadBuffer(bufferRadius, CL_FALSE, 0, sizeof(float)*totalSize, Radiussmall);
 #ifdef TIMING
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
@@ -1240,9 +1230,11 @@ TubeSegmentation runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 
     ocl.queue.enqueueMarker(&startEvent);
 #endif
     // Run circle fitting TDF kernel on GVF result
+    Buffer TDFlarge = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
+    Buffer radiusLarge = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
     circleFittingTDFKernel.setArg(0, vectorField);
-    circleFittingTDFKernel.setArg(1, bufferT);
-    circleFittingTDFKernel.setArg(2, bufferRadius);
+    circleFittingTDFKernel.setArg(1, TDFlarge);
+    circleFittingTDFKernel.setArg(2, radiusLarge);
     circleFittingTDFKernel.setArg(3, 1.0f);
     circleFittingTDFKernel.setArg(4, radiusMax);
     circleFittingTDFKernel.setArg(5, 1.0f);
@@ -1261,68 +1253,73 @@ TubeSegmentation runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 
     endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
     std::cout << "RUNTIME of TDF large: " << (end-start)*1.0e-6 << " ms" << std::endl;
 #endif
-    START_TIMER
-
-    // Transfer buffer back to host
-    TubeSegmentation TS;
-    TS.Fx = new float[totalSize];
-    TS.Fy = new float[totalSize];
-    TS.Fz = new float[totalSize];
-    if(no3Dwrite) {
-        float * Fs = new float[totalSize*4];
-        ocl.queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
-#pragma omp parallel for
-        for(int i = 0; i < totalSize; i++) {
-            TS.Fx[i] = Fs[i*4];
-            TS.Fy[i] = Fs[i*4+1];
-            TS.Fz[i] = Fs[i*4+2];
-        }
-        delete[] Fs;
-    } else {
-        short * Fs = new short[totalSize*4];
-        ocl.queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
-#pragma omp parallel for
-        for(int i = 0; i < totalSize; i++) {
-            TS.Fx[i] = MAX(-1.0f, Fs[i*4] / 32767.0f);
-            TS.Fy[i] = MAX(-1.0f, Fs[i*4+1] / 32767.0f);;
-            TS.Fz[i] = MAX(-1.0f, Fs[i*4+2] / 32767.0f);
-        }
-        delete[] Fs;
-    }
-    float * Tlarge = new float[totalSize];
-    float * Radiuslarge = new float[totalSize];
-    ocl.queue.enqueueReadBuffer(bufferT, CL_TRUE, 0, sizeof(float)*totalSize, Tlarge);
-    ocl.queue.enqueueReadBuffer(bufferRadius, CL_TRUE, 0, sizeof(float)*totalSize, Radiuslarge);
-
-    float * Tmerged = new float[totalSize];
-    float * Radiusmerged = new float[totalSize];
-#pragma omp parallel for
-    for(int i = 0; i < totalSize; i++) {
-        if(Tsmall[i] < Tlarge[i]) {
-            Tmerged[i] = Tlarge[i];
-            Radiusmerged[i] = Radiuslarge[i];
-        } else {
-            Tmerged[i] = Tsmall[i];
-            Radiusmerged[i] = Radiussmall[i];
-        }
-    }
-    TS.TDF = Tmerged;
-    TS.radius = Radiusmerged;
-    delete[] Tlarge;
-    delete[] Tsmall;
-    delete[] Radiussmall;
-    delete[] Radiuslarge;
-
-    std::stack<CenterlinePoint> centerlineStack;
-    TS.centerline = runRidgeTraversal(TS, size, parameters, centerlineStack);
-
-    // Dilate the centerline
-    Image3D volume = Image3D(ocl.context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, ImageFormat(CL_R, CL_SIGNED_INT8), size.x, size.y, size.z, 0, 0, TS.centerline);
 #ifdef TIMING
-    ocl.queue.finish();
-    STOP_TIMER("Centerline extraction + transfer of data back and forth")
     ocl.queue.enqueueMarker(&startEvent);
 #endif
+    combineKernel.setArg(0, TDFsmall);
+    combineKernel.setArg(1, radiusSmall);
+    combineKernel.setArg(2, TDFlarge);
+    combineKernel.setArg(3, radiusLarge);
+ 
+    ocl.queue.enqueueNDRangeKernel(
+            combineKernel,
+            NullRange,
+            NDRange(size.x,size.y,size.z),
+            NullRange
+    );
+    TDF = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_FLOAT),
+            size.x, size.y, size.z);
+    ocl.queue.enqueueCopyBufferToImage(
+        TDFlarge,
+        TDF,
+        0,
+        offset,
+        region
+    );
+    radiusImage = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_FLOAT),
+            size.x, size.y, size.z);
+    ocl.queue.enqueueCopyBufferToImage(
+        radiusLarge,
+        radiusImage,
+        0,
+        offset,
+        region
+    );
+#ifdef TIMING
+    ocl.queue.enqueueMarker(&endEvent);
+    ocl.queue.finish();
+    startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
+    endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
+    std::cout << "RUNTIME of combine: " << (end-start)*1.0e-6 << " ms" << std::endl;
+#endif
+
+}
+
+char * runInverseGradientSegmentation(OpenCL ocl, Image3D volume, Image3D vectorField, SIPL::int3 size, paramList parameters) {
+    const int totalSize = size.x*size.y*size.z;
+    const bool no3Dwrite = parameters.count("3d_write") == 0;
+#ifdef TIMING
+    cl::Event startEvent, endEvent;
+    cl_ulong start, end;
+    ocl.queue.enqueueMarker(&startEvent);
+#endif
+
+    Kernel dilateKernel = Kernel(ocl.program, "dilate");
+    Kernel erodeKernel = Kernel(ocl.program, "erode");
+    Kernel initGrowKernel = Kernel(ocl.program, "initGrowing");
+    Kernel growKernel = Kernel(ocl.program, "grow");
+
+    cl::size_t<3> offset;
+    offset[0] = 0;
+    offset[1] = 0;
+    offset[2] = 0;
+    cl::size_t<3> region;
+    region[0] = size.x;
+    region[1] = size.y;
+    region[2] = size.z;
+
+
+
     int stopGrowing = 0;
     Buffer stop = Buffer(ocl.context, CL_MEM_WRITE_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(int), &stopGrowing);
     
@@ -1330,6 +1327,7 @@ TubeSegmentation runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 
     growKernel.setArg(3, stop);
 
     int i = 0;
+    int minimumIterations = 0;
     if(no3Dwrite) {
         Buffer volume2 = Buffer(
                 ocl.context,
@@ -1362,7 +1360,7 @@ TubeSegmentation runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 
         growKernel.setArg(2, volume2);
         while(stopGrowing == 0) {
             // run for at least 10 iterations
-            if(i > 10) {
+            if(i > minimumIterations) {
                 stopGrowing = 1;
                 ocl.queue.enqueueWriteBuffer(stop, CL_TRUE, 0, sizeof(int), &stopGrowing);
             }
@@ -1373,7 +1371,7 @@ TubeSegmentation runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 
                         NDRange(size.x, size.y, size.z),
                         NullRange
                     );
-            if(i > 10)
+            if(i > minimumIterations)
                 ocl.queue.enqueueReadBuffer(stop, CL_TRUE, 0, sizeof(int), &stopGrowing);
             i++;
             ocl.queue.enqueueCopyBufferToImage(
@@ -1398,7 +1396,7 @@ TubeSegmentation runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 
         );
         while(stopGrowing == 0) {
             // run for at least 10 iterations
-            if(i > 10) {
+            if(i > minimumIterations) {
                 stopGrowing = 1;
                 ocl.queue.enqueueWriteBuffer(stop, CL_TRUE, 0, sizeof(int), &stopGrowing);
             }
@@ -1416,7 +1414,7 @@ TubeSegmentation runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 
                         NDRange(size.x, size.y, size.z),
                         NullRange
                     );
-            if(i > 10)
+            if(i > minimumIterations)
                 ocl.queue.enqueueReadBuffer(stop, CL_TRUE, 0, sizeof(int), &stopGrowing);
             i++;
         }
@@ -1425,7 +1423,7 @@ TubeSegmentation runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 
 
     std::cout << "segmentation result grown in " << i << " iterations" << std::endl;
 
-    TS.segmentation = new char[totalSize];
+    char * segmentation = new char[totalSize];
     if(no3Dwrite) {
         Buffer volumeBuffer = Buffer(
                 ocl.context,
@@ -1464,7 +1462,7 @@ TubeSegmentation runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 
                 CL_TRUE, 
                 0,
                 sizeof(char)*totalSize,
-                TS.segmentation
+                segmentation
         );
     } else {
         Image3D volume2 = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_SIGNED_INT8), size.x, size.y, size.z);
@@ -1488,7 +1486,7 @@ TubeSegmentation runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 
             NullRange
         );
 
-        ocl.queue.enqueueReadImage(volume, CL_TRUE, offset, region, 0, 0, TS.segmentation);
+        ocl.queue.enqueueReadImage(volume, CL_TRUE, offset, region, 0, 0, segmentation);
     }
 #ifdef TIMING
     ocl.queue.enqueueMarker(&endEvent);
@@ -1497,6 +1495,76 @@ TubeSegmentation runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 
     endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
     std::cout << "RUNTIME of segmentation: " << (end-start)*1.0e-6 << " ms" << std::endl;
 #endif
+
+    return segmentation;
+}
+
+TubeSegmentation runCircleFittingAndRidgeTraversal(OpenCL ocl, Image3D dataset, SIPL::int3 size, paramList parameters) {
+    
+    INIT_TIMER
+    cl::Event startEvent, endEvent;
+    cl_ulong start, end;
+    Image3D vectorField, TDF, radius;
+    runCircleFittingMethod(ocl, dataset, size, parameters, vectorField, TDF, radius);
+    const int totalSize = size.x*size.y*size.z;
+    const bool no3Dwrite = parameters.count("3d_write") == 0;
+    const std::string storageDirectory = getParamstr(parameters, "storage-dir", "/home/smistad/");
+
+    cl::size_t<3> offset;
+    offset[0] = 0;
+    offset[1] = 0;
+    offset[2] = 0;
+    cl::size_t<3> region;
+    region[0] = size.x;
+    region[1] = size.y;
+    region[2] = size.z;
+
+
+
+    START_TIMER
+    // Transfer buffer back to host
+    TubeSegmentation TS;
+    TS.Fx = new float[totalSize];
+    TS.Fy = new float[totalSize];
+    TS.Fz = new float[totalSize];
+    if(no3Dwrite) {
+        float * Fs = new float[totalSize*4];
+        ocl.queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
+#pragma omp parallel for
+        for(int i = 0; i < totalSize; i++) {
+            TS.Fx[i] = Fs[i*4];
+            TS.Fy[i] = Fs[i*4+1];
+            TS.Fz[i] = Fs[i*4+2];
+        }
+        delete[] Fs;
+    } else {
+        short * Fs = new short[totalSize*4];
+        ocl.queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
+#pragma omp parallel for
+        for(int i = 0; i < totalSize; i++) {
+            TS.Fx[i] = MAX(-1.0f, Fs[i*4] / 32767.0f);
+            TS.Fy[i] = MAX(-1.0f, Fs[i*4+1] / 32767.0f);;
+            TS.Fz[i] = MAX(-1.0f, Fs[i*4+2] / 32767.0f);
+        }
+        delete[] Fs;
+    }
+    TS.TDF = new float[totalSize];
+    TS.radius = new float[totalSize];
+    ocl.queue.enqueueReadImage(TDF, CL_TRUE, offset, region, 0, 0, TS.TDF);
+    ocl.queue.enqueueReadImage(radius, CL_TRUE, offset, region, 0, 0, TS.radius);
+    std::stack<CenterlinePoint> centerlineStack;
+    TS.centerline = runRidgeTraversal(TS, size, parameters, centerlineStack);
+
+    // Dilate the centerline
+    Image3D volume = Image3D(ocl.context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, ImageFormat(CL_R, CL_SIGNED_INT8), size.x, size.y, size.z, 0, 0, TS.centerline);
+#ifdef TIMING
+    ocl.queue.finish();
+    STOP_TIMER("Centerline extraction + transfer of data back and forth")
+    ocl.queue.enqueueMarker(&startEvent);
+#endif
+
+    TS.segmentation = runInverseGradientSegmentation(ocl, volume, vectorField, size, parameters);
+
     START_TIMER
     writeToRaw<char>(TS.centerline, storageDirectory + "centerline.raw", size.x, size.y, size.z);
     writeToRaw<char>(TS.segmentation, storageDirectory + "segmentation.raw", size.x, size.y, size.z);

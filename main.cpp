@@ -36,7 +36,7 @@ int main(int argc, char ** argv) {
         cl::Image3D dataset = readDatasetAndTransfer(ocl, filename, parameters, &size);
 
         // Run specified method on dataset
-        TS = runCircleFittingMethod(ocl, dataset, size, parameters);
+        TS = runCircleFittingAndRidgeTraversal(ocl, dataset, size, parameters);
     } catch(cl::Error e) {
         std::cout << "OpenCL error: " << getCLErrorString(e.err()) << std::endl;
         return 0;

@@ -6,6 +6,19 @@ __constant sampler_t interpolationSampler = CLK_NORMALIZED_COORDS_FALSE | CLK_AD
 
 #define LPOS(pos) pos.x+pos.y*get_global_size(0)+pos.z*get_global_size(0)*get_global_size(1)
 
+__kernel void combine(
+    __global float * TDFsmall,
+    __global float * radiusSmall,
+    __global float * TDFlarge,
+    __global float * radiusLarge
+    ) {
+    int i = get_global_id(0);
+    if(TDFlarge[i] < TDFsmall[i]) {
+        TDFlarge[i] = TDFsmall[i];
+        radiusLarge[i] = radiusSmall[i];
+    }
+}
+
 __kernel void initGrowing(
 	__read_only image3d_t centerline,
 	__global char * initSegmentation
