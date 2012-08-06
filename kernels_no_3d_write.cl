@@ -329,17 +329,25 @@ __kernel void toFloat(
         __read_only image3d_t volume,
         __global float * processedVolume,
         __private float minimum,
-        __private float maximum
+        __private float maximum,
+        __private int type
         ) {
     int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
     
-    // Read HU from volume
-    float v = read_imagef(volume, sampler, pos).x;
+    float v;
+    if(type == 1) {
+        v = read_imagei(volume, sampler, pos).x;
+    } else if(type == 2) {
+        v = read_imageui(volume, sampler, pos).x;
+    } else {
+        v = read_imagef(volume, sampler, pos).x;
+    }
     v = v > maximum ? maximum : v;
     v = v < minimum ? minimum : v;
 
     // Convert to floating point representation 0 to 1
     float value = (float)(v - minimum) / (float)(maximum - minimum);
+    //printf("%f \n", value);
 
     // Store value
     processedVolume[LPOS(pos)] = value;

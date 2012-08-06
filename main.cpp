@@ -22,10 +22,10 @@ int main(int argc, char ** argv) {
 
     // Compile and create program
     if((int)devices[0].getInfo<CL_DEVICE_EXTENSIONS>().find("cl_khr_3d_image_writes") > -1) {
-        ocl.program = buildProgramFromSource(ocl.context, "kernels.cl");
+        ocl.program = buildProgramFromBinary(ocl.context, "kernels.cl");
         parameters["3d_write"] = "true";
     } else {
-        ocl.program = buildProgramFromSource(ocl.context, "kernels_no_3d_write.cl");
+        ocl.program = buildProgramFromBinary(ocl.context, "kernels_no_3d_write.cl");
         std::cout << "Writing to 3D textures is not supported on the selected device." << std::endl;
     }
 
@@ -47,6 +47,8 @@ int main(int argc, char ** argv) {
     for(int i = 0; i < result->getTotalSize(); i++) {
         SIPL::float3 v;
         v.x = TS.TDF[i];
+        v.y = 0;
+        v.z = 0;
         v.y = TS.centerline[i] ? 1.0:0.0;
         v.z = TS.segmentation[i] ? 1.0:0.0;
         result->set(i,v);

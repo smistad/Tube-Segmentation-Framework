@@ -359,7 +359,7 @@ float3 normalize(float3 a) {
 }
 
 #define POS(pos) pos.x+pos.y*size.x+pos.z*size.x*size.y
-float3 gradient(TubeSegmentation TS, int3 pos, int volumeComponent, int dimensions, int3 size) {
+float3 gradient(TubeSegmentation &TS, int3 pos, int volumeComponent, int dimensions, int3 size) {
     float * Fx = TS.Fx;
     float * Fy = TS.Fy;
     float * Fz = TS.Fz;
@@ -445,7 +445,7 @@ float sign(float a) {
     return a < 0 ? -1.0f: 1.0f;
 }
 
-float3 getTubeDirection(TubeSegmentation T, int3 pos, int3 size) {
+float3 getTubeDirection(TubeSegmentation &T, int3 pos, int3 size) {
 
     // Do gradient on Fx, Fy and Fz and normalization
     float3 Fx = gradient(T, pos,0,1,size);
@@ -464,7 +464,7 @@ float3 getTubeDirection(TubeSegmentation T, int3 pos, int3 size) {
     return e1;
 }
 
-void doEigen(TubeSegmentation T, int3 pos, int3 size, float3 * lambda, float3 * e1, float3 * e2, float3 * e3) {
+void doEigen(TubeSegmentation &T, int3 pos, int3 size, float3 * lambda, float3 * e1, float3 * e2, float3 * e3) {
 
     // Do gradient on Fx, Fy and Fz and normalization
     float3 Fx = gradient(T, pos,0,1,size);
@@ -494,7 +494,7 @@ void doEigen(TubeSegmentation T, int3 pos, int3 size, float3 * lambda, float3 * 
 }
 
 
-char * runRidgeTraversal(TubeSegmentation T, SIPL::int3 size, paramList parameters, std::stack<CenterlinePoint> centerlineStack) {
+char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList parameters, std::stack<CenterlinePoint> centerlineStack) {
 
     float Thigh = 0.6;
     int Dmin = 5;
@@ -715,7 +715,7 @@ char * runRidgeTraversal(TubeSegmentation T, SIPL::int3 size, paramList paramete
         } // End for each direction
 
         // Check to see if new traversal can be added
-        std::cout << "Finished. Distance " << distance << " meanTube: " << meanTube/distance << std::endl;
+        //std::cout << "Finished. Distance " << distance << " meanTube: " << meanTube/distance << std::endl;
         if(distance > Dmin && meanTube/distance > minMeanTube && connections < 2) {
             //std::cout << "Finished. Distance " << distance << " meanTube: " << meanTube/distance << std::endl;
             //std::cout << "------------------- New centerlines added #" << counter << " -------------------------" << std::endl;
@@ -770,7 +770,9 @@ char * runRidgeTraversal(TubeSegmentation T, SIPL::int3 size, paramList paramete
     } // End while queue is not empty
 
     if(centerlineDistances.size() == 0) {
-        throw SIPL::SIPLException("no centerlines were extracted");
+        //throw SIPL::SIPLException("no centerlines were extracted");
+        char * returnCenterlines = new char[totalSize]();
+        return returnCenterlines;
     }
 
     // Find largest connected tree and all trees above a certain size
@@ -1111,7 +1113,7 @@ TubeSegmentation runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 
     Kernel GVFIterationKernel = Kernel(ocl.program, "GVF3DIteration");
     Kernel GVFFinishKernel = Kernel(ocl.program, "GVF3DFinish");
 
-    std::cout << "Running GVF... ( " << GVFIterations << " )" << std::endl; 
+    std::cout << "Running GVF with " << GVFIterations << " iterations " << std::endl; 
     if(no3Dwrite) {
         // Create auxillary buffers
         Buffer vectorFieldBuffer = Buffer(
@@ -1425,7 +1427,6 @@ TubeSegmentation runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 
 
     TS.segmentation = new char[totalSize];
     if(no3Dwrite) {
-        std::cout << "asdasd " << std::endl;
         Buffer volumeBuffer = Buffer(
                 ocl.context,
                 CL_MEM_WRITE_ONLY,
@@ -1560,7 +1561,9 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
 
     // Read dataset using SIPL and transfer to device
     Image3D dataset;
+    int type = 0;
     if(typeName == "MET_SHORT") {
+        type = 1;
         SIPL::Volume<short> * v = new SIPL::Volume<short>(filename);
         dataset = Image3D(
                 ocl.context, 
@@ -1574,6 +1577,7 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         size->z = v->getDepth();
         delete v;
     } else if(typeName == "MET_USHORT") {
+        type = 2;
         SIPL::Volume<SIPL::ushort> * v = new SIPL::Volume<SIPL::ushort>(filename);
         dataset = Image3D(
                 ocl.context, 
@@ -1587,6 +1591,7 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         size->z = v->getDepth();
         delete v;
     } else if(typeName == "MET_CHAR") {
+        type = 1;
         SIPL::Volume<char> * v = new SIPL::Volume<char>(filename);
         dataset = Image3D(
                 ocl.context, 
@@ -1600,6 +1605,7 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         size->z = v->getDepth();
         delete v;
     } else if(typeName == "MET_UCHAR") {
+        type = 2;
         SIPL::Volume<SIPL::uchar> * v = new SIPL::Volume<SIPL::uchar>(filename);
         dataset = Image3D(
                 ocl.context, 
@@ -1613,6 +1619,7 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         size->z = v->getDepth();
         delete v;
     } else if(typeName == "MET_FLOAT") {
+        type = 3;
         SIPL::Volume<float> * v = new SIPL::Volume<float>(filename);
         dataset = Image3D(
                 ocl.context, 
@@ -1829,6 +1836,7 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         toFloatKernel.setArg(1, convertedDatasetBuffer);
         toFloatKernel.setArg(2, minimum);
         toFloatKernel.setArg(3, maximum);
+        toFloatKernel.setArg(4, type);
 
         ocl.queue.enqueueNDRangeKernel(
             toFloatKernel,
@@ -1858,6 +1866,7 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         toFloatKernel.setArg(1, *convertedDataset);
         toFloatKernel.setArg(2, minimum);
         toFloatKernel.setArg(3, maximum);
+        toFloatKernel.setArg(4, type);
 
         ocl.queue.enqueueNDRangeKernel(
             toFloatKernel,

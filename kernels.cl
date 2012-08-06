@@ -1,4 +1,5 @@
-#pragma OPENCL EXTENSION cl_amd_printf : enable
+//#pragma OPENCL EXTENSION cl_amd_printf : enable
+#pragma OPENCL EXTENSION cl_khr_3d_images_writes : enable
 
 
 __constant sampler_t sampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP_TO_EDGE | CLK_FILTER_NEAREST;
@@ -333,12 +334,20 @@ __kernel void toFloat(
         __read_only image3d_t volume,
         __write_only image3d_t processedVolume,
         __private float minimum,
-        __private float maximum
+        __private float maximum,
+        __private int type
         ) {
     int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
     
-    // Read HU from volume
-    float v = read_imagef(volume, sampler, pos).x;
+    float v;
+    if(type == 1) {
+        v = read_imagei(volume, sampler, pos).x;
+    } else if(type == 2) {
+        v = read_imageui(volume, sampler, pos).x;
+    } else {
+        v = read_imagef(volume, sampler, pos).x;
+    }
+
     v = v > maximum ? maximum : v;
     v = v < minimum ? minimum : v;
 
