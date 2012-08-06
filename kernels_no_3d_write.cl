@@ -403,6 +403,9 @@ __kernel void createVectorField(
 // Forward declaration of eigen_decomp function
 void eigen_decomposition(float M[3][3], float V[3][3], float e[3]);
 
+__constant float cosValues[32] = {1.0f, 0.540302f, -0.416147f, -0.989992f, -0.653644f, 0.283662f, 0.96017f, 0.753902f, -0.1455f, -0.91113f, -0.839072f, 0.0044257f, 0.843854f, 0.907447f, 0.136737f, -0.759688f, -0.957659f, -0.275163f, 0.660317f, 0.988705f, 0.408082f, -0.547729f, -0.999961f, -0.532833f, 0.424179f, 0.991203f, 0.646919f, -0.292139f, -0.962606f, -0.748058f, 0.154251f, 0.914742f};
+__constant float sinValues[32] = {0.0f, 0.841471f, 0.909297f, 0.14112f, -0.756802f, -0.958924f, -0.279415f, 0.656987f, 0.989358f, 0.412118f, -0.544021f, -0.99999f, -0.536573f, 0.420167f, 0.990607f, 0.650288f, -0.287903f, -0.961397f, -0.750987f, 0.149877f, 0.912945f, 0.836656f, -0.00885131f, -0.84622f, -0.905578f, -0.132352f, 0.762558f, 0.956376f, 0.270906f, -0.663634f, -0.988032f, -0.404038f};
+
 __kernel void circleFittingTDF(
         __read_only image3d_t vectorField,
         __global float * T,
@@ -454,15 +457,18 @@ __kernel void circleFittingTDF(
     const float4 floatPos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
     for(float radius = rMin; radius <= rMax; radius += rStep) {
         float radiusSum = 0.0f;
-        int samples = ceil(radius*6);
-        if(samples < 12) {
-            samples = 12;
-        } else if(samples > 32) {
-            samples = 32;
+        int samples = 32;
+        int stride = 1;
+        if(radius < 3) {
+            samples = 8;
+            stride = 4;
+        } else if(radius < 6) {
+            samples = 16;
+            stride = 2;
         }
+
         for(int j = 0; j < samples; j++) {
-            float alpha = 2*M_PI_F*j / samples;
-            float3 V_alpha = cos(alpha)*e3 + sin(alpha)*e2;
+            float3 V_alpha = cosValues[j*stride]*e3 + sinValues[j*stride]*e2;
             float4 position = floatPos + radius*V_alpha.xyzz;
             float3 V = -read_imagef(vectorField, interpolationSampler, position).xyz;
             radiusSum += dot(V, V_alpha);
