@@ -29,4 +29,6 @@ paramList getParameters(int argc, char ** argv);
 
 TubeSegmentation runCircleFittingAndRidgeTraversal(OpenCL, cl::Image3D dataset, SIPL::int3 size, paramList);
 
+TubeSegmentation runCircleFittingAndNewCenterlineAlg(OpenCL, cl::Image3D dataset, SIPL::int3 size, paramList);
+
 #endif

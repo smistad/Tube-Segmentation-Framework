@@ -13,7 +13,7 @@ __kernel void combine(
     __global float * TDFlarge,
     __global float * radiusLarge
     ) {
-    int i = get_global_id(0);
+    uint i = get_global_id(0);
     if(TDFlarge[i] < TDFsmall[i]) {
         TDFlarge[i] = TDFsmall[i];
         radiusLarge[i] = radiusSmall[i];
@@ -366,7 +366,6 @@ __kernel void toFloat(
 
     // Convert to floating point representation 0 to 1
     float value = (float)(v - minimum) / (float)(maximum - minimum);
-    if(value > 0)
 
     // Store value
     write_imagef(processedVolume, pos, value);
@@ -480,6 +479,7 @@ __kernel void circleFittingTDF(
         float radiusSum = 0.0f;
         int samples = 32;
         int stride = 1;
+        /*
         if(radius < 3) {
             samples = 8;
             stride = 4;
@@ -487,6 +487,7 @@ __kernel void circleFittingTDF(
             samples = 16;
             stride = 2;
         }
+        */
 
         for(int j = 0; j < samples; j++) {
             float3 V_alpha = cosValues[j*stride]*e3 + sinValues[j*stride]*e2;

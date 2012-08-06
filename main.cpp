@@ -36,7 +36,7 @@ int main(int argc, char ** argv) {
         cl::Image3D dataset = readDatasetAndTransfer(ocl, filename, parameters, &size);
 
         // Run specified method on dataset
-        TS = runCircleFittingAndRidgeTraversal(ocl, dataset, size, parameters);
+        TS = runCircleFittingAndNewCenterlineAlg(ocl, dataset, size, parameters);
     } catch(cl::Error e) {
         std::cout << "OpenCL error: " << getCLErrorString(e.err()) << std::endl;
         return 0;
@@ -53,7 +53,7 @@ int main(int argc, char ** argv) {
         v.z = TS.segmentation[i] ? 1.0:0.0;
         result->set(i,v);
     }
-    result->showMIP(SIPL::Y);
+    result->showMIP();
 
     return 0;
 }

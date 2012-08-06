@@ -5,6 +5,9 @@
 #include <stack>
 #include <list>
 #include <cstdio>
+#include <boost/graph/adjacency_list.hpp>
+#include <boost/graph/kruskal_min_spanning_tree.hpp>
+#include <boost/graph/connected_components.hpp>
 
 template <typename T>
 void writeToRaw(T * voxels, std::string filename, int SIZE_X, int SIZE_Y, int SIZE_Z) {
@@ -21,7 +24,7 @@ T * readFromRaw(std::string filename, int SIZE_X, int SIZE_Y, int SIZE_Z) {
     return data;
 }
 
-#define TIMING
+//#define TIMING
 
 #ifdef TIMING
 #define INIT_TIMER auto timerStart = std::chrono::high_resolution_clock::now();
@@ -348,8 +351,23 @@ void eigen_decomposition(float A[SIZE][SIZE], float V[SIZE][SIZE], float d[SIZE]
 float dot(float3 a, float3 b) {
     return a.x*b.x+a.y*b.y+a.z*b.z;
 }
+int3 operator-(int3 a, int3 b) {
+    int3 c;
+    c.x = a.x-b.x;
+    c.y = a.y-b.y;
+    c.z = a.z-b.z;
+    return c;
+}
 
 float3 normalize(float3 a) {
+    float3 b;
+    float sqrMag = sqrt(a.x*a.x+a.y*a.y+a.z*a.z);
+    b.x = a.x / sqrMag;
+    b.y = a.y / sqrMag;
+    b.z = a.z / sqrMag;
+    return b;
+}
+float3 normalize(int3 a) {
     float3 b;
     float sqrMag = sqrt(a.x*a.x+a.y*a.y+a.z*a.z);
     b.x = a.x / sqrMag;
@@ -1264,7 +1282,7 @@ TubeSegmentation runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 
     ocl.queue.enqueueNDRangeKernel(
             combineKernel,
             NullRange,
-            NDRange(size.x,size.y,size.z),
+            NDRange(totalSize),
             NullRange
     );
     TDF = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_FLOAT),
@@ -1295,7 +1313,7 @@ TubeSegmentation runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 
 
 }
 
-char * runInverseGradientSegmentation(OpenCL ocl, Image3D volume, Image3D vectorField, SIPL::int3 size, paramList parameters) {
+Image3D runInverseGradientSegmentation(OpenCL ocl, Image3D volume, Image3D vectorField, SIPL::int3 size, paramList parameters) {
     const int totalSize = size.x*size.y*size.z;
     const bool no3Dwrite = parameters.count("3d_write") == 0;
 #ifdef TIMING
@@ -1423,7 +1441,6 @@ char * runInverseGradientSegmentation(OpenCL ocl, Image3D volume, Image3D vector
 
     std::cout << "segmentation result grown in " << i << " iterations" << std::endl;
 
-    char * segmentation = new char[totalSize];
     if(no3Dwrite) {
         Buffer volumeBuffer = Buffer(
                 ocl.context,
@@ -1456,13 +1473,12 @@ char * runInverseGradientSegmentation(OpenCL ocl, Image3D volume, Image3D vector
             NDRange(size.x, size.y, size.z),
             NullRange
         );
-
-        ocl.queue.enqueueReadBuffer(
-                volumeBuffer, 
-                CL_TRUE, 
-                0,
-                sizeof(char)*totalSize,
-                segmentation
+        ocl.queue.enqueueCopyBufferToImage(
+            volumeBuffer,
+            volume,
+            0,
+            offset,
+            region
         );
     } else {
         Image3D volume2 = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_SIGNED_INT8), size.x, size.y, size.z);
@@ -1485,8 +1501,6 @@ char * runInverseGradientSegmentation(OpenCL ocl, Image3D volume, Image3D vector
             NDRange(size.x, size.y, size.z),
             NullRange
         );
-
-        ocl.queue.enqueueReadImage(volume, CL_TRUE, offset, region, 0, 0, segmentation);
     }
 #ifdef TIMING
     ocl.queue.enqueueMarker(&endEvent);
@@ -1496,7 +1510,408 @@ char * runInverseGradientSegmentation(OpenCL ocl, Image3D volume, Image3D vector
     std::cout << "RUNTIME of segmentation: " << (end-start)*1.0e-6 << " ms" << std::endl;
 #endif
 
-    return segmentation;
+    return volume;
+}
+
+struct Vertex {
+    int3 pos;
+};
+
+struct Edge {
+    float cost;
+};
+
+typedef boost::adjacency_list<  // adjacency_list is a template depending on :
+        boost::listS,               //  The container used for egdes : here, std::list.
+        boost::vecS,                //  The container used for vertices: here, std::vector.
+        boost::undirectedS,           //  directed or undirected edges ?.
+        Vertex,                     //  The type that describes a Vertex.
+        boost::property< boost::edge_weight_t, float >                         //  The type that describes an Edge
+        > MyGraph;
+
+typedef MyGraph::vertex_descriptor VertexID;
+typedef MyGraph::edge_descriptor   EdgeID;
+
+Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, Image3D vectorField, Image3D TDF, Image3D radius) {
+
+    // Find candidate centerpoints
+
+    // Try to link the centerpoints
+
+    // Find most connected components in graph
+    const int totalSize = size.x*size.y*size.z;
+    const bool no3Dwrite = parameters.count("3d_write") == 0;
+
+    cl::size_t<3> offset;
+    offset[0] = 0;
+    offset[1] = 0;
+    offset[2] = 0;
+    cl::size_t<3> region;
+    region[0] = size.x;
+    region[1] = size.y;
+    region[2] = size.z;
+
+    TubeSegmentation T;
+    T.TDF = new float[totalSize];
+    T.radius = new float[totalSize];
+    ocl.queue.enqueueReadImage(TDF, CL_TRUE, offset, region, 0, 0, T.TDF);
+    ocl.queue.enqueueReadImage(radius, CL_TRUE, offset, region, 0, 0, T.radius);
+    T.Fx = new float[totalSize];
+    T.Fy = new float[totalSize];
+    T.Fz = new float[totalSize];
+    if(no3Dwrite) {
+        float * Fs = new float[totalSize*4];
+        ocl.queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
+#pragma omp parallel for
+        for(int i = 0; i < totalSize; i++) {
+            T.Fx[i] = Fs[i*4];
+            T.Fy[i] = Fs[i*4+1];
+            T.Fz[i] = Fs[i*4+2];
+        }
+        delete[] Fs;
+    } else {
+        short * Fs = new short[totalSize*4];
+        ocl.queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
+#pragma omp parallel for
+        for(int i = 0; i < totalSize; i++) {
+            T.Fx[i] = MAX(-1.0f, Fs[i*4] / 32767.0f);
+            T.Fy[i] = MAX(-1.0f, Fs[i*4+1] / 32767.0f);;
+            T.Fz[i] = MAX(-1.0f, Fs[i*4+2] / 32767.0f);
+        }
+        delete[] Fs;
+    }
+ 
+    char * centerpoints = new char[totalSize]();
+
+    MyGraph graph;
+    boost::property_map<MyGraph, boost::edge_weight_t>::type weightmap = get(boost::edge_weight, graph);
+
+    float thetaLimit = 0.5; 
+    float TDFlimit = 0.5;
+    // Find all points with T.value > TDFlimit
+    std::multimap<float, int3> candidates;
+    for(int z = 0; z < size.z; z++) {
+    for(int y = 0; y < size.y; y++) {
+    for(int x = 0; x < size.x; x++) {
+        int3 n = {x,y,z};
+        if(T.TDF[POS(n)] > TDFlimit) {
+            candidates.insert( std::pair<float,int3>(-T.TDF[POS(n)], n) );
+            //candidates.insert( std::pair<float,int3>(SQR_MAG(n), n) );
+        }
+    }}}  
+    std::cout << "size of candidate stack: " << candidates.size() << std::endl;
+
+    std::multimap<float,int3>::iterator it;
+    for(it = candidates.begin(); it != candidates.end(); it++) {
+        int3 x = it->second;
+        float3 e1 = getTubeDirection(T, x, size); 
+        bool invalid = false;
+        float radius = T.radius[POS(x)];
+        int maxD = round(MAX(radius, 3)); 
+        std::stack<int3> remove;
+        for(int a = -maxD; a <= maxD; a++) {
+        for(int b = -maxD; b <= maxD; b++) {
+        for(int c = -maxD; c <= maxD; c++) {
+            int3 n = {x.x+a,x.y+b,x.z+c};
+            if(!inBounds(n, size)) 
+                continue;
+
+            if(a == 0 && b == 0 && c == 0)
+                continue;
+
+            //if(abs(a) <= 1 && abs(b) <= 1 && abs(c) <= 1)
+                //sum += TS.value[POS(n)];
+
+            float3 r = {(float)(n.x-x.x),(float)(n.y-x.y),(float)(n.z-x.z)};
+            float dp = dot(e1,r);
+            float3 r_projected = {r.x-e1.x*dp,r.y-e1.y*dp,r.z-e1.z*dp};
+            float theta = acos(dot(normalize(r), normalize(r_projected)));
+            if(theta < thetaLimit && sqrt(r.x*r.x+r.y*r.y+r.z*r.z) < maxD) {
+                if(SQR_MAG(n) < SQR_MAG(x)) {
+                    invalid = true;
+                    break;
+                }    
+            }
+            if(centerpoints[POS(n)] == 1 && sqrt(r.x*r.x+r.y*r.y+r.z*r.z) < (float)maxD) { 
+                if(SQR_MAG(n) > SQR_MAG(x) && T.radius[POS(x)] >= T.radius[POS(n)]) { // is x more in "center" than n
+                    // x is better choice than n
+                    remove.push(n);
+                } else if(sqrt(r.x*r.x+r.y*r.y+r.z*r.z) < (float)maxD*0.5){
+                    invalid = true;
+                    break;
+                }
+            }    
+        }}}  
+        if(!invalid) {
+            centerpoints[POS(x)] = 1;
+            while(!remove.empty()) {
+                int3 n = remove.top();
+                remove.pop();
+                centerpoints[POS(n)] = 0;
+            }
+            //VertexID v = boost::add_vertex(graph);
+            //graph[v].pos = x;
+        }
+    }
+
+    for(int z = 0; z < size.z; z++) {
+    for(int y = 0; y < size.y; y++) {
+    for(int x = 0; x < size.x; x++) {
+        int3 n = {x,y,z};
+        if(centerpoints[POS(n)] == 1) {
+            VertexID v = boost::add_vertex(graph);
+            graph[v].pos = n;
+        }
+    }}}
+
+    std::cout << "nr of vertices: " << boost::num_vertices(graph) << std::endl;
+    float maxDistance = 40.0f;
+    delete[] centerpoints;
+    char * centerpoints2 = new char[totalSize]();
+
+    MyGraph::vertex_iterator vertexIt, vertexEnd;
+    boost::tie(vertexIt, vertexEnd) = boost::vertices(graph);
+    for(; vertexIt != vertexEnd; ++vertexIt) {
+        int3 xa = graph[*vertexIt].pos;
+        MyGraph::vertex_iterator vertexIt2, vertexEnd2;
+        boost::tie(vertexIt2, vertexEnd2) = boost::vertices(graph);
+        std::vector<VertexID> neighbors;
+        for(; vertexIt2 != vertexEnd2; ++vertexIt2) {
+            int3 xb = graph[*vertexIt2].pos;
+
+            // First check distance
+            int3 r = {xb.x - xa.x,xb.y-xa.y,xb.z-xa.z};
+            if(sqrt(r.x*r.x+r.y*r.y+r.z*r.z) > maxDistance)
+                continue;
+
+           neighbors.push_back(*vertexIt2); 
+        }
+
+        if(neighbors.size() < 2)
+            continue;
+        // Go through each neighbor pair
+        std::vector<VertexID>::iterator xb1it;
+        std::vector<VertexID>::iterator xb2it;
+        float shortestDistance = 9999.0f;
+        VertexID bestPair1, bestPair2;
+        bool validPairFound = false;
+        //centerpoints2[POS((xa))] = 2;
+        for(xb1it = neighbors.begin(); xb1it != neighbors.end(); xb1it++) {
+            //centerpoints2[POS((graph[*xb1it].pos))] = 2;
+        for(xb2it = neighbors.begin(); xb2it != neighbors.end(); xb2it++) {
+            int3 * xb1 = &(graph[*xb1it].pos);
+            int3 * xb2 = &(graph[*xb2it].pos);
+            if(xb1->x == xb2->x && xb1->y == xb2->y && xb1->z == xb2->z)
+                continue;
+            if(xb1->x == xa.x && xb1->y == xa.y && xb1->z == xa.z)
+                continue;
+            if(xb2->x == xa.x && xb2->y == xa.y && xb2->z == xa.z)
+                continue;
+            //std::cout << "processing: " << xb1->x << ","<< xb1->y << "," << xb1->z << "  -  " << xb2->x << ","<< xb2->y << "," << xb2->z << std::endl;
+
+            // Check angle
+            int3 xb1v = {xb1->x-xa.x,xb1->y-xa.y,xb1->z-xa.z};
+            int3 xb2v = {xb2->x-xa.x,xb2->y-xa.y,xb2->z-xa.z};
+            float angle = acos(dot(normalize(xb1v), normalize(xb2v)));
+            if(angle < 2.09f) // 120 degrees
+                continue;
+
+            // Check TDF
+            float avgTDF = 0.0f;
+            for(int i = 0; i < maxDistance; i++) {
+                float alpha = (float)i/maxDistance;
+                float3 n = {xa.x+xb1v.x*alpha,xa.y+xb1v.y*alpha,xa.z+xb1v.z*alpha};
+                int3 r;
+                r.x = round(n.x);
+                r.y = round(n.y);
+                r.z = round(n.z);
+                avgTDF += T.TDF[POS(r)];
+            }
+            if(avgTDF / (maxDistance) < 0.5f)
+                continue;
+            avgTDF = 0.0f;
+            for(int i = 0; i < maxDistance; i++) {
+                float alpha = (float)i/maxDistance;
+                float3 n = {xa.x+xb2v.x*alpha,xa.y+xb2v.y*alpha,xa.z+xb2v.z*alpha};
+                int3 r;
+                r.x = round(n.x);
+                r.y = round(n.y);
+                r.z = round(n.z);
+                avgTDF += T.TDF[POS(r)];
+            }
+            if(avgTDF / (maxDistance) < 0.5f)
+                continue;
+
+            // If distance in shorter than previous, select it
+            if(sqrt(xb1v.x*xb1v.x+xb1v.y*xb1v.y+xb1v.z*xb1v.z) + sqrt(xb2v.x*xb2v.x+xb2v.y*xb2v.y+xb2v.z*xb2v.z) < shortestDistance) {
+                bestPair1 = *xb1it;
+                bestPair2 = *xb2it;
+                validPairFound = true;
+                shortestDistance = sqrt(xb1v.x*xb1v.x+xb1v.y*xb1v.y+xb1v.z*xb1v.z) + sqrt(xb2v.x*xb2v.x+xb2v.y*xb2v.y+xb2v.z*xb2v.z);
+            }
+        }}
+
+        // Add the selected pair to result
+        if(validPairFound) {
+            int3 xb1v = graph[bestPair1].pos-xa;
+            int3 xb2v = graph[bestPair2].pos-xa;
+            float avgGVF = 0.0f;
+            for(int i = 0; i < maxDistance; i++) {
+                float alpha = (float)i/maxDistance;
+                float3 n = {xa.x+xb1v.x*alpha,xa.y+xb1v.y*alpha,xa.z+xb1v.z*alpha};
+                int3 r;
+                r.x = round(n.x);
+                r.y = round(n.y);
+                r.z = round(n.z);
+                avgGVF += SQR_MAG(r);
+            }
+            float avgGVF2 = 0.0f;
+            for(int i = 0; i < maxDistance; i++) {
+                float alpha = (float)i/maxDistance;
+                float3 n = {xa.x+xb2v.x*alpha,xa.y+xb2v.y*alpha,xa.z+xb2v.z*alpha};
+                int3 r;
+                r.x = round(n.x);
+                r.y = round(n.y);
+                r.z = round(n.z);
+                avgGVF2 += SQR_MAG(r);
+            }
+            // add edge in graph
+            EdgeID edge;
+            EdgeID edge2;
+            bool ok;
+            boost::tie(edge, ok) = boost::add_edge(*vertexIt, bestPair1, graph);
+            if(ok)
+                weightmap[edge] = avgGVF / maxDistance;
+            boost::tie(edge2, ok) = boost::add_edge(*vertexIt, bestPair2, graph);
+            if(ok)
+                weightmap[edge2] = avgGVF2 / maxDistance;
+            /*
+            centerpoints2[POS(xa)] = 2;
+            centerpoints2[POS(bestPair1)] = 2;
+            centerpoints2[POS(bestPair2)] = 2;
+            */
+        }
+
+    }
+
+    // Find most connected component in graph
+    std::vector<int> c(num_vertices(graph));
+    int num = boost::connected_components(graph, &c[0]);
+    int * ccSize = new int[num]();
+    for (int i = 0; i < c.size(); i++) {
+        ccSize[c[i]]++;
+    }
+    int maxCC = 0;
+    int minTreeLength = 20;
+    bool * validTree = new bool[num];
+    for(int i = 0; i < num; i++) {
+        if(ccSize[i] > ccSize[maxCC])
+            maxCC = i;
+        validTree[i] = ccSize[i] > minTreeLength;
+    }
+    std::cout << "largest connected MST is of size: " << ccSize[maxCC] << std::endl;
+
+    for(int i = 0; i < c.size(); i++) {
+        if(c[i] == maxCC) {
+        //if(validTree[c[i]]) {
+            int3 xa = graph[vertex(i, graph)].pos;
+
+            MyGraph::adjacency_iterator neighbourIt, neighbourEnd;
+            boost::tie(neighbourIt, neighbourEnd) = adjacent_vertices(vertex(i,graph), graph);
+            for(;neighbourIt != neighbourEnd; ++neighbourIt) {
+                int3 xb = graph[*neighbourIt].pos;
+                int3 r = xb - xa;
+                for(int i = 0; i < maxDistance; i++) {
+                    float alpha = (float)i/maxDistance;
+                    float3 x = {xa.x+alpha*r.x,xa.y+alpha*r.y,xa.z+alpha*r.z};
+                    int3 n;
+                    n.x = round(x.x);
+                    n.y = round(x.y);
+                    n.z = round(x.z);
+                    centerpoints2[POS(n)] = 1;
+                }
+                centerpoints2[POS(xb)] = 2;
+                centerpoints2[POS(xa)] = 2;
+            }
+
+        } else {
+            // Remove vertex from graph
+            //remove_vertex(vertex(i, graph), graph);
+        }
+    }
+
+    Image3D centerlineImage = Image3D(
+            ocl.context,
+            CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+            ImageFormat(CL_R, CL_SIGNED_INT8),
+            size.x, size.y, size.z,
+            0, 0, centerpoints2
+    );
+
+    return centerlineImage;
+}
+
+TubeSegmentation runCircleFittingAndNewCenterlineAlg(OpenCL ocl, cl::Image3D dataset, SIPL::int3 size, paramList parameters) {
+    INIT_TIMER
+    Image3D vectorField, TDF, radius;
+    TubeSegmentation TS;
+    const int totalSize = size.x*size.y*size.z;
+    const bool no3Dwrite = parameters.count("3d_write") == 0;
+    const std::string storageDirectory = getParamstr(parameters, "storage-dir", "/home/smistad/");
+
+    cl::size_t<3> offset;
+    offset[0] = 0;
+    offset[1] = 0;
+    offset[2] = 0;
+    cl::size_t<3> region;
+    region[0] = size.x;
+    region[1] = size.y;
+    region[2] = size.z;
+
+    runCircleFittingMethod(ocl, dataset, size, parameters, vectorField, TDF, radius);
+    Image3D centerline = runNewCenterlineAlg(ocl, size, parameters, vectorField, TDF, radius);
+    TS.centerline = new char[totalSize];
+    ocl.queue.enqueueReadImage(centerline, CL_TRUE, offset, region, 0, 0, TS.centerline);
+    Image3D segmentation = runInverseGradientSegmentation(ocl, centerline, vectorField, size, parameters);
+
+
+    // Transfer result back to host
+    START_TIMER
+    TS.segmentation = new char[totalSize];
+    TS.TDF = new float[totalSize];
+    TS.radius = new float[totalSize];
+    ocl.queue.enqueueReadImage(TDF, CL_TRUE, offset, region, 0, 0, TS.TDF);
+    ocl.queue.enqueueReadImage(radius, CL_TRUE, offset, region, 0, 0, TS.radius);
+    ocl.queue.enqueueReadImage(segmentation, CL_TRUE, offset, region, 0, 0, TS.segmentation);
+    TS.Fx = new float[totalSize];
+    TS.Fy = new float[totalSize];
+    TS.Fz = new float[totalSize];
+    if(no3Dwrite) {
+        float * Fs = new float[totalSize*4];
+        ocl.queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
+#pragma omp parallel for
+        for(int i = 0; i < totalSize; i++) {
+            TS.Fx[i] = Fs[i*4];
+            TS.Fy[i] = Fs[i*4+1];
+            TS.Fz[i] = Fs[i*4+2];
+        }
+        delete[] Fs;
+    } else {
+        short * Fs = new short[totalSize*4];
+        ocl.queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
+#pragma omp parallel for
+        for(int i = 0; i < totalSize; i++) {
+            TS.Fx[i] = MAX(-1.0f, Fs[i*4] / 32767.0f);
+            TS.Fy[i] = MAX(-1.0f, Fs[i*4+1] / 32767.0f);;
+            TS.Fz[i] = MAX(-1.0f, Fs[i*4+2] / 32767.0f);
+        }
+        delete[] Fs;
+    }
+    writeToRaw<char>(TS.centerline, storageDirectory + "centerline.raw", size.x, size.y, size.z);
+    writeToRaw<char>(TS.segmentation, storageDirectory + "segmentation.raw", size.x, size.y, size.z);
+    STOP_TIMER("writing segmentation and centerline to disk")
+
+    return TS;
 }
 
 TubeSegmentation runCircleFittingAndRidgeTraversal(OpenCL ocl, Image3D dataset, SIPL::int3 size, paramList parameters) {
@@ -1563,9 +1978,12 @@ TubeSegmentation runCircleFittingAndRidgeTraversal(OpenCL ocl, Image3D dataset, 
     ocl.queue.enqueueMarker(&startEvent);
 #endif
 
-    TS.segmentation = runInverseGradientSegmentation(ocl, volume, vectorField, size, parameters);
+    volume = runInverseGradientSegmentation(ocl, volume, vectorField, size, parameters);
 
     START_TIMER
+    // Transfer volume back to host and write to disk
+    TS.segmentation = new char[totalSize];
+    ocl.queue.enqueueReadImage(volume, CL_TRUE, offset, region, 0, 0, TS.segmentation);
     writeToRaw<char>(TS.centerline, storageDirectory + "centerline.raw", size.x, size.y, size.z);
     writeToRaw<char>(TS.segmentation, storageDirectory + "segmentation.raw", size.x, size.y, size.z);
     STOP_TIMER("writing segmentation and centerline to disk")

@@ -6,7 +6,7 @@ include_directories(${SIPL_INCLUDE_DIRS})
 add_subdirectory(OpenCLUtilities)
 include_directories(${OPENCL_INCLUDE_DIRS})
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x -g -Wall")
 
 find_package(OpenMP)
 if(OPENMP_FOUND)
