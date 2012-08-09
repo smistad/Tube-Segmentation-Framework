@@ -4,8 +4,393 @@
 
 __constant sampler_t sampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP_TO_EDGE | CLK_FILTER_NEAREST;
 __constant sampler_t interpolationSampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP_TO_EDGE | CLK_FILTER_LINEAR;
+__constant sampler_t hpSampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP | CLK_FILTER_NEAREST;
 
 #define LPOS(pos) pos.x+pos.y*get_global_size(0)+pos.z*get_global_size(0)*get_global_size(1)
+
+__constant int3 cubeOffsets2D[4] = {
+    {0, 0, 0},
+    {1, 0, 0},
+    {0, 1, 0},
+    {1, 1, 0}
+};
+
+__constant int4 cubeOffsets[8] = {
+    {0, 0, 0, 0},
+    {1, 0, 0, 0},
+    {0, 0, 1, 0},
+    {1, 0, 1, 0},
+    {0, 1, 0, 0},
+    {1, 1, 0, 0},
+    {0, 1, 1, 0},
+    {1, 1, 1, 0},
+};
+
+__kernel void constructHPLevel3D(
+    __read_only image3d_t readHistoPyramid,
+    __write_only image3d_t writeHistoPyramid
+    ) { 
+
+    int4 writePos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
+    int4 readPos = writePos*2;
+    int writeValue = read_imagei(readHistoPyramid, hpSampler, readPos).x + // 0
+    read_imagei(readHistoPyramid, hpSampler, readPos+cubeOffsets[1]).x + // 1
+    read_imagei(readHistoPyramid, hpSampler, readPos+cubeOffsets[2]).x + // 2
+    read_imagei(readHistoPyramid, hpSampler, readPos+cubeOffsets[3]).x + // 3
+    read_imagei(readHistoPyramid, hpSampler, readPos+cubeOffsets[4]).x + // 4
+    read_imagei(readHistoPyramid, hpSampler, readPos+cubeOffsets[5]).x + // 5
+    read_imagei(readHistoPyramid, hpSampler, readPos+cubeOffsets[6]).x + // 6
+    read_imagei(readHistoPyramid, hpSampler, readPos+cubeOffsets[7]).x; // 7
+
+    write_imagei(writeHistoPyramid, writePos, writeValue);
+}
+
+__kernel void constructHPLevel2D(
+    __read_only image2d_t readHistoPyramid,
+    __write_only image2d_t writeHistoPyramid
+    ) { 
+
+    int2 writePos = {get_global_id(0), get_global_id(1)};
+    int2 readPos = writePos*2;
+    int writeValue = 
+        read_imagei(readHistoPyramid, hpSampler, readPos).x + 
+        read_imagei(readHistoPyramid, hpSampler, readPos+(int2)(1,0)).x + 
+        read_imagei(readHistoPyramid, hpSampler, readPos+(int2)(0,1)).x + 
+        read_imagei(readHistoPyramid, hpSampler, readPos+(int2)(1,1)).x;
+
+    write_imagei(writeHistoPyramid, writePos, writeValue);
+}
+
+int3 scanHPLevel2D(int target, __read_only image2d_t hp, int3 current) {
+
+    int4 neighbors = {
+        read_imagei(hp, hpSampler, current.xy).x,
+        read_imagei(hp, hpSampler, current.xy + (int2)(1,0)).x,
+        read_imagei(hp, hpSampler, current.xy + (int2)(0,1)).x,
+        read_imagei(hp, hpSampler, current.xy + (int2)(1,1)).x
+    };
+
+    int acc = current.s2 + neighbors.s0;
+    int4 cmp;
+    cmp.s0 = acc <= target;
+    acc += neighbors.s1;
+    cmp.s1 = acc <= target;
+    acc += neighbors.s2;
+    cmp.s2 = acc <= target;
+    acc += neighbors.s3;
+    cmp.s3 = 0;
+
+    current += cubeOffsets2D[(cmp.s0+cmp.s1+cmp.s2+cmp.s3)];
+    current.s0 = current.s0*2;
+    current.s1 = current.s1*2;
+    current.s2 = current.s2 +
+    cmp.s0*neighbors.s0 +
+    cmp.s1*neighbors.s1 +
+    cmp.s2*neighbors.s2 +
+    cmp.s3*neighbors.s3; 
+    return current;
+
+}
+
+
+int4 scanHPLevel3D(int target, __read_only image3d_t hp, int4 current) {
+
+    int8 neighbors = {
+        read_imagei(hp, hpSampler, current).x,
+        read_imagei(hp, hpSampler, current + cubeOffsets[1]).x,
+        read_imagei(hp, hpSampler, current + cubeOffsets[2]).x,
+        read_imagei(hp, hpSampler, current + cubeOffsets[3]).x,
+        read_imagei(hp, hpSampler, current + cubeOffsets[4]).x,
+        read_imagei(hp, hpSampler, current + cubeOffsets[5]).x,
+        read_imagei(hp, hpSampler, current + cubeOffsets[6]).x,
+        read_imagei(hp, hpSampler, current + cubeOffsets[7]).x
+    };
+
+    int acc = current.s3 + neighbors.s0;
+    int8 cmp;
+    cmp.s0 = acc <= target;
+    acc += neighbors.s1;
+    cmp.s1 = acc <= target;
+    acc += neighbors.s2;
+    cmp.s2 = acc <= target;
+    acc += neighbors.s3;
+    cmp.s3 = acc <= target;
+    acc += neighbors.s4;
+    cmp.s4 = acc <= target;
+    acc += neighbors.s5;
+    cmp.s5 = acc <= target;
+    acc += neighbors.s6;
+    cmp.s6 = acc <= target;
+    cmp.s7 = 0;
+
+
+    current += cubeOffsets[(cmp.s0+cmp.s1+cmp.s2+cmp.s3+cmp.s4+cmp.s5+cmp.s6+cmp.s7)];
+    current.s0 = current.s0*2;
+    current.s1 = current.s1*2;
+    current.s2 = current.s2*2;
+    current.s3 = current.s3 +
+    cmp.s0*neighbors.s0 +
+    cmp.s1*neighbors.s1 +
+    cmp.s2*neighbors.s2 +
+    cmp.s3*neighbors.s3 +
+    cmp.s4*neighbors.s4 +
+    cmp.s5*neighbors.s5 +
+    cmp.s6*neighbors.s6 +
+    cmp.s7*neighbors.s7;
+    return current;
+
+}
+
+int4 traverseHP3D(
+    int target,
+    int HP_SIZE,
+    image3d_t hp0,
+    image3d_t hp1,
+    image3d_t hp2,
+    image3d_t hp3,
+    image3d_t hp4,
+    image3d_t hp5,
+    image3d_t hp6,
+    image3d_t hp7,
+    image3d_t hp8,
+    image3d_t hp9
+    ) {
+    int4 position = {0,0,0,0}; // x,y,z,sum
+    if(HP_SIZE > 512)
+    position = scanHPLevel3D(target, hp9, position);
+    if(HP_SIZE > 256)
+    position = scanHPLevel3D(target, hp8, position);
+    if(HP_SIZE > 128)
+    position = scanHPLevel3D(target, hp7, position);
+    if(HP_SIZE > 64)
+    position = scanHPLevel3D(target, hp6, position);
+    position = scanHPLevel3D(target, hp5, position);
+    position = scanHPLevel3D(target, hp4, position);
+    position = scanHPLevel3D(target, hp3, position);
+    position = scanHPLevel3D(target, hp2, position);
+    position = scanHPLevel3D(target, hp1, position);
+    position = scanHPLevel3D(target, hp0, position);
+    position.x = position.x / 2;
+    position.y = position.y / 2;
+    position.z = position.z / 2;
+    return position;
+}
+
+int2 traverseHP2D(
+    int target,
+    int HP_SIZE,
+    image2d_t hp0,
+    image2d_t hp1,
+    image2d_t hp2,
+    image2d_t hp3,
+    image2d_t hp4,
+    image2d_t hp5,
+    image2d_t hp6,
+    image2d_t hp7,
+    image2d_t hp8,
+    image2d_t hp9
+    ) {
+    int3 position = {0,0,0};
+    if(HP_SIZE > 512)
+    position = scanHPLevel2D(target, hp9, position);
+    if(HP_SIZE > 256)
+    position = scanHPLevel2D(target, hp8, position);
+    if(HP_SIZE > 128)
+    position = scanHPLevel2D(target, hp7, position);
+    if(HP_SIZE > 64)
+    position = scanHPLevel2D(target, hp6, position);
+    position = scanHPLevel2D(target, hp5, position);
+    position = scanHPLevel2D(target, hp4, position);
+    position = scanHPLevel2D(target, hp3, position);
+    position = scanHPLevel2D(target, hp2, position);
+    position = scanHPLevel2D(target, hp1, position);
+    position = scanHPLevel2D(target, hp0, position);
+    position.x = position.x / 2;
+    position.y = position.y / 2;
+    return position.xy;
+}
+
+
+__kernel void createPositions3D(
+        __global int * positions,
+        __private int HP_SIZE,
+        __read_only image3d_t hp0, // Largest HP
+        __read_only image3d_t hp1,
+        __read_only image3d_t hp2,
+        __read_only image3d_t hp3,
+        __read_only image3d_t hp4,
+        __read_only image3d_t hp5
+        ,__read_only image3d_t hp6
+        ,__read_only image3d_t hp7
+        ,__read_only image3d_t hp8
+        ,__read_only image3d_t hp9
+    ) {
+    int4 pos = traverseHP3D(get_global_id(0),HP_SIZE,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,hp8,hp9);
+    vstore3(pos.xyz, get_global_id(0), positions);
+}
+
+__kernel void createPositions2D(
+        __global int * positions,
+        __private int HP_SIZE,
+        __read_only image2d_t hp0, // Largest HP
+        __read_only image2d_t hp1,
+        __read_only image2d_t hp2,
+        __read_only image2d_t hp3,
+        __read_only image2d_t hp4,
+        __read_only image2d_t hp5
+        ,__read_only image2d_t hp6
+        ,__read_only image2d_t hp7
+        ,__read_only image2d_t hp8
+        ,__read_only image2d_t hp9
+    ) {
+    int2 pos = traverseHP2D(get_global_id(0),HP_SIZE,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,hp8,hp9);
+    vstore2(pos, get_global_id(0), positions);
+}
+
+
+__kernel void linkCenterpoints(
+        __read_only image3d_t TDF,
+        __global int * positions,
+        __write_only image3d_t edges
+    ) {
+
+    float maxDistance = 40.0f;
+    float3 xa = convert_float3(vload3(get_global_id(0), positions));
+
+    int2 bestPair;
+    float shortestDistance = maxDistance*2;
+    bool validPairFound = false;
+    for(int i = 0; i < get_global_size(0); i++) {
+        if(i == get_global_id(0)) 
+            continue;
+    float3 xb = convert_float3(vload3(i, positions));
+    for(int j = 0; j < i; j++) {
+        if(j == get_global_id(0) || j == i) 
+            continue;
+    float3 xc = convert_float3(vload3(j, positions));
+
+    // Check distance between xa and xb
+    float db = distance(xa,xb);
+    float dc = distance(xa,xc);
+    if(db+dc < shortestDistance) {
+        // Check angle
+        float3 ab = (xb-xa);
+        float3 ac = (xc-xa);
+        float angle = acos(dot(normalize(ab), normalize(ac)));
+        if(angle < 2.09f) // 120 degrees
+            continue;
+        // Check TDF
+        float avgTDF = 0.0f;
+        for(int k = 0; k < db; k++) {
+            float alpha = (float)k/db;
+            float3 p = xa+ab*alpha;
+            avgTDF += read_imagef(TDF, interpolationSampler, p.xyzz).x;
+        }
+        if(avgTDF / db < 0.5f)
+            continue;
+        avgTDF = 0.0f;
+        for(int k = 0; k < dc; k++) {
+            float alpha = (float)k/dc;
+            float3 p = xa+ac*alpha;
+            avgTDF += read_imagef(TDF, interpolationSampler, p.xyzz).x;
+        }
+        if(avgTDF / dc < 0.5f)
+            continue;
+
+        validPairFound = true;
+        bestPair.x = i;
+        bestPair.y = j;
+        shortestDistance = db+dc;
+    }
+    }}
+
+    if(validPairFound) {
+        // Store edges
+        int4 edge = {get_global_id(0), bestPair.x, bestPair.y, 0};
+        write_imagei(edges, edge, 1);
+    }
+}
+
+
+__kernel void graphComponentLabeling(
+        __global int * edges,
+        volatile __global int * C,
+        __global int * m,
+        volatile __global int * S
+        ) {
+    const int id = get_global_id(0);
+    int3 edgeTuple = vload3(id, edges);
+    const int ca = C[edgeTuple.x];
+    const int cb = C[edgeTuple.y];
+    const int cc = C[edgeTuple.z];
+
+    // Find the smallest C value and store in C in the others
+    if(ca == cb && ca == cc) {
+        return;
+    } else {
+        if(ca <= cb && ca <= cc) {
+            // ca is smallest
+            if(ca != cb) {
+                atomic_min(&C[edgeTuple.y], ca);
+                atomic_inc(&S[ca]);
+            }
+            if(ca != cc) {
+                atomic_min(&C[edgeTuple.z], ca);
+                atomic_inc(&S[ca]);
+            }
+        } else if(cb <= ca && cb <= cc) {
+            // cb is smallest
+            if(cb != ca) {
+                atomic_min(&C[edgeTuple.x], cb);
+                atomic_inc(&S[cb]);
+            }
+            if(cb != cc) {
+                atomic_min(&C[edgeTuple.z], cb);
+                atomic_inc(&S[cb]);
+            }
+        } else {
+            // cc is smallest
+            if(cc != ca) {
+                atomic_min(&C[edgeTuple.x], cc);
+                atomic_inc(&S[cc]);
+            }
+            if(cc != cb) {
+                atomic_min(&C[edgeTuple.y], cc);
+                atomic_inc(&S[cc]);
+            }
+        }
+        m[0] = 1; // register change
+    }
+}
+
+__kernel void removeSmallTrees(
+        __global int * edges,
+        __global int * vertices,
+        __global int * C,
+        __global int * S,
+        __private int minTreeLength,
+        __write_only image3d_t centerlines
+    ) {
+   // Find the edges that are part of the large trees 
+    const int id = get_global_id(0);
+    int3 edgeTuple = vload3(id, edges);
+    const int ca = C[edgeTuple.x];
+    if(S[ca] >= minTreeLength) {
+        const float3 xa = convert_float3(vload3(edgeTuple.x, vertices));
+        const float3 xb = convert_float3(vload3(edgeTuple.y, vertices));
+        const float3 xc = convert_float3(vload3(edgeTuple.z, vertices));
+        int l = round(length(xb-xa));
+        for(int i = 0; i < l; i++) {
+            const float alpha = (float)i/l;
+            write_imagei(centerlines, convert_int3(round(xa+(xb-xa)*alpha)).xyzz, 1);
+        }
+        l = round(length(xc-xa));
+        for(int i = 0; i < l; i++) {
+            const float alpha = (float)i/l;
+            write_imagei(centerlines, convert_int3(round(xa+(xc-xa)*alpha)).xyzz, 1);
+        }
+    }
+}
 
 __kernel void combine(
     __global float * TDFsmall,
@@ -507,6 +892,142 @@ __kernel void circleFittingTDF(
     // Store result
     T[LPOS(pos)] = maxSum;
     Radius[LPOS(pos)] = maxRadius;
+}
+
+#define SQR_MAG(pos) read_imagef(vectorField, sampler, pos).w
+
+__kernel void findCandidateCenterpoints(
+    __read_only image3d_t TDF,
+    __read_only image3d_t radius,
+    __read_only image3d_t vectorField,
+    __write_only image3d_t centerpoints,
+    __write_only image3d_t deletePoints
+    ) {
+    const float TDFlimit = 0.5f;
+    const float thetaLimit = 0.5f;
+    const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
+    write_imagei(deletePoints, pos, 0); // initialize
+    if(read_imagef(TDF, sampler, pos).x < TDFlimit) {
+        write_imagei(centerpoints, pos, 0);
+    } else {
+        const float radii = read_imagef(radius, sampler, pos).x;
+        const int maxD = max(round(radii), 3.0f);
+        bool invalid = false;
+
+        // Find Hessian Matrix
+        float3 Fx, Fy, Fz;
+        Fx = gradientNormalized(vectorField, pos, 0, 1);
+        Fy = gradientNormalized(vectorField, pos, 1, 2);
+        Fz = gradientNormalized(vectorField, pos, 2, 3);
+
+        float Hessian[3][3] = {
+            {Fx.x, Fy.x, Fz.x},
+            {Fy.x, Fy.y, Fz.y},
+            {Fz.x, Fz.y, Fz.z}
+        };
+        
+        // Eigen decomposition
+        float eigenValues[3];
+        float eigenVectors[3][3];
+        eigen_decomposition(Hessian, eigenVectors, eigenValues);
+        const float3 e1 = {eigenVectors[0][0], eigenVectors[1][0], eigenVectors[2][0]};
+
+        for(int a = -maxD; a <= maxD; a++) {
+        for(int b = -maxD; b <= maxD; b++) {
+        for(int c = -maxD; c <= maxD; c++) {
+            if(a == 0 && b == 0 && c == 0)
+                continue;
+            const int4 n = pos + (int4)(a,b,c,0);
+            const float3 r = {a,b,c};
+            const float dp = dot(e1,r);
+            const float3 r_projected = r-e1*dp;
+            const float theta = acos(dot(normalize(r), normalize(r_projected)));
+            if(theta < thetaLimit && length(r) < maxD) {
+                if(SQR_MAG(n) < SQR_MAG(pos)) {
+                    invalid = true;
+                    break;
+                }    
+            }
+        }}}
+
+        if(invalid) {
+            write_imagei(centerpoints, pos, 0);
+        } else {
+            write_imagei(centerpoints, pos, 1);
+        }
+    }
+}
+
+__kernel void filterCandidatePoints(
+        __read_only image3d_t vectorField,
+        __read_only image3d_t radius,
+        __read_only image3d_t centerpoints,
+        __write_only image3d_t deletePoints
+        ) {
+    const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
+    if(read_imagei(centerpoints, sampler, pos).x == 1) {
+        const float currentSQR_MAG = SQR_MAG(pos);
+        const float radii = read_imagef(radius, sampler, pos).x;
+        const int maxD = max(round(radii), 3.0f);
+        const float thetaLimit = 0.5f;
+
+        // Find Hessian Matrix
+        float3 Fx, Fy, Fz;
+        Fx = gradientNormalized(vectorField, pos, 0, 1);
+        Fy = gradientNormalized(vectorField, pos, 1, 2);
+        Fz = gradientNormalized(vectorField, pos, 2, 3);
+
+        float Hessian[3][3] = {
+            {Fx.x, Fy.x, Fz.x},
+            {Fy.x, Fy.y, Fz.y},
+            {Fz.x, Fz.y, Fz.z}
+        };
+        
+        // Eigen decomposition
+        float eigenValues[3];
+        float eigenVectors[3][3];
+        eigen_decomposition(Hessian, eigenVectors, eigenValues);
+        const float3 e1 = {eigenVectors[0][0], eigenVectors[1][0], eigenVectors[2][0]};
+
+        // problem of a large (radius) false centerpoint deleting many other centerpoints
+        // might be remedyed by doing a traversal between the points and see if they are in the same tube or not (check avg TDF)
+        for(int a = -maxD; a <= maxD; a++) {
+        for(int b = -maxD; b <= maxD; b++) {
+        for(int c = -maxD; c <= maxD; c++) {
+            // if marked neighbor found:
+            int4 n = pos + (int4)(a,b,c,0);
+            float3 r = {a,b,c};
+            if(length(r) > maxD)
+                continue;
+            if(read_imagei(centerpoints, sampler, n).x == 1) {
+                const float dp = dot(e1,r);
+                const float3 r_projected = r-e1*dp;
+                const float theta = acos(dot(normalize(r), normalize(r_projected)));
+                if(theta < thetaLimit) {
+                    if(SQR_MAG(n) > currentSQR_MAG) { // pos is more in the center than n
+                        // delete it
+                        write_imagei(deletePoints, pos, 1);
+                    }
+                } else if(length(r) < 2.0f) {
+                    if(SQR_MAG(n) > currentSQR_MAG) { // pos is more in the center than n
+                        // delete it
+                        write_imagei(deletePoints, pos, 1);
+                    }
+                }
+            }
+            // if it is stronger, then current pos is invalid, delete it?
+        }}}
+    }
+}
+
+__kernel void filterCandidatePoints2(
+        __read_only image3d_t deletePoints,
+        __write_only image3d_t centerpoints
+        ) {
+    const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
+    if(read_imagei(deletePoints, sampler, pos).x == 1) {
+        write_imagei(centerpoints, pos, 0);
+    }
 }
 
 

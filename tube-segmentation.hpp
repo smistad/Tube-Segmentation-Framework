@@ -6,12 +6,7 @@
 #include <iostream>
 #include <string>
 #include <unordered_map>
-
-typedef struct OpenCL {
-    cl::Context context;
-    cl::CommandQueue queue;
-    cl::Program program;
-} OpenCL;
+#include "commons.hpp"
 
 typedef struct TubeSegmentation {
     float *Fx, *Fy, *Fz; // The GVF vector field

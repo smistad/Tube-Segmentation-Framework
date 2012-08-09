@@ -8,6 +8,7 @@
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/graph/kruskal_min_spanning_tree.hpp>
 #include <boost/graph/connected_components.hpp>
+#include "histogram-pyramids.hpp"
 
 template <typename T>
 void writeToRaw(T * voxels, std::string filename, int SIZE_X, int SIZE_Y, int SIZE_Z) {
@@ -24,7 +25,7 @@ T * readFromRaw(std::string filename, int SIZE_X, int SIZE_Y, int SIZE_Z) {
     return data;
 }
 
-//#define TIMING
+#define TIMING
 
 #ifdef TIMING
 #define INIT_TIMER auto timerStart = std::chrono::high_resolution_clock::now();
@@ -1533,12 +1534,6 @@ typedef MyGraph::vertex_descriptor VertexID;
 typedef MyGraph::edge_descriptor   EdgeID;
 
 Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, Image3D vectorField, Image3D TDF, Image3D radius) {
-
-    // Find candidate centerpoints
-
-    // Try to link the centerpoints
-
-    // Find most connected components in graph
     const int totalSize = size.x*size.y*size.z;
     const bool no3Dwrite = parameters.count("3d_write") == 0;
 
@@ -1551,6 +1546,220 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
     region[1] = size.y;
     region[2] = size.z;
 
+    // Mark all voxels with TDF above threshold and minimal GVF magnitude (in maxD neighborhood)
+    Kernel candidatesKernel(ocl.program, "findCandidateCenterpoints");
+    Kernel filterCandidatesKernel(ocl.program, "filterCandidatePoints");
+    Kernel filterCandidates2Kernel(ocl.program, "filterCandidatePoints2");
+
+#ifdef TIMING
+    cl::Event startEvent, endEvent;
+    cl_ulong start, end;
+    ocl.queue.enqueueMarker(&startEvent);
+#endif
+    Image3D centerpointsImage = Image3D(
+            ocl.context,
+            CL_MEM_READ_WRITE,
+            ImageFormat(CL_R, CL_SIGNED_INT8),
+            size.x, size.y, size.z
+    );
+    Image3D deletePoints = Image3D(
+            ocl.context,
+            CL_MEM_READ_WRITE,
+            ImageFormat(CL_R, CL_SIGNED_INT8),
+            size.x, size.y, size.z
+    );
+    candidatesKernel.setArg(0, TDF);
+    candidatesKernel.setArg(1, radius);
+    candidatesKernel.setArg(2, vectorField);
+    candidatesKernel.setArg(3, centerpointsImage);
+    candidatesKernel.setArg(4, deletePoints);
+    ocl.queue.enqueueNDRangeKernel(
+            candidatesKernel,
+            NullRange,
+            NDRange(size.x,size.y,size.z),
+            NullRange
+    );
+#ifdef TIMING
+    ocl.queue.enqueueMarker(&endEvent);
+    ocl.queue.finish();
+    startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
+    endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
+    std::cout << "RUNTIME of centerpoint candidates: " << (end-start)*1.0e-6 << " ms" << std::endl;
+#endif 
+
+#ifdef TIMING
+    ocl.queue.enqueueMarker(&startEvent);
+#endif
+    // Construct HP of centerpointsImage
+    HistogramPyramid3D hp(ocl);
+    hp.create(centerpointsImage, size.x, size.y, size.z);
+
+    // Run createPositions kernel
+    Buffer vertices = hp.createPositionBuffer(); 
+#ifdef TIMING
+    ocl.queue.enqueueMarker(&endEvent);
+    ocl.queue.finish();
+    startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
+    endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
+    std::cout << "RUNTIME HP creation and traversal: " << (end-start)*1.0e-6 << " ms" << std::endl;
+#endif 
+
+
+#ifdef TIMING
+    ocl.queue.enqueueMarker(&startEvent);
+#endif
+    // Run linking kernel
+    int sum = hp.getSum();
+    std::cout << "number of vertices detected " << sum << std::endl;
+    int * zeros = new int[sum*sum*sum]();
+    Image3D edgeTuples = Image3D(
+            ocl.context,
+            CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+            ImageFormat(CL_R, CL_SIGNED_INT8),
+            sum, sum, sum,
+            0, 0, zeros
+    );
+    Kernel linkingKernel(ocl.program, "linkCenterpoints");
+    linkingKernel.setArg(0, TDF);
+    linkingKernel.setArg(1, vertices);
+    linkingKernel.setArg(2, edgeTuples);
+    ocl.queue.enqueueNDRangeKernel(
+            linkingKernel,
+            NullRange,
+            NDRange(sum),
+            NullRange
+    );
+#ifdef TIMING
+    ocl.queue.enqueueMarker(&endEvent);
+    ocl.queue.finish();
+    startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
+    endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
+    std::cout << "RUNTIME linking: " << (end-start)*1.0e-6 << " ms" << std::endl;
+#endif 
+
+#ifdef TIMING
+    ocl.queue.enqueueMarker(&startEvent);
+#endif
+
+    // Run HP on edgeTuples
+    HistogramPyramid3D hp2(ocl);
+    hp2.create(edgeTuples, sum, sum, sum);
+    std::cout << "number of edges detected " << hp2.getSum() << std::endl;
+
+    // Run create positions kernel on edges
+    Buffer edges = hp2.createPositionBuffer();
+#ifdef TIMING
+    ocl.queue.enqueueMarker(&endEvent);
+    ocl.queue.finish();
+    startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
+    endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
+    std::cout << "RUNTIME HP creation and traversal: " << (end-start)*1.0e-6 << " ms" << std::endl;
+#endif 
+
+#ifdef TIMING
+    ocl.queue.enqueueMarker(&startEvent);
+#endif
+
+
+    // Do graph component labeling
+    int * Cinit = new int[sum];
+    for(int i = 0; i < sum; i++)
+        Cinit[i] = i;
+    Buffer C = Buffer(
+            ocl.context,
+            CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+            sizeof(int)*sum,
+            Cinit
+    );
+    zeros = new int[sum]();
+    Buffer S = Buffer(
+            ocl.context,
+            CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+            sizeof(int)*sum,
+            zeros
+    );
+    Buffer m = Buffer(
+            ocl.context,
+            CL_MEM_WRITE_ONLY,
+            sizeof(int)
+    );
+
+    // TODO: initialize C and S
+
+    Kernel labelingKernel(ocl.program, "graphComponentLabeling");
+    labelingKernel.setArg(0, edges);
+    labelingKernel.setArg(1, C);
+    labelingKernel.setArg(2, m);
+    labelingKernel.setArg(3, S);
+    int M;
+    int sum2 = hp2.getSum();
+    int i = 0;
+    do {
+        // write 0 to m
+        M = 0;
+        ocl.queue.enqueueWriteBuffer(m, CL_TRUE, 0, sizeof(int), &M);
+
+        ocl.queue.enqueueNDRangeKernel(
+                labelingKernel,
+                NullRange,
+                NDRange(sum2),
+                NullRange
+        );
+
+        // read m from device
+        ocl.queue.enqueueReadBuffer(m, CL_TRUE, 0, sizeof(int), &M);
+        ++i;
+    } while(M == 1);
+    std::cout << "did graph component labeling in " << i << " iterations " << std::endl;
+#ifdef TIMING
+    ocl.queue.enqueueMarker(&endEvent);
+    ocl.queue.finish();
+    startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
+    endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
+    std::cout << "RUNTIME graph component labeling: " << (end-start)*1.0e-6 << " ms" << std::endl;
+#endif 
+
+
+#ifdef TIMING
+    ocl.queue.enqueueMarker(&startEvent);
+#endif
+    // Remove small trees
+    char * czeros = new char[size.x*size.y*size.z]();
+    Image3D centerlines = Image3D(
+            ocl.context,
+            CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+            ImageFormat(CL_R, CL_SIGNED_INT8),
+            size.x, size.y, size.z,
+            0, 0, czeros
+    );
+    // TODO: init centerlines to 0
+    Kernel RSTKernel(ocl.program, "removeSmallTrees");
+    RSTKernel.setArg(0, edges);
+    RSTKernel.setArg(1, vertices);
+    RSTKernel.setArg(2, C);
+    RSTKernel.setArg(3, S);
+    RSTKernel.setArg(4, 20);
+    RSTKernel.setArg(5, centerlines);
+
+    ocl.queue.enqueueNDRangeKernel(
+            RSTKernel,
+            NullRange,
+            NDRange(sum2),
+            NullRange
+    );
+#ifdef TIMING
+    ocl.queue.enqueueMarker(&endEvent);
+    ocl.queue.finish();
+    startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
+    endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
+    std::cout << "RUNTIME of removing small trees: " << (end-start)*1.0e-6 << " ms" << std::endl;
+#endif 
+
+
+    return centerlines;
+
+
+    /*
     TubeSegmentation T;
     T.TDF = new float[totalSize];
     T.radius = new float[totalSize];
@@ -1580,79 +1789,11 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
         }
         delete[] Fs;
     }
- 
-    char * centerpoints = new char[totalSize]();
 
     MyGraph graph;
     boost::property_map<MyGraph, boost::edge_weight_t>::type weightmap = get(boost::edge_weight, graph);
-
-    float thetaLimit = 0.5; 
-    float TDFlimit = 0.5;
-    // Find all points with T.value > TDFlimit
-    std::multimap<float, int3> candidates;
-    for(int z = 0; z < size.z; z++) {
-    for(int y = 0; y < size.y; y++) {
-    for(int x = 0; x < size.x; x++) {
-        int3 n = {x,y,z};
-        if(T.TDF[POS(n)] > TDFlimit) {
-            candidates.insert( std::pair<float,int3>(-T.TDF[POS(n)], n) );
-            //candidates.insert( std::pair<float,int3>(SQR_MAG(n), n) );
-        }
-    }}}  
-    std::cout << "size of candidate stack: " << candidates.size() << std::endl;
-
-    std::multimap<float,int3>::iterator it;
-    for(it = candidates.begin(); it != candidates.end(); it++) {
-        int3 x = it->second;
-        float3 e1 = getTubeDirection(T, x, size); 
-        bool invalid = false;
-        float radius = T.radius[POS(x)];
-        int maxD = round(MAX(radius, 3)); 
-        std::stack<int3> remove;
-        for(int a = -maxD; a <= maxD; a++) {
-        for(int b = -maxD; b <= maxD; b++) {
-        for(int c = -maxD; c <= maxD; c++) {
-            int3 n = {x.x+a,x.y+b,x.z+c};
-            if(!inBounds(n, size)) 
-                continue;
-
-            if(a == 0 && b == 0 && c == 0)
-                continue;
-
-            //if(abs(a) <= 1 && abs(b) <= 1 && abs(c) <= 1)
-                //sum += TS.value[POS(n)];
-
-            float3 r = {(float)(n.x-x.x),(float)(n.y-x.y),(float)(n.z-x.z)};
-            float dp = dot(e1,r);
-            float3 r_projected = {r.x-e1.x*dp,r.y-e1.y*dp,r.z-e1.z*dp};
-            float theta = acos(dot(normalize(r), normalize(r_projected)));
-            if(theta < thetaLimit && sqrt(r.x*r.x+r.y*r.y+r.z*r.z) < maxD) {
-                if(SQR_MAG(n) < SQR_MAG(x)) {
-                    invalid = true;
-                    break;
-                }    
-            }
-            if(centerpoints[POS(n)] == 1 && sqrt(r.x*r.x+r.y*r.y+r.z*r.z) < (float)maxD) { 
-                if(SQR_MAG(n) > SQR_MAG(x) && T.radius[POS(x)] >= T.radius[POS(n)]) { // is x more in "center" than n
-                    // x is better choice than n
-                    remove.push(n);
-                } else if(sqrt(r.x*r.x+r.y*r.y+r.z*r.z) < (float)maxD*0.5){
-                    invalid = true;
-                    break;
-                }
-            }    
-        }}}  
-        if(!invalid) {
-            centerpoints[POS(x)] = 1;
-            while(!remove.empty()) {
-                int3 n = remove.top();
-                remove.pop();
-                centerpoints[POS(n)] = 0;
-            }
-            //VertexID v = boost::add_vertex(graph);
-            //graph[v].pos = x;
-        }
-    }
+    char * centerpoints = new char[totalSize];
+    ocl.queue.enqueueReadImage(centerpointsImage, CL_TRUE, offset, region, 0, 0, centerpoints);
 
     for(int z = 0; z < size.z; z++) {
     for(int y = 0; y < size.y; y++) {
@@ -1785,11 +1926,9 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
             boost::tie(edge2, ok) = boost::add_edge(*vertexIt, bestPair2, graph);
             if(ok)
                 weightmap[edge2] = avgGVF2 / maxDistance;
-            /*
-            centerpoints2[POS(xa)] = 2;
-            centerpoints2[POS(bestPair1)] = 2;
-            centerpoints2[POS(bestPair2)] = 2;
-            */
+            //centerpoints2[POS(xa)] = 2;
+            //centerpoints2[POS(bestPair1)] = 2;
+            //centerpoints2[POS(bestPair2)] = 2;
         }
 
     }
@@ -1809,7 +1948,7 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
             maxCC = i;
         validTree[i] = ccSize[i] > minTreeLength;
     }
-    std::cout << "largest connected MST is of size: " << ccSize[maxCC] << std::endl;
+    std::cout << "largest connected tree is of size: " << ccSize[maxCC] << std::endl;
 
     for(int i = 0; i < c.size(); i++) {
         if(c[i] == maxCC) {
@@ -1830,8 +1969,8 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
                     n.z = round(x.z);
                     centerpoints2[POS(n)] = 1;
                 }
-                centerpoints2[POS(xb)] = 2;
-                centerpoints2[POS(xa)] = 2;
+                //centerpoints2[POS(xb)] = 2;
+                //centerpoints2[POS(xa)] = 2;
             }
 
         } else {
@@ -1849,6 +1988,7 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
     );
 
     return centerlineImage;
+    */
 }
 
 TubeSegmentation runCircleFittingAndNewCenterlineAlg(OpenCL ocl, cl::Image3D dataset, SIPL::int3 size, paramList parameters) {
