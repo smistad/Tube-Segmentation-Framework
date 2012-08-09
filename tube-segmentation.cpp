@@ -1548,6 +1548,7 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
 
     // Mark all voxels with TDF above threshold and minimal GVF magnitude (in maxD neighborhood)
     Kernel candidatesKernel(ocl.program, "findCandidateCenterpoints");
+    Kernel candidates2Kernel(ocl.program, "findCandidateCenterpoints2");
     Kernel filterCandidatesKernel(ocl.program, "filterCandidatePoints");
     Kernel filterCandidates2Kernel(ocl.program, "filterCandidatePoints2");
 
@@ -1562,23 +1563,24 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
             ImageFormat(CL_R, CL_SIGNED_INT8),
             size.x, size.y, size.z
     );
-    Image3D deletePoints = Image3D(
-            ocl.context,
-            CL_MEM_READ_WRITE,
-            ImageFormat(CL_R, CL_SIGNED_INT8),
-            size.x, size.y, size.z
-    );
+
     candidatesKernel.setArg(0, TDF);
-    candidatesKernel.setArg(1, radius);
-    candidatesKernel.setArg(2, vectorField);
-    candidatesKernel.setArg(3, centerpointsImage);
-    candidatesKernel.setArg(4, deletePoints);
+    candidatesKernel.setArg(1, centerpointsImage);
     ocl.queue.enqueueNDRangeKernel(
             candidatesKernel,
             NullRange,
             NDRange(size.x,size.y,size.z),
             NullRange
     );
+
+    HistogramPyramid3D hp3(ocl);
+    hp3.create(centerpointsImage, size.x, size.y, size.z);
+
+    candidates2Kernel.setArg(0, TDF);
+    candidates2Kernel.setArg(1, radius);
+    candidates2Kernel.setArg(2, vectorField);
+    candidates2Kernel.setArg(3, centerpointsImage);
+    hp3.traverse(candidates2Kernel, 4);
 #ifdef TIMING
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();

@@ -892,17 +892,45 @@ __kernel void circleFittingTDF(
 
 #define SQR_MAG(pos) read_imagef(vectorField, sampler, pos).w
 
+
 __kernel void findCandidateCenterpoints(
+    __read_only image3d_t TDF,
+    __write_only image3d_t centerpoints
+    ) {
+    const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
+    float TDFlimit = 0.5f;
+    if(read_imagef(TDF, sampler, pos).x < TDFlimit) {
+        write_imagei(centerpoints, pos, 0);
+    } else {
+        write_imagei(centerpoints, pos, 1);
+    }
+}
+
+__kernel void findCandidateCenterpoints2(
     __read_only image3d_t TDF,
     __read_only image3d_t radius,
     __read_only image3d_t vectorField,
     __write_only image3d_t centerpoints,
-    __write_only image3d_t deletePoints
+    __private int HP_SIZE,
+    __private int sum,
+        __read_only image3d_t hp0, // Largest HP
+        __read_only image3d_t hp1,
+        __read_only image3d_t hp2,
+        __read_only image3d_t hp3,
+        __read_only image3d_t hp4,
+        __read_only image3d_t hp5
+        ,__read_only image3d_t hp6
+        ,__read_only image3d_t hp7
+        ,__read_only image3d_t hp8
+        ,__read_only image3d_t hp9
     ) {
+    int target = get_global_id(0);
+    if(target >= sum)
+        target = 0;
+    int4 pos = traverseHP3D(target,HP_SIZE,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,hp8,hp9);
+
     const float TDFlimit = 0.5f;
     const float thetaLimit = 0.5f;
-    const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
-    write_imagei(deletePoints, pos, 0); // initialize
     if(read_imagef(TDF, sampler, pos).x < TDFlimit) {
         write_imagei(centerpoints, pos, 0);
     } else {

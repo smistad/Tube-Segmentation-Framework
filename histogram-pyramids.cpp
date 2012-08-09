@@ -200,12 +200,14 @@ void HistogramPyramid2D::traverse(Kernel kernel, int arguments) {
 }
 
 void HistogramPyramid3D::traverse(Kernel kernel, int arguments) {
+    kernel.setArg(arguments, this->size);
+    kernel.setArg(arguments+1, this->sum);
     for(int i = 0; i < 10; i++) {
         int l = i;
         if(i >= HPlevels.size())
             // if not using all levels, just add the last levels as dummy arguments
             l = HPlevels.size()-1;
-        kernel.setArg(i+arguments, HPlevels[l]);
+        kernel.setArg(i+arguments+2, HPlevels[l]);
     }
 
     int global_work_size = sum + 64 - (sum - 64*(sum / 64));
@@ -234,9 +236,7 @@ Buffer HistogramPyramid3D::createPositionBuffer() {
     );
     Kernel kernel(ocl.program, "createPositions3D");
     kernel.setArg(0, (*positions));
-    kernel.setArg(1, this->size);
-    kernel.setArg(2, this->sum);
-    this->traverse(kernel, 3);
+    this->traverse(kernel, 1);
     return *positions;
 }
 
