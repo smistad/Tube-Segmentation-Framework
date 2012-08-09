@@ -8,11 +8,11 @@ __constant sampler_t hpSampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP
 
 #define LPOS(pos) pos.x+pos.y*get_global_size(0)+pos.z*get_global_size(0)*get_global_size(1)
 
-__constant int3 cubeOffsets2D[4] = {
-    {0, 0, 0},
-    {1, 0, 0},
-    {0, 1, 0},
-    {1, 1, 0}
+__constant int4 cubeOffsets2D[4] = {
+    {0, 0, 0, 0},
+    {0, 1, 0, 0},
+    {1, 0, 0, 0},
+    {1, 1, 0, 0},
 };
 
 __constant int4 cubeOffsets[8] = {
@@ -65,29 +65,26 @@ int3 scanHPLevel2D(int target, __read_only image2d_t hp, int3 current) {
 
     int4 neighbors = {
         read_imagei(hp, hpSampler, current.xy).x,
-        read_imagei(hp, hpSampler, current.xy + (int2)(1,0)).x,
         read_imagei(hp, hpSampler, current.xy + (int2)(0,1)).x,
-        read_imagei(hp, hpSampler, current.xy + (int2)(1,1)).x
+        read_imagei(hp, hpSampler, current.xy + (int2)(1,0)).x,
+        0
     };
 
-    int acc = current.s2 + neighbors.s0;
+    int acc = current.z + neighbors.s0;
     int4 cmp;
     cmp.s0 = acc <= target;
     acc += neighbors.s1;
     cmp.s1 = acc <= target;
     acc += neighbors.s2;
     cmp.s2 = acc <= target;
-    acc += neighbors.s3;
-    cmp.s3 = 0;
 
-    current += cubeOffsets2D[(cmp.s0+cmp.s1+cmp.s2+cmp.s3)];
-    current.s0 = current.s0*2;
-    current.s1 = current.s1*2;
-    current.s2 = current.s2 +
+    current += cubeOffsets2D[(cmp.s0+cmp.s1+cmp.s2)].xyz;
+    current.x = current.x*2;
+    current.y = current.y*2;
+    current.z = current.z +
     cmp.s0*neighbors.s0 +
     cmp.s1*neighbors.s1 +
-    cmp.s2*neighbors.s2 +
-    cmp.s3*neighbors.s3; 
+    cmp.s2*neighbors.s2; 
     return current;
 
 }
@@ -103,7 +100,7 @@ int4 scanHPLevel3D(int target, __read_only image3d_t hp, int4 current) {
         read_imagei(hp, hpSampler, current + cubeOffsets[4]).x,
         read_imagei(hp, hpSampler, current + cubeOffsets[5]).x,
         read_imagei(hp, hpSampler, current + cubeOffsets[6]).x,
-        read_imagei(hp, hpSampler, current + cubeOffsets[7]).x
+        0
     };
 
     int acc = current.s3 + neighbors.s0;
@@ -121,10 +118,9 @@ int4 scanHPLevel3D(int target, __read_only image3d_t hp, int4 current) {
     cmp.s5 = acc <= target;
     acc += neighbors.s6;
     cmp.s6 = acc <= target;
-    cmp.s7 = 0;
 
 
-    current += cubeOffsets[(cmp.s0+cmp.s1+cmp.s2+cmp.s3+cmp.s4+cmp.s5+cmp.s6+cmp.s7)];
+    current += cubeOffsets[(cmp.s0+cmp.s1+cmp.s2+cmp.s3+cmp.s4+cmp.s5+cmp.s6)];
     current.s0 = current.s0*2;
     current.s1 = current.s1*2;
     current.s2 = current.s2*2;
@@ -135,8 +131,7 @@ int4 scanHPLevel3D(int target, __read_only image3d_t hp, int4 current) {
     cmp.s3*neighbors.s3 +
     cmp.s4*neighbors.s4 +
     cmp.s5*neighbors.s5 +
-    cmp.s6*neighbors.s6 +
-    cmp.s7*neighbors.s7;
+    cmp.s6*neighbors.s6; 
     return current;
 
 }
@@ -214,6 +209,7 @@ int2 traverseHP2D(
 __kernel void createPositions3D(
         __global int * positions,
         __private int HP_SIZE,
+        __private int sum,
         __read_only image3d_t hp0, // Largest HP
         __read_only image3d_t hp1,
         __read_only image3d_t hp2,
@@ -225,13 +221,17 @@ __kernel void createPositions3D(
         ,__read_only image3d_t hp8
         ,__read_only image3d_t hp9
     ) {
-    int4 pos = traverseHP3D(get_global_id(0),HP_SIZE,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,hp8,hp9);
-    vstore3(pos.xyz, get_global_id(0), positions);
+    int target = get_global_id(0);
+    if(target >= sum)
+        target = 0;
+    int4 pos = traverseHP3D(target,HP_SIZE,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,hp8,hp9);
+    vstore3(pos.xyz, target, positions);
 }
 
 __kernel void createPositions2D(
         __global int * positions,
         __private int HP_SIZE,
+        __private int sum,
         __read_only image2d_t hp0, // Largest HP
         __read_only image2d_t hp1,
         __read_only image2d_t hp2,
@@ -243,15 +243,17 @@ __kernel void createPositions2D(
         ,__read_only image2d_t hp8
         ,__read_only image2d_t hp9
     ) {
-    int2 pos = traverseHP2D(get_global_id(0),HP_SIZE,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,hp8,hp9);
-    vstore2(pos, get_global_id(0), positions);
+    int target = get_global_id(0);
+    if(target >= sum)
+        target = 0;
+    int2 pos = traverseHP2D(target,HP_SIZE,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,hp8,hp9);
+    vstore2(pos, target, positions);
 }
-
 
 __kernel void linkCenterpoints(
         __read_only image3d_t TDF,
         __global int * positions,
-        __write_only image3d_t edges
+        __write_only image2d_t edges
     ) {
 
     float maxDistance = 40.0f;
@@ -306,11 +308,12 @@ __kernel void linkCenterpoints(
 
     if(validPairFound) {
         // Store edges
-        int4 edge = {get_global_id(0), bestPair.x, bestPair.y, 0};
+        int2 edge = {get_global_id(0), bestPair.x};
+        int2 edge2 = {get_global_id(0), bestPair.y};
         write_imagei(edges, edge, 1);
+        write_imagei(edges, edge2, 1);
     }
 }
-
 
 __kernel void graphComponentLabeling(
         __global int * edges,
@@ -319,45 +322,22 @@ __kernel void graphComponentLabeling(
         volatile __global int * S
         ) {
     const int id = get_global_id(0);
-    int3 edgeTuple = vload3(id, edges);
-    const int ca = C[edgeTuple.x];
-    const int cb = C[edgeTuple.y];
-    const int cc = C[edgeTuple.z];
+    int2 edge = vload2(id, edges);
+    const int ca = C[edge.x];
+    const int cb = C[edge.y];
 
     // Find the smallest C value and store in C in the others
-    if(ca == cb && ca == cc) {
+    if(ca == cb) {
         return;
     } else {
-        if(ca <= cb && ca <= cc) {
+        if(ca < cb) {
             // ca is smallest
-            if(ca != cb) {
-                atomic_min(&C[edgeTuple.y], ca);
-                atomic_inc(&S[ca]);
-            }
-            if(ca != cc) {
-                atomic_min(&C[edgeTuple.z], ca);
-                atomic_inc(&S[ca]);
-            }
-        } else if(cb <= ca && cb <= cc) {
-            // cb is smallest
-            if(cb != ca) {
-                atomic_min(&C[edgeTuple.x], cb);
-                atomic_inc(&S[cb]);
-            }
-            if(cb != cc) {
-                atomic_min(&C[edgeTuple.z], cb);
-                atomic_inc(&S[cb]);
-            }
+            atomic_min(&C[edge.y], ca);
+            atomic_inc(&S[ca]);
         } else {
-            // cc is smallest
-            if(cc != ca) {
-                atomic_min(&C[edgeTuple.x], cc);
-                atomic_inc(&S[cc]);
-            }
-            if(cc != cb) {
-                atomic_min(&C[edgeTuple.y], cc);
-                atomic_inc(&S[cc]);
-            }
+            // cb is smallest
+            atomic_min(&C[edge.x], cb);
+            atomic_inc(&S[cb]);
         }
         m[0] = 1; // register change
     }
@@ -373,21 +353,15 @@ __kernel void removeSmallTrees(
     ) {
    // Find the edges that are part of the large trees 
     const int id = get_global_id(0);
-    int3 edgeTuple = vload3(id, edges);
-    const int ca = C[edgeTuple.x];
+    int2 edge = vload2(id, edges);
+    const int ca = C[edge.x];
     if(S[ca] >= minTreeLength) {
-        const float3 xa = convert_float3(vload3(edgeTuple.x, vertices));
-        const float3 xb = convert_float3(vload3(edgeTuple.y, vertices));
-        const float3 xc = convert_float3(vload3(edgeTuple.z, vertices));
+        const float3 xa = convert_float3(vload3(edge.x, vertices));
+        const float3 xb = convert_float3(vload3(edge.y, vertices));
         int l = round(length(xb-xa));
         for(int i = 0; i < l; i++) {
             const float alpha = (float)i/l;
             write_imagei(centerlines, convert_int3(round(xa+(xb-xa)*alpha)).xyzz, 1);
-        }
-        l = round(length(xc-xa));
-        for(int i = 0; i < l; i++) {
-            const float alpha = (float)i/l;
-            write_imagei(centerlines, convert_int3(round(xa+(xc-xa)*alpha)).xyzz, 1);
         }
     }
 }

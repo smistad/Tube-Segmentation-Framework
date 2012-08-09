@@ -1611,13 +1611,13 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
     // Run linking kernel
     int sum = hp.getSum();
     std::cout << "number of vertices detected " << sum << std::endl;
-    int * zeros = new int[sum*sum*sum]();
-    Image3D edgeTuples = Image3D(
+    int * zeros = new int[sum*sum]();
+    Image2D edgeTuples = Image2D(
             ocl.context,
             CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
             ImageFormat(CL_R, CL_SIGNED_INT8),
-            sum, sum, sum,
-            0, 0, zeros
+            sum, sum,
+            0, zeros
     );
     Kernel linkingKernel(ocl.program, "linkCenterpoints");
     linkingKernel.setArg(0, TDF);
@@ -1642,8 +1642,8 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
 #endif
 
     // Run HP on edgeTuples
-    HistogramPyramid3D hp2(ocl);
-    hp2.create(edgeTuples, sum, sum, sum);
+    HistogramPyramid2D hp2(ocl);
+    hp2.create(edgeTuples, sum, sum);
     std::cout << "number of edges detected " << hp2.getSum() << std::endl;
 
     // Run create positions kernel on edges
