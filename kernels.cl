@@ -250,9 +250,29 @@ __kernel void createPositions2D(
     vstore2(pos, target, positions);
 }
 
+/*
+__kernel void createEdgeTuples(
+        __global int const * restrict positions,
+        __write_only image2d_t edges
+    ) {
+    float3 xa = convert_float3(vload3(get_global_id(0), positions));
+    float3 xb = convert_float3(vload3(get_global_id(1), positions));
+    float3 xc = convert_float3(vload3(get_global_id(2), positions));
+
+    float db = distance(xa,xb);
+    float dc = distance(xa,xc);
+    
+    if(db < maxDistance && dc < maxDistance) {
+        write_imagei(edges, (int4)(get_global_id(0), get_global_id(1), get_global_id(2),0), 1);
+    } else {
+        write_imagei(edges, (int4)(get_global_id(0), get_global_id(1), get_global_id(2),0), 0);
+    }
+}
+*/
+
 __kernel void linkCenterpoints(
         __read_only image3d_t TDF,
-        __global int * positions,
+        __global int const * restrict positions,
         __write_only image2d_t edges
     ) {
 
@@ -266,13 +286,15 @@ __kernel void linkCenterpoints(
         if(i == get_global_id(0)) 
             continue;
     float3 xb = convert_float3(vload3(i, positions));
+    float db = distance(xa,xb);
+    if(db >= maxDistance || db >= shortestDistance)
+        continue;
     for(int j = 0; j < i; j++) {
         if(j == get_global_id(0) || j == i) 
             continue;
     float3 xc = convert_float3(vload3(j, positions));
 
     // Check distance between xa and xb
-    float db = distance(xa,xb);
     float dc = distance(xa,xc);
     if(db+dc < shortestDistance) {
         // Check angle
@@ -316,7 +338,7 @@ __kernel void linkCenterpoints(
 }
 
 __kernel void graphComponentLabeling(
-        __global int * edges,
+        __global int const * restrict edges,
         volatile __global int * C,
         __global int * m,
         volatile __global int * S
@@ -344,10 +366,10 @@ __kernel void graphComponentLabeling(
 }
 
 __kernel void removeSmallTrees(
-        __global int * edges,
-        __global int * vertices,
-        __global int * C,
-        __global int * S,
+        __global int const * restrict edges,
+        __global int const * restrict vertices,
+        __global int const * restrict C,
+        __global int const * restrict S,
         __private int minTreeLength,
         __write_only image3d_t centerlines
     ) {
