@@ -26,6 +26,7 @@ void HistogramPyramid3D::create(Image3D baseLevel, int sizeX, int sizeY, int siz
             i++;
         size = pow(2, i);
     }
+    std::cout << "3D HP size: " << size << std::endl;
 
     // Create all levels
     HPlevels.push_back(baseLevel);
@@ -112,6 +113,7 @@ void HistogramPyramid2D::create(Image2D baseLevel, int sizeX, int sizeY) {
             i++;
         size = pow(2, i);
     }
+    std::cout << "2D HP size: " << size << std::endl;
 
     // Create all levels
     HPlevels.push_back(baseLevel);
@@ -187,7 +189,7 @@ void HistogramPyramid2D::create(Image2D baseLevel, int sizeX, int sizeY) {
 }
 
 void HistogramPyramid2D::traverse(Kernel kernel, int arguments) {
-    for(int i = 0; i < 10; i++) {
+    for(int i = 0; i < 11; i++) {
         int l = i;
         if(i >= HPlevels.size())
             // if not using all levels, just add the last levels as dummy arguments

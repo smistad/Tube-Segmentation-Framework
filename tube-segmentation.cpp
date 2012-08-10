@@ -1378,7 +1378,6 @@ Image3D runInverseGradientSegmentation(OpenCL ocl, Image3D volume, Image3D vecto
         growKernel.setArg(0, volume);
         growKernel.setArg(2, volume2);
         while(stopGrowing == 0) {
-            // run for at least 10 iterations
             if(i > minimumIterations) {
                 stopGrowing = 1;
                 ocl.queue.enqueueWriteBuffer(stop, CL_TRUE, 0, sizeof(int), &stopGrowing);
@@ -1414,7 +1413,6 @@ Image3D runInverseGradientSegmentation(OpenCL ocl, Image3D volume, Image3D vecto
             NullRange
         );
         while(stopGrowing == 0) {
-            // run for at least 10 iterations
             if(i > minimumIterations) {
                 stopGrowing = 1;
                 ocl.queue.enqueueWriteBuffer(stop, CL_TRUE, 0, sizeof(int), &stopGrowing);
@@ -1482,7 +1480,14 @@ Image3D runInverseGradientSegmentation(OpenCL ocl, Image3D volume, Image3D vecto
             region
         );
     } else {
-        Image3D volume2 = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_SIGNED_INT8), size.x, size.y, size.z);
+        char * zeros = new char[size.x*size.y*size.z]();
+        Image3D volume2 = Image3D(
+                ocl.context, 
+                CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, 
+                ImageFormat(CL_R, CL_SIGNED_INT8), 
+                size.x, size.y, size.z,
+                0, 0, zeros
+        );
         dilateKernel.setArg(0, volume);
         dilateKernel.setArg(1, volume2);
        
@@ -1549,8 +1554,6 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
     // Mark all voxels with TDF above threshold and minimal GVF magnitude (in maxD neighborhood)
     Kernel candidatesKernel(ocl.program, "findCandidateCenterpoints");
     Kernel candidates2Kernel(ocl.program, "findCandidateCenterpoints2");
-    Kernel filterCandidatesKernel(ocl.program, "filterCandidatePoints");
-    Kernel filterCandidates2Kernel(ocl.program, "filterCandidatePoints2");
 
 #ifdef TIMING
     cl::Event startEvent, endEvent;
@@ -1575,12 +1578,40 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
 
     HistogramPyramid3D hp3(ocl);
     hp3.create(centerpointsImage, size.x, size.y, size.z);
-
+    char * initZeros = new char[size.x*size.y*size.z]();
+    Image3D centerpointsImage2 = Image3D(
+            ocl.context,
+            CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+            ImageFormat(CL_R, CL_SIGNED_INT8),
+            size.x, size.y, size.z,
+            0,0,initZeros
+    );
+    Image3D centerpointsImage3 = Image3D(
+            ocl.context,
+            CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+            ImageFormat(CL_R, CL_SIGNED_INT8),
+            size.x, size.y, size.z,
+            0,0,initZeros
+    );
     candidates2Kernel.setArg(0, TDF);
     candidates2Kernel.setArg(1, radius);
     candidates2Kernel.setArg(2, vectorField);
-    candidates2Kernel.setArg(3, centerpointsImage);
+    candidates2Kernel.setArg(3, centerpointsImage2);
     hp3.traverse(candidates2Kernel, 4);
+
+    Kernel ddKernel(ocl.program, "dd");
+    ddKernel.setArg(0, vectorField);
+    ddKernel.setArg(1, centerpointsImage2);
+    ddKernel.setArg(2, centerpointsImage3);
+    int cubeSize = 5;
+    ddKernel.setArg(3, cubeSize);
+    ocl.queue.enqueueNDRangeKernel(
+            ddKernel,
+            NullRange,
+            NDRange(ceil(size.x/cubeSize),ceil(size.y/cubeSize),ceil(size.z/cubeSize)),
+            NullRange
+    );
+
 #ifdef TIMING
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
@@ -1594,7 +1625,7 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
 #endif
     // Construct HP of centerpointsImage
     HistogramPyramid3D hp(ocl);
-    hp.create(centerpointsImage, size.x, size.y, size.z);
+    hp.create(centerpointsImage3, size.x, size.y, size.z);
 
     // Run createPositions kernel
     Buffer vertices = hp.createPositionBuffer(); 
@@ -1613,13 +1644,13 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
     // Run linking kernel
     int sum = hp.getSum();
     std::cout << "number of vertices detected " << sum << std::endl;
-    int * zeros = new int[sum*sum]();
+    char * initZeros2 = new char[sum*sum]();
     Image2D edgeTuples = Image2D(
             ocl.context,
             CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
             ImageFormat(CL_R, CL_SIGNED_INT8),
             sum, sum,
-            0, zeros
+            0, initZeros2
     );
     Kernel linkingKernel(ocl.program, "linkCenterpoints");
     linkingKernel.setArg(0, TDF);
@@ -1631,6 +1662,17 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
             NDRange(sum),
             NullRange
     );
+    /*
+    cl::size_t<3> region2;
+    region2[0] = sum;
+    region2[1] = sum;
+    region2[2] = 1;
+    char * test = new char[sum*sum]();
+    ocl.queue.enqueueReadImage(edgeTuples,CL_TRUE,offset,region2,0,0,test);
+    for(int i = 0; i < sum*sum; i++) 
+        std::cout << (int)test[i] << std::endl;
+    //return centerpointsImage3;
+    */
 #ifdef TIMING
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
@@ -1673,13 +1715,7 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
             sizeof(int)*sum,
             Cinit
     );
-    zeros = new int[sum]();
-    Buffer S = Buffer(
-            ocl.context,
-            CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
-            sizeof(int)*sum,
-            zeros
-    );
+
     Buffer m = Buffer(
             ocl.context,
             CL_MEM_WRITE_ONLY,
@@ -1692,7 +1728,6 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
     labelingKernel.setArg(0, edges);
     labelingKernel.setArg(1, C);
     labelingKernel.setArg(2, m);
-    labelingKernel.setArg(3, S);
     int M;
     int sum2 = hp2.getSum();
     int i = 0;
@@ -1734,13 +1769,32 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
             size.x, size.y, size.z,
             0, 0, czeros
     );
+    int * zeros = new int[sum]();
+    Buffer S = Buffer(
+            ocl.context,
+            CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+            sizeof(int)*sum,
+            zeros
+    );
+    Kernel calculateTreeLengthKernel(ocl.program, "calculateTreeLength");
+    calculateTreeLengthKernel.setArg(0, C);
+    calculateTreeLengthKernel.setArg(1, S);
+
+    ocl.queue.enqueueNDRangeKernel(
+            calculateTreeLengthKernel,
+            NullRange,
+            NDRange(sum),
+            NullRange
+    );
+
     // TODO: init centerlines to 0
     Kernel RSTKernel(ocl.program, "removeSmallTrees");
     RSTKernel.setArg(0, edges);
     RSTKernel.setArg(1, vertices);
     RSTKernel.setArg(2, C);
     RSTKernel.setArg(3, S);
-    RSTKernel.setArg(4, 20);
+    int minTreeLength = 4; // nodes
+    RSTKernel.setArg(4, minTreeLength);
     RSTKernel.setArg(5, centerlines);
 
     ocl.queue.enqueueNDRangeKernel(

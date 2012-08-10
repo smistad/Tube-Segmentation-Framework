@@ -183,9 +183,12 @@ int2 traverseHP2D(
     image2d_t hp6,
     image2d_t hp7,
     image2d_t hp8,
-    image2d_t hp9
+    image2d_t hp9,
+    image2d_t hp10
     ) {
     int3 position = {0,0,0};
+    if(HP_SIZE > 1024)
+    position = scanHPLevel2D(target, hp10, position);
     if(HP_SIZE > 512)
     position = scanHPLevel2D(target, hp9, position);
     if(HP_SIZE > 256)
@@ -242,11 +245,12 @@ __kernel void createPositions2D(
         ,__read_only image2d_t hp7
         ,__read_only image2d_t hp8
         ,__read_only image2d_t hp9
+        ,__read_only image2d_t hp10
     ) {
     int target = get_global_id(0);
     if(target >= sum)
         target = 0;
-    int2 pos = traverseHP2D(target,HP_SIZE,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,hp8,hp9);
+    int2 pos = traverseHP2D(target,HP_SIZE,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,hp8,hp9,hp10);
     vstore2(pos, target, positions);
 }
 
@@ -275,8 +279,8 @@ __kernel void linkCenterpoints(
         __global int const * restrict positions,
         __write_only image2d_t edges
     ) {
-
-    float maxDistance = 40.0f;
+    float maxDistance = 20.0f;
+    float minAvgTDF = 0.5f;
     float3 xa = convert_float3(vload3(get_global_id(0), positions));
 
     int2 bestPair;
@@ -310,7 +314,7 @@ __kernel void linkCenterpoints(
             float3 p = xa+ab*alpha;
             avgTDF += read_imagef(TDF, interpolationSampler, p.xyzz).x;
         }
-        if(avgTDF / db < 0.5f)
+        if(avgTDF / db < minAvgTDF)
             continue;
         avgTDF = 0.0f;
         for(int k = 0; k < dc; k++) {
@@ -318,7 +322,7 @@ __kernel void linkCenterpoints(
             float3 p = xa+ac*alpha;
             avgTDF += read_imagef(TDF, interpolationSampler, p.xyzz).x;
         }
-        if(avgTDF / dc < 0.5f)
+        if(avgTDF / dc < minAvgTDF)
             continue;
 
         validPairFound = true;
@@ -340,8 +344,7 @@ __kernel void linkCenterpoints(
 __kernel void graphComponentLabeling(
         __global int const * restrict edges,
         volatile __global int * C,
-        __global int * m,
-        volatile __global int * S
+        __global int * m
         ) {
     const int id = get_global_id(0);
     int2 edge = vload2(id, edges);
@@ -355,14 +358,20 @@ __kernel void graphComponentLabeling(
         if(ca < cb) {
             // ca is smallest
             atomic_min(&C[edge.y], ca);
-            atomic_inc(&S[ca]);
         } else {
             // cb is smallest
             atomic_min(&C[edge.x], cb);
-            atomic_inc(&S[cb]);
         }
         m[0] = 1; // register change
     }
+}
+
+__kernel void calculateTreeLength(
+    __global int const * restrict C,
+    volatile __global int * S
+    ) {
+    const int id = get_global_id(0);
+    atomic_inc(&S[C[id]]);
 }
 
 __kernel void removeSmallTrees(
@@ -498,9 +507,6 @@ __kernel void grow(
 	}
 }
 }
-        
-
-
 
 float3 gradientNormalized(
         __read_only image3d_t volume,   // Volume to perform gradient on
@@ -718,7 +724,7 @@ __kernel void erode(
             }
         }
     }
-    	write_imagei(result, pos, keep ? 100 : 0);
+    	write_imagei(result, pos, keep ? 1 : 0);
     } else {
     	write_imagei(result, pos, 0);
     }
@@ -893,12 +899,57 @@ __kernel void circleFittingTDF(
 #define SQR_MAG(pos) read_imagef(vectorField, sampler, pos).w
 
 
+__kernel void dd(
+    __read_only image3d_t vectorField,
+    __read_only image3d_t centerpointCandidates,
+    __write_only image3d_t centerpoints,
+    __private int cubeSize
+    ) {
+
+    int4 bestPos;
+    float bestGVF = 99.0f;
+    int4 readPos = {
+        get_global_id(0)*cubeSize,
+        get_global_id(1)*cubeSize,
+        get_global_id(2)*cubeSize,
+        0
+    };
+    bool found = false;
+    for(int a = 0; a < cubeSize; a++) {
+    for(int b = 0; b < cubeSize; b++) {
+    for(int c = 0; c < cubeSize; c++) {
+        int4 pos = readPos + (int4)(a,b,c,0);
+        if(read_imagei(centerpointCandidates, sampler, pos).x == 1) {
+            float GVF = read_imagef(vectorField, sampler, pos).w;
+            if(GVF < bestGVF) {
+                found = true;
+                bestGVF = GVF;
+                bestPos = pos;
+            }
+        }
+    }}}
+    if(found) {
+        /*
+        int4 writePos = {
+            get_global_id(0),
+            get_global_id(1),
+            get_global_id(2),
+            0
+        };
+        bestPos.w = 1;
+        */
+        write_imagei(centerpoints, bestPos, 1);
+    }
+}
+
+
+
 __kernel void findCandidateCenterpoints(
     __read_only image3d_t TDF,
     __write_only image3d_t centerpoints
     ) {
     const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
-    float TDFlimit = 0.5f;
+    float TDFlimit = 0.4f;
     if(read_imagef(TDF, sampler, pos).x < TDFlimit) {
         write_imagei(centerpoints, pos, 0);
     } else {
@@ -929,131 +980,53 @@ __kernel void findCandidateCenterpoints2(
         target = 0;
     int4 pos = traverseHP3D(target,HP_SIZE,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,hp8,hp9);
 
-    const float TDFlimit = 0.5f;
     const float thetaLimit = 0.5f;
-    if(read_imagef(TDF, sampler, pos).x < TDFlimit) {
+    const float radii = read_imagef(radius, sampler, pos).x;
+    const int maxD = max(round(radii), 3.0f);
+    bool invalid = false;
+
+    // Find Hessian Matrix
+    float3 Fx, Fy, Fz;
+    Fx = gradientNormalized(vectorField, pos, 0, 1);
+    Fy = gradientNormalized(vectorField, pos, 1, 2);
+    Fz = gradientNormalized(vectorField, pos, 2, 3);
+
+    float Hessian[3][3] = {
+        {Fx.x, Fy.x, Fz.x},
+        {Fy.x, Fy.y, Fz.y},
+        {Fz.x, Fz.y, Fz.z}
+    };
+    
+    // Eigen decomposition
+    float eigenValues[3];
+    float eigenVectors[3][3];
+    eigen_decomposition(Hessian, eigenVectors, eigenValues);
+    const float3 e1 = {eigenVectors[0][0], eigenVectors[1][0], eigenVectors[2][0]};
+
+    for(int a = -maxD; a <= maxD; a++) {
+    for(int b = -maxD; b <= maxD; b++) {
+    for(int c = -maxD; c <= maxD; c++) {
+        if(a == 0 && b == 0 && c == 0)
+            continue;
+        const int4 n = pos + (int4)(a,b,c,0);
+        const float3 r = {a,b,c};
+        const float dp = dot(e1,r);
+        const float3 r_projected = r-e1*dp;
+        const float theta = acos(dot(normalize(r), normalize(r_projected)));
+        if(theta < thetaLimit && length(r) < maxD) {
+            if(SQR_MAG(n) < SQR_MAG(pos)) {
+                invalid = true;
+                break;
+            }    
+        }
+    }}}
+
+    if(invalid) {
         write_imagei(centerpoints, pos, 0);
     } else {
-        const float radii = read_imagef(radius, sampler, pos).x;
-        const int maxD = max(round(radii), 3.0f);
-        bool invalid = false;
-
-        // Find Hessian Matrix
-        float3 Fx, Fy, Fz;
-        Fx = gradientNormalized(vectorField, pos, 0, 1);
-        Fy = gradientNormalized(vectorField, pos, 1, 2);
-        Fz = gradientNormalized(vectorField, pos, 2, 3);
-
-        float Hessian[3][3] = {
-            {Fx.x, Fy.x, Fz.x},
-            {Fy.x, Fy.y, Fz.y},
-            {Fz.x, Fz.y, Fz.z}
-        };
-        
-        // Eigen decomposition
-        float eigenValues[3];
-        float eigenVectors[3][3];
-        eigen_decomposition(Hessian, eigenVectors, eigenValues);
-        const float3 e1 = {eigenVectors[0][0], eigenVectors[1][0], eigenVectors[2][0]};
-
-        for(int a = -maxD; a <= maxD; a++) {
-        for(int b = -maxD; b <= maxD; b++) {
-        for(int c = -maxD; c <= maxD; c++) {
-            if(a == 0 && b == 0 && c == 0)
-                continue;
-            const int4 n = pos + (int4)(a,b,c,0);
-            const float3 r = {a,b,c};
-            const float dp = dot(e1,r);
-            const float3 r_projected = r-e1*dp;
-            const float theta = acos(dot(normalize(r), normalize(r_projected)));
-            if(theta < thetaLimit && length(r) < maxD) {
-                if(SQR_MAG(n) < SQR_MAG(pos)) {
-                    invalid = true;
-                    break;
-                }    
-            }
-        }}}
-
-        if(invalid) {
-            write_imagei(centerpoints, pos, 0);
-        } else {
-            write_imagei(centerpoints, pos, 1);
-        }
+        write_imagei(centerpoints, pos, 1);
     }
 }
-
-__kernel void filterCandidatePoints(
-        __read_only image3d_t vectorField,
-        __read_only image3d_t radius,
-        __read_only image3d_t centerpoints,
-        __write_only image3d_t deletePoints
-        ) {
-    const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
-    if(read_imagei(centerpoints, sampler, pos).x == 1) {
-        const float currentSQR_MAG = SQR_MAG(pos);
-        const float radii = read_imagef(radius, sampler, pos).x;
-        const int maxD = max(round(radii), 3.0f);
-        const float thetaLimit = 0.5f;
-
-        // Find Hessian Matrix
-        float3 Fx, Fy, Fz;
-        Fx = gradientNormalized(vectorField, pos, 0, 1);
-        Fy = gradientNormalized(vectorField, pos, 1, 2);
-        Fz = gradientNormalized(vectorField, pos, 2, 3);
-
-        float Hessian[3][3] = {
-            {Fx.x, Fy.x, Fz.x},
-            {Fy.x, Fy.y, Fz.y},
-            {Fz.x, Fz.y, Fz.z}
-        };
-        
-        // Eigen decomposition
-        float eigenValues[3];
-        float eigenVectors[3][3];
-        eigen_decomposition(Hessian, eigenVectors, eigenValues);
-        const float3 e1 = {eigenVectors[0][0], eigenVectors[1][0], eigenVectors[2][0]};
-
-        // problem of a large (radius) false centerpoint deleting many other centerpoints
-        // might be remedyed by doing a traversal between the points and see if they are in the same tube or not (check avg TDF)
-        for(int a = -maxD; a <= maxD; a++) {
-        for(int b = -maxD; b <= maxD; b++) {
-        for(int c = -maxD; c <= maxD; c++) {
-            // if marked neighbor found:
-            int4 n = pos + (int4)(a,b,c,0);
-            float3 r = {a,b,c};
-            if(length(r) > maxD)
-                continue;
-            if(read_imagei(centerpoints, sampler, n).x == 1) {
-                const float dp = dot(e1,r);
-                const float3 r_projected = r-e1*dp;
-                const float theta = acos(dot(normalize(r), normalize(r_projected)));
-                if(theta < thetaLimit) {
-                    if(SQR_MAG(n) > currentSQR_MAG) { // pos is more in the center than n
-                        // delete it
-                        write_imagei(deletePoints, pos, 1);
-                    }
-                } else if(length(r) < 2.0f) {
-                    if(SQR_MAG(n) > currentSQR_MAG) { // pos is more in the center than n
-                        // delete it
-                        write_imagei(deletePoints, pos, 1);
-                    }
-                }
-            }
-            // if it is stronger, then current pos is invalid, delete it?
-        }}}
-    }
-}
-
-__kernel void filterCandidatePoints2(
-        __read_only image3d_t deletePoints,
-        __write_only image3d_t centerpoints
-        ) {
-    const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
-    if(read_imagei(deletePoints, sampler, pos).x == 1) {
-        write_imagei(centerpoints, pos, 0);
-    }
-}
-
 
 __kernel void GVF3DIteration(__read_only image3d_t init_vector_field, __read_only image3d_t read_vector_field, __write_only image3d_t write_vector_field, __private float mu) {
     int4 writePos = {
