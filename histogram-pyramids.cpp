@@ -216,6 +216,41 @@ void HistogramPyramid3D::traverse(Kernel kernel, int arguments) {
     ocl.queue.enqueueNDRangeKernel(kernel, NullRange, NDRange(global_work_size), NDRange(64));
 }
 
+void HistogramPyramid3D::update() {
+    // Do construction iterations
+    Kernel constructHPLevelKernel(ocl.program, "constructHPLevel3D");
+    int levelSize = size;
+    for(int i = 0; i < log2((float)size)-1; i++) {
+        constructHPLevelKernel.setArg(0, HPlevels[i]);
+        constructHPLevelKernel.setArg(1, HPlevels[i+1]);
+        levelSize /= 2;
+        ocl.queue.enqueueNDRangeKernel(
+            constructHPLevelKernel,
+            NullRange,
+            NDRange(levelSize, levelSize, levelSize),
+            NullRange
+        );
+    }
+
+    // Get total sum and return it
+    int * sum = new int[8];
+    cl::size_t<3> offset;
+    offset[0] = 0;
+    offset[1] = 0;
+    offset[2] = 0;
+    cl::size_t<3> region;
+    region[0] = 2;
+    region[1] = 2;
+    region[2] = 2;
+    ocl.queue.enqueueReadImage(HPlevels[HPlevels.size()-1], CL_TRUE, offset, region, 0, 0, sum);
+    this->sum = sum[0] + sum[1] + sum[2] + sum[3] + sum[4] + sum[5] + sum[6] + sum[7];
+}
+
+void HistogramPyramid3D::update(Image3D newBaseLevel) {
+    HPlevels[0] = newBaseLevel;
+    this->update();
+}
+
 Buffer HistogramPyramid2D::createPositionBuffer() {
     Buffer * positions = new Buffer(
             ocl.context,
