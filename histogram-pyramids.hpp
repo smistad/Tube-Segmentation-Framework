@@ -32,7 +32,7 @@ class HistogramPyramid3D : public HistogramPyramid {
         void create(cl::Image3D, int, int, int);
         cl::Buffer createPositionBuffer();
         void traverse(cl::Kernel, int);
-        void update(cl::Image3D);
+        void update(cl::Image3D, int, int, int);
         void update();
     private:
         std::vector<cl::Image3D> HPlevels;

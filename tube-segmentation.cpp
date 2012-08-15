@@ -1519,26 +1519,7 @@ Image3D runInverseGradientSegmentation(OpenCL ocl, Image3D volume, Image3D vecto
     return volume;
 }
 
-struct Vertex {
-    int3 pos;
-};
-
-struct Edge {
-    float cost;
-};
-
-typedef boost::adjacency_list<  // adjacency_list is a template depending on :
-        boost::listS,               //  The container used for egdes : here, std::list.
-        boost::vecS,                //  The container used for vertices: here, std::vector.
-        boost::undirectedS,           //  directed or undirected edges ?.
-        Vertex,                     //  The type that describes a Vertex.
-        boost::property< boost::edge_weight_t, float >                         //  The type that describes an Edge
-        > MyGraph;
-
-typedef MyGraph::vertex_descriptor VertexID;
-typedef MyGraph::edge_descriptor   EdgeID;
-
-Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, Image3D vectorField, Image3D TDF, Image3D radius) {
+Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, Image3D vectorField, Image3D TDF, Image3D radius, Image3D intensity) {
     const int totalSize = size.x*size.y*size.z;
     const bool no3Dwrite = parameters.count("3d_write") == 0;
 
@@ -1601,10 +1582,11 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
 
     Kernel ddKernel(ocl.program, "dd");
     ddKernel.setArg(0, vectorField);
-    ddKernel.setArg(1, centerpointsImage2);
-    ddKernel.setArg(2, centerpointsImage3);
-    int cubeSize = 5;
-    ddKernel.setArg(3, cubeSize);
+    ddKernel.setArg(1, TDF);
+    ddKernel.setArg(2, centerpointsImage2);
+    ddKernel.setArg(3, centerpointsImage3);
+    int cubeSize = 4;
+    ddKernel.setArg(4, cubeSize);
     ocl.queue.enqueueNDRangeKernel(
             ddKernel,
             NullRange,
@@ -1626,9 +1608,26 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
     // Construct HP of centerpointsImage
     HistogramPyramid3D hp(ocl);
     hp.create(centerpointsImage3, size.x, size.y, size.z);
+    int sum = hp.getSum();
+    std::cout << "number of vertices detected " << sum << std::endl;
 
     // Run createPositions kernel
     Buffer vertices = hp.createPositionBuffer(); 
+
+    // TEST
+    
+    /*
+    Kernel testKernel(ocl.program, "calculateBestPaths");
+    testKernel.setArg(0, TDF);
+    testKernel.setArg(1, vertices);
+    ocl.queue.enqueueNDRangeKernel(
+            testKernel,
+            NullRange,
+            NDRange(hp.getSum()),
+            NullRange
+    );
+
+    */
 #ifdef TIMING
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
@@ -1642,8 +1641,6 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
     ocl.queue.enqueueMarker(&startEvent);
 #endif
     // Run linking kernel
-    int sum = hp.getSum();
-    std::cout << "number of vertices detected " << sum << std::endl;
     char * initZeros2 = new char[sum*sum]();
     Image2D edgeTuples = Image2D(
             ocl.context,
@@ -1654,8 +1651,10 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
     );
     Kernel linkingKernel(ocl.program, "linkCenterpoints");
     linkingKernel.setArg(0, TDF);
-    linkingKernel.setArg(1, vertices);
-    linkingKernel.setArg(2, edgeTuples);
+    linkingKernel.setArg(1, radius);
+    linkingKernel.setArg(2, vertices);
+    linkingKernel.setArg(3, edgeTuples);
+    linkingKernel.setArg(4, intensity);
     ocl.queue.enqueueNDRangeKernel(
             linkingKernel,
             NullRange,
@@ -1793,7 +1792,7 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
     RSTKernel.setArg(1, vertices);
     RSTKernel.setArg(2, C);
     RSTKernel.setArg(3, S);
-    int minTreeLength = 4; // nodes
+    int minTreeLength = 20; // nodes
     RSTKernel.setArg(4, minTreeLength);
     RSTKernel.setArg(5, centerlines);
 
@@ -2065,7 +2064,7 @@ TubeSegmentation runCircleFittingAndNewCenterlineAlg(OpenCL ocl, cl::Image3D dat
     region[2] = size.z;
 
     runCircleFittingMethod(ocl, dataset, size, parameters, vectorField, TDF, radius);
-    Image3D centerline = runNewCenterlineAlg(ocl, size, parameters, vectorField, TDF, radius);
+    Image3D centerline = runNewCenterlineAlg(ocl, size, parameters, vectorField, TDF, radius, dataset);
     TS.centerline = new char[totalSize];
     ocl.queue.enqueueReadImage(centerline, CL_TRUE, offset, region, 0, 0, TS.centerline);
     Image3D segmentation = runInverseGradientSegmentation(ocl, centerline, vectorField, size, parameters);

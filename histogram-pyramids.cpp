@@ -246,8 +246,16 @@ void HistogramPyramid3D::update() {
     this->sum = sum[0] + sum[1] + sum[2] + sum[3] + sum[4] + sum[5] + sum[6] + sum[7];
 }
 
-void HistogramPyramid3D::update(Image3D newBaseLevel) {
-    HPlevels[0] = newBaseLevel;
+void HistogramPyramid3D::update(Image3D newBaseLevel, int sizeX, int sizeY, int sizeZ) {
+    cl::size_t<3> offset;
+    offset[0] = 0;
+    offset[1] = 0;
+    offset[2] = 0;
+    cl::size_t<3> region;
+    region[0] = sizeX;
+    region[1] = sizeY;
+    region[2] = sizeZ;
+    ocl.queue.enqueueCopyImage(newBaseLevel, HPlevels[0], offset, offset, region);
     this->update();
 }
 

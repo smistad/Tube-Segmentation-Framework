@@ -1,4 +1,4 @@
-//#pragma OPENCL EXTENSION cl_amd_printf : enable
+#pragma OPENCL EXTENSION cl_amd_printf : enable
 #pragma OPENCL EXTENSION cl_khr_3d_image_writes : enable
 
 
@@ -254,33 +254,69 @@ __kernel void createPositions2D(
     vstore2(pos, target, positions);
 }
 
-/*
-__kernel void createEdgeTuples(
-        __global int const * restrict positions,
-        __write_only image2d_t edges
+__kernel void calculateBestPaths(
+        __read_only image3d_t TDF,
+        __global int const * restrict positions
     ) {
-    float3 xa = convert_float3(vload3(get_global_id(0), positions));
-    float3 xb = convert_float3(vload3(get_global_id(1), positions));
-    float3 xc = convert_float3(vload3(get_global_id(2), positions));
+    float maxDistance = 10;
+    int3 xa = (vload3(get_global_id(0), positions));
+    for(int i = 0; i < get_global_size(0); i++) {
+        if(i == get_global_id(0)) 
+            continue;
+    int3 xb = (vload3(i, positions));
+    int db = round(distance(convert_float3(xa),convert_float3(xb)));
+    if(db >= maxDistance)
+        continue;
 
-    float db = distance(xa,xb);
-    float dc = distance(xa,xc);
-    
-    if(db < maxDistance && dc < maxDistance) {
-        write_imagei(edges, (int4)(get_global_id(0), get_global_id(1), get_global_id(2),0), 1);
-    } else {
-        write_imagei(edges, (int4)(get_global_id(0), get_global_id(1), get_global_id(2),0), 0);
+    float A[10];
+    float B[10];
+    float C[10];
+    // Initialize A, B and C
+    for(int i = 0; i < 100; i++) {
+        A[i] = 0; B[i] = 0; C[i] = 0;
     }
+    A[0] = 1;
+
+    // x = 0, y = 0, z = 0 is startPos
+    int3 startPos = xa.x <= xb.x ? xa : xb;
+    int3 stopPos = xa.x <= xb.x ? xb : xa;
+    int3 l = (int3)(stopPos.x-startPos.x,stopPos.y-startPos.y,stopPos.z-startPos.z);
+    int3 s = convert_int3(sign(convert_float3(l)));
+    printf("l: %d %d %d\n", l.x, l.y,l.z);
+    printf("s: %d %d %d\n", s.x, s.y,s.z);
+
+    // Fill table
+    bool found = false;
+    for(int x = 0; x < l.x; x++) {
+    for(int y = 0; y < abs(l.y) && !found; y++) {
+    for(int z = 0; z < abs(l.z) && !found; z++) {
+
+    int3 readPos = startPos+(int3)(x,y,z)*s;
+    printf("r: %d %d %d\n", readPos.x, readPos.y,readPos.z);
+    float t = (max(max(A[(x)], B[(y)]), C[(z)]) + read_imagef(TDF, sampler, readPos.xyzz).x)*0.5f;
+    A[(x)] = t;
+    B[(y)] = t;
+    C[(z)] = t;
+    if(readPos.x == stopPos.x && readPos.y == stopPos.y && readPos.z == stopPos.z) {
+        // Stop
+        found = true;
+        printf("%f\n", t);
+        break;
+    }
+    }}}
+
+
+    } // End for 
 }
-*/
 
 __kernel void linkCenterpoints(
         __read_only image3d_t TDF,
+        __read_only image3d_t radius,
         __global int const * restrict positions,
-        __write_only image2d_t edges
+        __write_only image2d_t edges,
+        __read_only image3d_t intensity
     ) {
-    float maxDistance = 20.0f;
-    float minAvgTDF = 0.5f;
+    float maxDistance = 25.0f;
     float3 xa = convert_float3(vload3(get_global_id(0), positions));
 
     int2 bestPair;
@@ -290,7 +326,7 @@ __kernel void linkCenterpoints(
         if(i == get_global_id(0)) 
             continue;
     float3 xb = convert_float3(vload3(i, positions));
-    float db = distance(xa,xb);
+    int db = round(distance(xa,xb));
     if(db >= maxDistance || db >= shortestDistance)
         continue;
     for(int j = 0; j < i; j++) {
@@ -299,31 +335,110 @@ __kernel void linkCenterpoints(
     float3 xc = convert_float3(vload3(j, positions));
 
     // Check distance between xa and xb
-    float dc = distance(xa,xc);
+    int dc = round(distance(xa,xc));
+    if(dc >= maxDistance)
+        continue;
+
+    float minTDF = 0.0f;
+    float minAvgTDF = 0.5f;
+    float maxVarTDF = 1.005f;
+    float maxIntensity = 1.3f;
+    float maxAvgIntensity = 1.2f;
+    float maxVarIntensity = 1.005f;
+
     if(db+dc < shortestDistance) {
         // Check angle
         float3 ab = (xb-xa);
         float3 ac = (xc-xa);
         float angle = acos(dot(normalize(ab), normalize(ac)));
-        if(angle < 2.09f) // 120 degrees
+        if(angle < 2.0f) // 120 degrees
             continue;
         // Check TDF
         float avgTDF = 0.0f;
-        for(int k = 0; k < db; k++) {
+        float avgIntensity = 0.0f;
+        bool invalid = false;
+        //printf("%d - %d \n", db, dc);
+        for(int k = 0; k <= db; k++) {
             float alpha = (float)k/db;
             float3 p = xa+ab*alpha;
-            avgTDF += read_imagef(TDF, interpolationSampler, p.xyzz).x;
+            float t = read_imagef(TDF, interpolationSampler, p.xyzz).x; 
+            float i = read_imagef(intensity, interpolationSampler, p.xyzz).x; 
+            avgIntensity += i;
+            avgTDF += t;
+            if(i > maxIntensity || t < minTDF) {
+                invalid = true;
+                break;
+            }
         }
-        if(avgTDF / db < minAvgTDF)
+        if(invalid)
             continue;
+        avgTDF /= db+1;
+        avgIntensity /= db+1;
+        if(avgTDF < minAvgTDF)
+            continue;
+        if(avgIntensity > maxAvgIntensity)
+            continue;
+
+        float varTDF = 0.0f;
+        float varIntensity = 0.0f;
+        for(int k = 0; k <= db; k++) {
+            float alpha = (float)k/db;
+            float3 p = xa+ab*alpha;
+            float t = read_imagef(TDF, interpolationSampler, p.xyzz).x; 
+            float i = read_imagef(intensity, interpolationSampler, p.xyzz).x; 
+            varIntensity += (i-avgIntensity)*(i-avgIntensity);
+            varTDF += (t-avgTDF)*(t-avgTDF);
+            if(i > maxIntensity || t < minTDF) {
+                invalid = true;
+                break;
+            }
+        }
+        if(invalid)
+            continue;
+
+        if(db > 4 && varIntensity / (db+1) > maxVarTDF)
+            continue;
+        if(db > 4 && varTDF / (db+1) > maxVarIntensity)
+            continue;
+
         avgTDF = 0.0f;
-        for(int k = 0; k < dc; k++) {
+        avgIntensity = 0.0f;
+        varTDF = 0.0f;
+        varIntensity = 0.0f;
+        for(int k = 0; k <= dc; k++) {
             float alpha = (float)k/dc;
             float3 p = xa+ac*alpha;
-            avgTDF += read_imagef(TDF, interpolationSampler, p.xyzz).x;
+            float t = read_imagef(TDF, interpolationSampler, p.xyzz).x; 
+            float i = read_imagef(intensity, interpolationSampler, p.xyzz).x; 
+            avgTDF += t;
+            avgIntensity += i;
         }
-        if(avgTDF / dc < minAvgTDF)
+        avgTDF /= dc+1;
+        avgIntensity /= dc+1;
+
+        if(avgTDF < minAvgTDF)
             continue;
+
+        if(avgIntensity > maxAvgIntensity)
+            continue;
+
+        for(int k = 0; k <= db; k++) {
+            float alpha = (float)k/db;
+            float3 p = xa+ab*alpha;
+            float t = read_imagef(TDF, interpolationSampler, p.xyzz).x; 
+            float i = read_imagef(intensity, interpolationSampler, p.xyzz).x; 
+            varIntensity += (i-avgIntensity)*(i-avgIntensity);
+            varTDF += (t-avgTDF)*(t-avgTDF);
+        }
+
+        if(dc > 4 && varIntensity / (dc+1) > maxVarIntensity)
+            continue;
+        if(dc > 4 && varTDF / (dc+1) > maxVarTDF)
+            continue;
+        //printf("avg i: %f\n", avgIntensity );
+        //printf("avg tdf: %f\n", avgTDF );
+        //printf("var i: %f\n", varIntensity / (dc+1));
+        //printf("var tdf: %f\n", varTDF / (dc+1));
 
         validPairFound = true;
         bestPair.x = i;
@@ -367,8 +482,8 @@ __kernel void graphComponentLabeling(
 }
 
 __kernel void calculateTreeLength(
-    __global int const * restrict C,
-    volatile __global int * S
+        __global int const * restrict C,
+        volatile __global int * S
     ) {
     const int id = get_global_id(0);
     atomic_inc(&S[C[id]]);
@@ -901,13 +1016,14 @@ __kernel void circleFittingTDF(
 
 __kernel void dd(
     __read_only image3d_t vectorField,
+    __read_only image3d_t TDF,
     __read_only image3d_t centerpointCandidates,
     __write_only image3d_t centerpoints,
     __private int cubeSize
     ) {
 
     int4 bestPos;
-    float bestGVF = 99.0f;
+    float bestGVF = 0.0f;
     int4 readPos = {
         get_global_id(0)*cubeSize,
         get_global_id(1)*cubeSize,
@@ -920,8 +1036,8 @@ __kernel void dd(
     for(int c = 0; c < cubeSize; c++) {
         int4 pos = readPos + (int4)(a,b,c,0);
         if(read_imagei(centerpointCandidates, sampler, pos).x == 1) {
-            float GVF = read_imagef(vectorField, sampler, pos).w;
-            if(GVF < bestGVF) {
+            float GVF = read_imagef(TDF, sampler, pos).x;
+            if(GVF > bestGVF) {
                 found = true;
                 bestGVF = GVF;
                 bestPos = pos;
@@ -929,15 +1045,6 @@ __kernel void dd(
         }
     }}}
     if(found) {
-        /*
-        int4 writePos = {
-            get_global_id(0),
-            get_global_id(1),
-            get_global_id(2),
-            0
-        };
-        bestPos.w = 1;
-        */
         write_imagei(centerpoints, bestPos, 1);
     }
 }
@@ -949,7 +1056,7 @@ __kernel void findCandidateCenterpoints(
     __write_only image3d_t centerpoints
     ) {
     const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
-    float TDFlimit = 0.4f;
+    float TDFlimit = 0.5f;
     if(read_imagef(TDF, sampler, pos).x < TDFlimit) {
         write_imagei(centerpoints, pos, 0);
     } else {
@@ -982,7 +1089,7 @@ __kernel void findCandidateCenterpoints2(
 
     const float thetaLimit = 0.5f;
     const float radii = read_imagef(radius, sampler, pos).x;
-    const int maxD = max(round(radii), 3.0f);
+    const int maxD = max(min(round(radii), 5.0f), 1.0f);
     bool invalid = false;
 
     // Find Hessian Matrix
