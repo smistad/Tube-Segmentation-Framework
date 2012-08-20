@@ -873,6 +873,7 @@ TubeSegmentation runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 
     const bool no3Dwrite = parameters.count("3d_write") == 0;
     const float MU = getParamf(parameters, "gvf-mu", 0.05);
     const int vectorSign = getParamstr(parameters, "mode", "black") == "black" ? -1 : 1;
+    const float smallBlurSigma = getParamf(parameters, "small-blur", 0);
 
 
     cl::size_t<3> offset;
@@ -897,24 +898,25 @@ TubeSegmentation runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 
     int maskSize = 0;
     float * mask;// = createBlurMask(0.5, &maskSize);
     Buffer blurMask;
+    Image3D blurredVolume = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_FLOAT), size.x, size.y, size.z);
+    if(smallBlurSigma > 0) {
+        mask = createBlurMask(smallBlurSigma, &maskSize);
+        blurMask = Buffer(ocl.context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(float)*(maskSize*2+1)*(maskSize*2+1)*(maskSize*2+1), mask);
 
-
-    /*
-    // Run blurVolumeWithGaussian on processedVolume
-    blurVolumeWithGaussianKernel.setArg(0, imageVolume);
-    blurVolumeWithGaussianKernel.setArg(1, blurredVolume);
-    blurVolumeWithGaussianKernel.setArg(2, maskSize);
-    blurVolumeWithGaussianKernel.setArg(3, blurMask);
-    queue.enqueueNDRangeKernel(
-            blurVolumeWithGaussianKernel,
-            NullRange,
-            NDRange(size.x,size.y,size.z),
-            NullRange
-    );
-
-    // Copy buffer to image
-    queue.enqueueCopyBufferToImage(blurredVolume, imageVolume, 0, offset, region);
-    */
+        // Run blurVolumeWithGaussian on processedVolume
+        blurVolumeWithGaussianKernel.setArg(0, dataset);
+        blurVolumeWithGaussianKernel.setArg(1, blurredVolume);
+        blurVolumeWithGaussianKernel.setArg(2, maskSize);
+        blurVolumeWithGaussianKernel.setArg(3, blurMask);
+        ocl.queue.enqueueNDRangeKernel(
+                blurVolumeWithGaussianKernel,
+                NullRange,
+                NDRange(size.x,size.y,size.z),
+                NullRange
+        );
+    } else {
+        blurredVolume = dataset;
+    }
 
 #ifdef TIMING
     ocl.queue.enqueueMarker(&startEvent);
@@ -925,7 +927,7 @@ TubeSegmentation runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 
         vectorField = Image3D(ocl.context, CL_MEM_READ_ONLY, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
  
         // Run create vector field
-        createVectorFieldKernel.setArg(0, dataset);
+        createVectorFieldKernel.setArg(0, blurredVolume);
         createVectorFieldKernel.setArg(1, vectorFieldBuffer);
         createVectorFieldKernel.setArg(2, Fmax);
         createVectorFieldKernel.setArg(3, vectorSign);
@@ -950,7 +952,7 @@ TubeSegmentation runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 
         vectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
      
         // Run create vector field
-        createVectorFieldKernel.setArg(0, dataset);
+        createVectorFieldKernel.setArg(0, blurredVolume);
         createVectorFieldKernel.setArg(1, vectorField);
         createVectorFieldKernel.setArg(2, Fmax);
         createVectorFieldKernel.setArg(3, vectorSign);
@@ -1003,7 +1005,6 @@ TubeSegmentation runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 
 #ifdef TIMING
     ocl.queue.enqueueMarker(&startEvent);
 #endif
-    Image3D blurredVolume = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_FLOAT), size.x, size.y, size.z);
 
     mask = createBlurMask(1.0, &maskSize);
     blurMask = Buffer(ocl.context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(float)*(maskSize*2+1)*(maskSize*2+1)*(maskSize*2+1), mask);

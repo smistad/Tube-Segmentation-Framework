@@ -46,7 +46,6 @@ int main(int argc, char ** argv) {
     SIPL::Volume<SIPL::float3> * result = new SIPL::Volume<SIPL::float3>(size.x, size.y, size.z);
     for(int i = 0; i < result->getTotalSize(); i++) {
         SIPL::float3 v;
-        //v.x = sqrt(TS.Fx[i]*TS.Fx[i]+TS.Fy[i]*TS.Fy[i]+TS.Fz[i]*TS.Fz[i]);//TS.TDF[i];
         v.x = TS.TDF[i];
         v.y = 0;
         v.z = 0;
@@ -54,7 +53,6 @@ int main(int argc, char ** argv) {
         v.z = TS.segmentation[i] ? 1.0:0.0;
         result->set(i,v);
     }
-    result->show();
     result->showMIP();
 
     return 0;
