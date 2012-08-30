@@ -578,7 +578,7 @@ __kernel void dd(
     __read_only image3d_t vectorField,
     __read_only image3d_t TDF,
     __read_only image3d_t centerpointCandidates,
-    __write_only image3d_t centerpoints,
+    __global char * centerpoints,
     __private int cubeSize
     ) {
 
@@ -605,7 +605,7 @@ __kernel void dd(
         }
     }}}
     if(found) {
-        write_imagei(centerpoints, bestPos, 1);
+        centerpoints[LPOS(bestPos)] = 1;
     }
 }
 
@@ -613,14 +613,14 @@ __kernel void dd(
 
 __kernel void findCandidateCenterpoints(
     __read_only image3d_t TDF,
-    __write_only image3d_t centerpoints
+    __global char * centerpoints
     ) {
     const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
     float TDFlimit = 0.5f;
     if(read_imagef(TDF, sampler, pos).x < TDFlimit) {
-        write_imagei(centerpoints, pos, 0);
+        centerpoints[LPOS(pos)] = 0;
     } else {
-        write_imagei(centerpoints, pos, 1);
+        centerpoints[LPOS(pos)] = 1;
     }
 }
 
@@ -628,7 +628,7 @@ __kernel void findCandidateCenterpoints2(
     __read_only image3d_t TDF,
     __read_only image3d_t radius,
     __read_only image3d_t vectorField,
-    __write_only image3d_t centerpoints,
+    __global char * centerpoints,
     __private int HP_SIZE,
     __private int sum,
         __read_only image3d_t hp0, // Largest HP
@@ -689,9 +689,9 @@ __kernel void findCandidateCenterpoints2(
     }}}
 
     if(invalid) {
-        write_imagei(centerpoints, pos, 0);
+        centerpoints[LPOS(pos)] = 0;
     } else {
-        write_imagei(centerpoints, pos, 1);
+        centerpoints[LPOS(pos)] = 1;
     }
 }
 

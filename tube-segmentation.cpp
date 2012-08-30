@@ -1520,6 +1520,7 @@ Image3D runInverseGradientSegmentation(OpenCL ocl, Image3D volume, Image3D vecto
 Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, Image3D vectorField, Image3D TDF, Image3D radius, Image3D intensity) {
     const int totalSize = size.x*size.y*size.z;
     const bool no3Dwrite = parameters.count("3d_write") == 0;
+    const int cubeSize = getParami(parameters, "cube-size", 4);
 
     cl::size_t<3> offset;
     offset[0] = 0;
@@ -1546,18 +1547,44 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
             size.x, size.y, size.z
     );
 
-    candidatesKernel.setArg(0, TDF);
-    candidatesKernel.setArg(1, centerpointsImage);
-    ocl.queue.enqueueNDRangeKernel(
-            candidatesKernel,
-            NullRange,
-            NDRange(size.x,size.y,size.z),
-            NullRange
-    );
+    if(no3Dwrite) {
+        Buffer centerpoints = Buffer(
+                ocl.context,
+                CL_MEM_READ_WRITE,
+                sizeof(char)*totalSize
+        );
+        candidatesKernel.setArg(0, TDF);
+        candidatesKernel.setArg(1, centerpoints);
+        ocl.queue.enqueueNDRangeKernel(
+                candidatesKernel,
+                NullRange,
+                NDRange(size.x,size.y,size.z),
+                NullRange
+        );
+
+        ocl.queue.enqueueCopyBufferToImage(
+            centerpoints,
+            centerpointsImage,
+            0,
+            offset,
+            region
+        );
+
+    } else {
+        candidatesKernel.setArg(0, TDF);
+        candidatesKernel.setArg(1, centerpointsImage);
+        ocl.queue.enqueueNDRangeKernel(
+                candidatesKernel,
+                NullRange,
+                NDRange(size.x,size.y,size.z),
+                NullRange
+        );
+    }
 
     HistogramPyramid3D hp3(ocl);
     hp3.create(centerpointsImage, size.x, size.y, size.z);
-    char * initZeros = new char[size.x*size.y*size.z]();
+
+    char * initZeros = new char[totalSize]();
     Image3D centerpointsImage2 = Image3D(
             ocl.context,
             CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
@@ -1575,21 +1602,66 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
     candidates2Kernel.setArg(0, TDF);
     candidates2Kernel.setArg(1, radius);
     candidates2Kernel.setArg(2, vectorField);
-    candidates2Kernel.setArg(3, centerpointsImage2);
-    hp3.traverse(candidates2Kernel, 4);
+    if(no3Dwrite) {
+        Buffer centerpoints2 = Buffer(
+                ocl.context,
+                CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+                sizeof(char)*totalSize,
+                initZeros
+        );
+        candidates2Kernel.setArg(3, centerpoints2);
+        hp3.traverse(candidates2Kernel, 4);
+        ocl.queue.enqueueCopyBufferToImage(
+            centerpoints2,
+            centerpointsImage2,
+            0,
+            offset,
+            region
+        );
+    } else {
+        candidates2Kernel.setArg(3, centerpointsImage2);
+        hp3.traverse(candidates2Kernel, 4);
+    }
+    return centerpointsImage2;
 
     ddKernel.setArg(0, vectorField);
     ddKernel.setArg(1, TDF);
     ddKernel.setArg(2, centerpointsImage2);
-    ddKernel.setArg(3, centerpointsImage3);
-    int cubeSize = 4;
     ddKernel.setArg(4, cubeSize);
-    ocl.queue.enqueueNDRangeKernel(
-            ddKernel,
-            NullRange,
-            NDRange(ceil(size.x/cubeSize),ceil(size.y/cubeSize),ceil(size.z/cubeSize)),
-            NullRange
-    );
+    if(no3Dwrite) {
+        Buffer centerpoints3 = Buffer(
+                ocl.context,
+                CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+                sizeof(char)*totalSize,
+                initZeros
+        );
+        ddKernel.setArg(3, centerpoints3);
+        ocl.queue.enqueueNDRangeKernel(
+                ddKernel,
+                NullRange,
+                NDRange(ceil(size.x/cubeSize),ceil(size.y/cubeSize),ceil(size.z/cubeSize)),
+                NullRange
+        );
+
+        ocl.queue.enqueueCopyBufferToImage(
+            centerpoints3,
+            centerpointsImage3,
+            0,
+            offset,
+            region
+        );
+
+    } else {
+        ddKernel.setArg(3, centerpointsImage3);
+        ocl.queue.enqueueNDRangeKernel(
+                ddKernel,
+                NullRange,
+                NDRange(ceil(size.x/cubeSize),ceil(size.y/cubeSize),ceil(size.z/cubeSize)),
+                NullRange
+        );
+    }
+
+    //return centerpointsImage3;
 
 #ifdef TIMING
     ocl.queue.enqueueMarker(&endEvent);
