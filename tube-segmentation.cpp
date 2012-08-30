@@ -1617,8 +1617,6 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
         hp3.traverse(candidates2Kernel, 4);
     }
 
-    return centerpointsImage2;
-
     Image3D centerpointsImage3 = Image3D(
             ocl.context,
             CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
@@ -1662,8 +1660,6 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
                 NullRange
         );
     }
-
-    //return centerpointsImage3;
 
 #ifdef TIMING
     ocl.queue.enqueueMarker(&endEvent);

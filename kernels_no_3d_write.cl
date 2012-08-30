@@ -605,7 +605,7 @@ __kernel void dd(
         }
     }}}
     if(found) {
-        centerpoints[LPOS(bestPos)] = 1;
+        centerpoints[bestPos.x+bestPos.y*get_image_width(TDF)+bestPos.z*get_image_width(TDF)*get_image_height(TDF)] = 1;
     }
 }
 
