@@ -4,117 +4,30 @@
 __constant sampler_t sampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP_TO_EDGE | CLK_FILTER_NEAREST;
 __constant sampler_t interpolationSampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP_TO_EDGE | CLK_FILTER_LINEAR;
 
+__constant sampler_t hpSampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP | CLK_FILTER_NEAREST;
+
 #define LPOS(pos) pos.x+pos.y*get_global_size(0)+pos.z*get_global_size(0)*get_global_size(1)
 
-__kernel void combine(
-    __global float * TDFsmall,
-    __global float * radiusSmall,
-    __global float * TDFlarge,
-    __global float * radiusLarge
-    ) {
-    int i = get_global_id(0);
-    if(TDFlarge[i] < TDFsmall[i]) {
-        TDFlarge[i] = TDFsmall[i];
-        radiusLarge[i] = radiusSmall[i];
-    }
-}
+// Forward declaration of eigen_decomp function
+void eigen_decomposition(float M[3][3], float V[3][3], float e[3]);
 
-__kernel void initGrowing(
-	__read_only image3d_t centerline,
-	__global char * initSegmentation
-	) {
-    int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
-    if(read_imagei(centerline, sampler, pos).x == 1) {
-	
-        for(int a = -1; a < 2; a++) {
-        for(int b = -1; b < 2; b++) {
-        for(int c = -1; c < 2; c++) {
-            int4 n;
-            n.x = pos.x + a;
-            n.y = pos.y + b;
-            n.z = pos.z + c;
-	    if(read_imagei(centerline, sampler, n).x == 0)
-            initSegmentation[LPOS(n)] = 2; // TODO: seg fault
-        }}}
-	}
-}
+__constant int4 cubeOffsets2D[4] = {
+    {0, 0, 0, 0},
+    {0, 1, 0, 0},
+    {1, 0, 0, 0},
+    {1, 1, 0, 0},
+};
 
-
-
-__kernel void grow(
-	__read_only image3d_t currentSegmentation,
-	__read_only image3d_t gvf,
-	__global char * nextSegmentation,
-	__global int * stop
-	) {
-
-    int4 X = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
-    char value = read_imagei(currentSegmentation, sampler, X).x;
-    // value of 2, means to check it, 1 means it is already accepted
-    if(value == 1) {
-        nextSegmentation[LPOS(X)] = 1;
-    }else if(value == 2){
-	float FNXw = read_imagef(gvf, sampler, X).w;
-
-	bool continueGrowing = false;
-	for(int a = -1; a < 2; a++) {
-	for(int b = -1; b < 2; b++) {
-	for(int c = -1; c < 2; c++) {
-	    if(a == 0 && b == 0 && c == 0)
-		continue;
-
-	    int4 Y;
-	    Y.x = X.x + a;
-	    Y.y = X.y + b;
-	    Y.z = X.z + c;
-	    
-	    char valueY = read_imagei(currentSegmentation, sampler, Y).x;
-	    if(valueY != 1) {
-		float4 FNY = read_imagef(gvf, sampler, Y);
-		FNY.x /= FNY.w;
-		FNY.y /= FNY.w;
-		FNY.z /= FNY.w;
-	    if(FNY.w > FNXw || FNXw < 0.1f) {
-
-		int4 Z;
-		float maxDotProduct = -2.0f;
-		for(int a2 = -1; a2 < 2; a2++) {
-		for(int b2 = -1; b2 < 2; b2++) {
-		for(int c2 = -1; c2 < 2; c2++) {
-		    if(a2 == 0 && b2 == 0 && c2 == 0)
-			continue;
-		    int4 Zc;
-		    Zc.x = Y.x+a2;
-		    Zc.y = Y.y+b2;
-		    Zc.z = Y.z+c2;
-		    float3 YZ;
-		    YZ.x = Zc.x-Y.x;
-		    YZ.y = Zc.y-Y.y;
-		    YZ.z = Zc.z-Y.z;
-		    YZ = normalize(YZ);
-		    if(dot(FNY.xyz, YZ) > maxDotProduct) {
-			maxDotProduct = dot(FNY.xyz, YZ);
-			Z = Zc;
-		    }
-		}}}
-
-		if(Z.x == X.x && Z.y == X.y && Z.z == X.z) {
-            nextSegmentation[LPOS(X)] = 1;
-            nextSegmentation[LPOS(Y)] = 2; // TODO: seg fault
-			continueGrowing = true;
-		}
-	    }}
-	}}}
-
-	if(continueGrowing) {
-		// Added new items to list (values of 2)
-		stop[0] = 0;
-	} else {
-		// X was not accepted
-        nextSegmentation[LPOS(X)] = 0;
-	}
-}
-}
+__constant int4 cubeOffsets[8] = {
+    {0, 0, 0, 0},
+    {1, 0, 0, 0},
+    {0, 0, 1, 0},
+    {1, 0, 1, 0},
+    {0, 1, 0, 0},
+    {1, 1, 0, 0},
+    {0, 1, 1, 0},
+    {1, 1, 1, 0},
+};
 
 float3 gradientNormalized(
         __read_only image3d_t volume,   // Volume to perform gradient on
@@ -226,6 +139,671 @@ float3 gradient(
 
 
     return grad;
+}
+
+__kernel void constructHPLevel3D(
+    __read_only image3d_t readHistoPyramid,
+    __write_only image3d_t writeHistoPyramid
+    ) { 
+
+    int4 writePos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
+    int4 readPos = writePos*2;
+    int writeValue = read_imagei(readHistoPyramid, hpSampler, readPos).x + // 0
+    read_imagei(readHistoPyramid, hpSampler, readPos+cubeOffsets[1]).x + // 1
+    read_imagei(readHistoPyramid, hpSampler, readPos+cubeOffsets[2]).x + // 2
+    read_imagei(readHistoPyramid, hpSampler, readPos+cubeOffsets[3]).x + // 3
+    read_imagei(readHistoPyramid, hpSampler, readPos+cubeOffsets[4]).x + // 4
+    read_imagei(readHistoPyramid, hpSampler, readPos+cubeOffsets[5]).x + // 5
+    read_imagei(readHistoPyramid, hpSampler, readPos+cubeOffsets[6]).x + // 6
+    read_imagei(readHistoPyramid, hpSampler, readPos+cubeOffsets[7]).x; // 7
+
+    write_imagei(writeHistoPyramid, writePos, writeValue);
+}
+
+__kernel void constructHPLevel2D(
+    __read_only image2d_t readHistoPyramid,
+    __write_only image2d_t writeHistoPyramid
+    ) { 
+
+    int2 writePos = {get_global_id(0), get_global_id(1)};
+    int2 readPos = writePos*2;
+    int writeValue = 
+        read_imagei(readHistoPyramid, hpSampler, readPos).x + 
+        read_imagei(readHistoPyramid, hpSampler, readPos+(int2)(1,0)).x + 
+        read_imagei(readHistoPyramid, hpSampler, readPos+(int2)(0,1)).x + 
+        read_imagei(readHistoPyramid, hpSampler, readPos+(int2)(1,1)).x;
+
+    write_imagei(writeHistoPyramid, writePos, writeValue);
+}
+
+int3 scanHPLevel2D(int target, __read_only image2d_t hp, int3 current) {
+
+    int4 neighbors = {
+        read_imagei(hp, hpSampler, current.xy).x,
+        read_imagei(hp, hpSampler, current.xy + (int2)(0,1)).x,
+        read_imagei(hp, hpSampler, current.xy + (int2)(1,0)).x,
+        0
+    };
+
+    int acc = current.z + neighbors.s0;
+    int4 cmp;
+    cmp.s0 = acc <= target;
+    acc += neighbors.s1;
+    cmp.s1 = acc <= target;
+    acc += neighbors.s2;
+    cmp.s2 = acc <= target;
+
+    current += cubeOffsets2D[(cmp.s0+cmp.s1+cmp.s2)].xyz;
+    current.x = current.x*2;
+    current.y = current.y*2;
+    current.z = current.z +
+    cmp.s0*neighbors.s0 +
+    cmp.s1*neighbors.s1 +
+    cmp.s2*neighbors.s2; 
+    return current;
+
+}
+
+
+int4 scanHPLevel3D(int target, __read_only image3d_t hp, int4 current) {
+
+    int8 neighbors = {
+        read_imagei(hp, hpSampler, current).x,
+        read_imagei(hp, hpSampler, current + cubeOffsets[1]).x,
+        read_imagei(hp, hpSampler, current + cubeOffsets[2]).x,
+        read_imagei(hp, hpSampler, current + cubeOffsets[3]).x,
+        read_imagei(hp, hpSampler, current + cubeOffsets[4]).x,
+        read_imagei(hp, hpSampler, current + cubeOffsets[5]).x,
+        read_imagei(hp, hpSampler, current + cubeOffsets[6]).x,
+        0
+    };
+
+    int acc = current.s3 + neighbors.s0;
+    int8 cmp;
+    cmp.s0 = acc <= target;
+    acc += neighbors.s1;
+    cmp.s1 = acc <= target;
+    acc += neighbors.s2;
+    cmp.s2 = acc <= target;
+    acc += neighbors.s3;
+    cmp.s3 = acc <= target;
+    acc += neighbors.s4;
+    cmp.s4 = acc <= target;
+    acc += neighbors.s5;
+    cmp.s5 = acc <= target;
+    acc += neighbors.s6;
+    cmp.s6 = acc <= target;
+
+
+    current += cubeOffsets[(cmp.s0+cmp.s1+cmp.s2+cmp.s3+cmp.s4+cmp.s5+cmp.s6)];
+    current.s0 = current.s0*2;
+    current.s1 = current.s1*2;
+    current.s2 = current.s2*2;
+    current.s3 = current.s3 +
+    cmp.s0*neighbors.s0 +
+    cmp.s1*neighbors.s1 +
+    cmp.s2*neighbors.s2 +
+    cmp.s3*neighbors.s3 +
+    cmp.s4*neighbors.s4 +
+    cmp.s5*neighbors.s5 +
+    cmp.s6*neighbors.s6; 
+    return current;
+
+}
+
+int4 traverseHP3D(
+    int target,
+    int HP_SIZE,
+    image3d_t hp0,
+    image3d_t hp1,
+    image3d_t hp2,
+    image3d_t hp3,
+    image3d_t hp4,
+    image3d_t hp5,
+    image3d_t hp6,
+    image3d_t hp7,
+    image3d_t hp8,
+    image3d_t hp9
+    ) {
+    int4 position = {0,0,0,0}; // x,y,z,sum
+    if(HP_SIZE > 512)
+    position = scanHPLevel3D(target, hp9, position);
+    if(HP_SIZE > 256)
+    position = scanHPLevel3D(target, hp8, position);
+    if(HP_SIZE > 128)
+    position = scanHPLevel3D(target, hp7, position);
+    if(HP_SIZE > 64)
+    position = scanHPLevel3D(target, hp6, position);
+    position = scanHPLevel3D(target, hp5, position);
+    position = scanHPLevel3D(target, hp4, position);
+    position = scanHPLevel3D(target, hp3, position);
+    position = scanHPLevel3D(target, hp2, position);
+    position = scanHPLevel3D(target, hp1, position);
+    position = scanHPLevel3D(target, hp0, position);
+    position.x = position.x / 2;
+    position.y = position.y / 2;
+    position.z = position.z / 2;
+    return position;
+}
+
+int2 traverseHP2D(
+    int target,
+    int HP_SIZE,
+    image2d_t hp0,
+    image2d_t hp1,
+    image2d_t hp2,
+    image2d_t hp3,
+    image2d_t hp4,
+    image2d_t hp5,
+    image2d_t hp6,
+    image2d_t hp7,
+    image2d_t hp8,
+    image2d_t hp9,
+    image2d_t hp10
+    ) {
+    int3 position = {0,0,0};
+    if(HP_SIZE > 1024)
+    position = scanHPLevel2D(target, hp10, position);
+    if(HP_SIZE > 512)
+    position = scanHPLevel2D(target, hp9, position);
+    if(HP_SIZE > 256)
+    position = scanHPLevel2D(target, hp8, position);
+    if(HP_SIZE > 128)
+    position = scanHPLevel2D(target, hp7, position);
+    if(HP_SIZE > 64)
+    position = scanHPLevel2D(target, hp6, position);
+    position = scanHPLevel2D(target, hp5, position);
+    position = scanHPLevel2D(target, hp4, position);
+    position = scanHPLevel2D(target, hp3, position);
+    position = scanHPLevel2D(target, hp2, position);
+    position = scanHPLevel2D(target, hp1, position);
+    position = scanHPLevel2D(target, hp0, position);
+    position.x = position.x / 2;
+    position.y = position.y / 2;
+    return position.xy;
+}
+
+
+__kernel void createPositions3D(
+        __global int * positions,
+        __private int HP_SIZE,
+        __private int sum,
+        __read_only image3d_t hp0, // Largest HP
+        __read_only image3d_t hp1,
+        __read_only image3d_t hp2,
+        __read_only image3d_t hp3,
+        __read_only image3d_t hp4,
+        __read_only image3d_t hp5
+        ,__read_only image3d_t hp6
+        ,__read_only image3d_t hp7
+        ,__read_only image3d_t hp8
+        ,__read_only image3d_t hp9
+    ) {
+    int target = get_global_id(0);
+    if(target >= sum)
+        target = 0;
+    int4 pos = traverseHP3D(target,HP_SIZE,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,hp8,hp9);
+    vstore3(pos.xyz, target, positions);
+}
+
+__kernel void createPositions2D(
+        __global int * positions,
+        __private int HP_SIZE,
+        __private int sum,
+        __read_only image2d_t hp0, // Largest HP
+        __read_only image2d_t hp1,
+        __read_only image2d_t hp2,
+        __read_only image2d_t hp3,
+        __read_only image2d_t hp4,
+        __read_only image2d_t hp5
+        ,__read_only image2d_t hp6
+        ,__read_only image2d_t hp7
+        ,__read_only image2d_t hp8
+        ,__read_only image2d_t hp9
+        ,__read_only image2d_t hp10
+    ) {
+    int target = get_global_id(0);
+    if(target >= sum)
+        target = 0;
+    int2 pos = traverseHP2D(target,HP_SIZE,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,hp8,hp9,hp10);
+    vstore2(pos, target, positions);
+}
+
+__kernel void linkCenterpoints(
+        __read_only image3d_t TDF,
+        __read_only image3d_t radius,
+        __global int const * restrict positions,
+        __write_only image2d_t edges,
+        __read_only image3d_t intensity
+    ) {
+    float maxDistance = 25.0f;
+    float3 xa = convert_float3(vload3(get_global_id(0), positions));
+
+    int2 bestPair;
+    float shortestDistance = maxDistance*2;
+    bool validPairFound = false;
+    for(int i = 0; i < get_global_size(0); i++) {
+        if(i == get_global_id(0)) 
+            continue;
+    float3 xb = convert_float3(vload3(i, positions));
+    int db = round(distance(xa,xb));
+    if(db >= maxDistance || db >= shortestDistance)
+        continue;
+    for(int j = 0; j < i; j++) {
+        if(j == get_global_id(0) || j == i) 
+            continue;
+    float3 xc = convert_float3(vload3(j, positions));
+
+    // Check distance between xa and xb
+    int dc = round(distance(xa,xc));
+    if(dc >= maxDistance)
+        continue;
+
+    float minTDF = 0.0f;
+    float minAvgTDF = 0.5f;
+    float maxVarTDF = 1.005f;
+    float maxIntensity = 1.3f;
+    float maxAvgIntensity = 1.2f;
+    float maxVarIntensity = 1.005f;
+
+    if(db+dc < shortestDistance) {
+        // Check angle
+        float3 ab = (xb-xa);
+        float3 ac = (xc-xa);
+        float angle = acos(dot(normalize(ab), normalize(ac)));
+        if(angle < 2.0f) // 120 degrees
+            continue;
+        // Check TDF
+        float avgTDF = 0.0f;
+        float avgIntensity = 0.0f;
+        bool invalid = false;
+        //printf("%d - %d \n", db, dc);
+        for(int k = 0; k <= db; k++) {
+            float alpha = (float)k/db;
+            float3 p = xa+ab*alpha;
+            float t = read_imagef(TDF, interpolationSampler, p.xyzz).x; 
+            float i = read_imagef(intensity, interpolationSampler, p.xyzz).x; 
+            avgIntensity += i;
+            avgTDF += t;
+            if(i > maxIntensity || t < minTDF) {
+                invalid = true;
+                break;
+            }
+        }
+        if(invalid)
+            continue;
+        avgTDF /= db+1;
+        avgIntensity /= db+1;
+        if(avgTDF < minAvgTDF)
+            continue;
+        if(avgIntensity > maxAvgIntensity)
+            continue;
+
+        float varTDF = 0.0f;
+        float varIntensity = 0.0f;
+        for(int k = 0; k <= db; k++) {
+            float alpha = (float)k/db;
+            float3 p = xa+ab*alpha;
+            float t = read_imagef(TDF, interpolationSampler, p.xyzz).x; 
+            float i = read_imagef(intensity, interpolationSampler, p.xyzz).x; 
+            varIntensity += (i-avgIntensity)*(i-avgIntensity);
+            varTDF += (t-avgTDF)*(t-avgTDF);
+            if(i > maxIntensity || t < minTDF) {
+                invalid = true;
+                break;
+            }
+        }
+        if(invalid)
+            continue;
+
+        if(db > 4 && varIntensity / (db+1) > maxVarTDF)
+            continue;
+        if(db > 4 && varTDF / (db+1) > maxVarIntensity)
+            continue;
+
+        avgTDF = 0.0f;
+        avgIntensity = 0.0f;
+        varTDF = 0.0f;
+        varIntensity = 0.0f;
+        for(int k = 0; k <= dc; k++) {
+            float alpha = (float)k/dc;
+            float3 p = xa+ac*alpha;
+            float t = read_imagef(TDF, interpolationSampler, p.xyzz).x; 
+            float i = read_imagef(intensity, interpolationSampler, p.xyzz).x; 
+            avgTDF += t;
+            avgIntensity += i;
+        }
+        avgTDF /= dc+1;
+        avgIntensity /= dc+1;
+
+        if(avgTDF < minAvgTDF)
+            continue;
+
+        if(avgIntensity > maxAvgIntensity)
+            continue;
+
+        for(int k = 0; k <= db; k++) {
+            float alpha = (float)k/db;
+            float3 p = xa+ab*alpha;
+            float t = read_imagef(TDF, interpolationSampler, p.xyzz).x; 
+            float i = read_imagef(intensity, interpolationSampler, p.xyzz).x; 
+            varIntensity += (i-avgIntensity)*(i-avgIntensity);
+            varTDF += (t-avgTDF)*(t-avgTDF);
+        }
+
+        if(dc > 4 && varIntensity / (dc+1) > maxVarIntensity)
+            continue;
+        if(dc > 4 && varTDF / (dc+1) > maxVarTDF)
+            continue;
+        //printf("avg i: %f\n", avgIntensity );
+        //printf("avg tdf: %f\n", avgTDF );
+        //printf("var i: %f\n", varIntensity / (dc+1));
+        //printf("var tdf: %f\n", varTDF / (dc+1));
+
+        validPairFound = true;
+        bestPair.x = i;
+        bestPair.y = j;
+        shortestDistance = db+dc;
+    }
+    }}
+
+    if(validPairFound) {
+        // Store edges
+        int2 edge = {get_global_id(0), bestPair.x};
+        int2 edge2 = {get_global_id(0), bestPair.y};
+        write_imagei(edges, edge, 1);
+        write_imagei(edges, edge2, 1);
+    }
+}
+
+__kernel void graphComponentLabeling(
+        __global int const * restrict edges,
+        volatile __global int * C,
+        __global int * m
+        ) {
+    const int id = get_global_id(0);
+    int2 edge = vload2(id, edges);
+    const int ca = C[edge.x];
+    const int cb = C[edge.y];
+
+    // Find the smallest C value and store in C in the others
+    if(ca == cb) {
+        return;
+    } else {
+        if(ca < cb) {
+            // ca is smallest
+            atomic_min(&C[edge.y], ca);
+        } else {
+            // cb is smallest
+            atomic_min(&C[edge.x], cb);
+        }
+        m[0] = 1; // register change
+    }
+}
+
+__kernel void calculateTreeLength(
+        __global int const * restrict C,
+        volatile __global int * S
+    ) {
+    const int id = get_global_id(0);
+    atomic_inc(&S[C[id]]);
+}
+
+__kernel void removeSmallTrees(
+        __global int const * restrict edges,
+        __global int const * restrict vertices,
+        __global int const * restrict C,
+        __global int const * restrict S,
+        __private int minTreeLength,
+        __write_only image3d_t centerlines
+    ) {
+   // Find the edges that are part of the large trees 
+    const int id = get_global_id(0);
+    int2 edge = vload2(id, edges);
+    const int ca = C[edge.x];
+    if(S[ca] >= minTreeLength) {
+        const float3 xa = convert_float3(vload3(edge.x, vertices));
+        const float3 xb = convert_float3(vload3(edge.y, vertices));
+        int l = round(length(xb-xa));
+        for(int i = 0; i < l; i++) {
+            const float alpha = (float)i/l;
+            write_imagei(centerlines, convert_int3(round(xa+(xb-xa)*alpha)).xyzz, 1);
+        }
+    }
+}
+
+#define SQR_MAG(pos) read_imagef(vectorField, sampler, pos).w
+
+__kernel void dd(
+    __read_only image3d_t vectorField,
+    __read_only image3d_t TDF,
+    __read_only image3d_t centerpointCandidates,
+    __write_only image3d_t centerpoints,
+    __private int cubeSize
+    ) {
+
+    int4 bestPos;
+    float bestGVF = 0.0f;
+    int4 readPos = {
+        get_global_id(0)*cubeSize,
+        get_global_id(1)*cubeSize,
+        get_global_id(2)*cubeSize,
+        0
+    };
+    bool found = false;
+    for(int a = 0; a < cubeSize; a++) {
+    for(int b = 0; b < cubeSize; b++) {
+    for(int c = 0; c < cubeSize; c++) {
+        int4 pos = readPos + (int4)(a,b,c,0);
+        if(read_imagei(centerpointCandidates, sampler, pos).x == 1) {
+            float GVF = read_imagef(TDF, sampler, pos).x;
+            if(GVF > bestGVF) {
+                found = true;
+                bestGVF = GVF;
+                bestPos = pos;
+            }
+        }
+    }}}
+    if(found) {
+        write_imagei(centerpoints, bestPos, 1);
+    }
+}
+
+
+
+__kernel void findCandidateCenterpoints(
+    __read_only image3d_t TDF,
+    __write_only image3d_t centerpoints
+    ) {
+    const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
+    float TDFlimit = 0.5f;
+    if(read_imagef(TDF, sampler, pos).x < TDFlimit) {
+        write_imagei(centerpoints, pos, 0);
+    } else {
+        write_imagei(centerpoints, pos, 1);
+    }
+}
+
+__kernel void findCandidateCenterpoints2(
+    __read_only image3d_t TDF,
+    __read_only image3d_t radius,
+    __read_only image3d_t vectorField,
+    __write_only image3d_t centerpoints,
+    __private int HP_SIZE,
+    __private int sum,
+        __read_only image3d_t hp0, // Largest HP
+        __read_only image3d_t hp1,
+        __read_only image3d_t hp2,
+        __read_only image3d_t hp3,
+        __read_only image3d_t hp4,
+        __read_only image3d_t hp5
+        ,__read_only image3d_t hp6
+        ,__read_only image3d_t hp7
+        ,__read_only image3d_t hp8
+        ,__read_only image3d_t hp9
+    ) {
+    int target = get_global_id(0);
+    if(target >= sum)
+        target = 0;
+    int4 pos = traverseHP3D(target,HP_SIZE,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,hp8,hp9);
+
+    const float thetaLimit = 0.5f;
+    const float radii = read_imagef(radius, sampler, pos).x;
+    const int maxD = max(min(round(radii), 5.0f), 1.0f);
+    bool invalid = false;
+
+    // Find Hessian Matrix
+    float3 Fx, Fy, Fz;
+    Fx = gradientNormalized(vectorField, pos, 0, 1);
+    Fy = gradientNormalized(vectorField, pos, 1, 2);
+    Fz = gradientNormalized(vectorField, pos, 2, 3);
+
+    float Hessian[3][3] = {
+        {Fx.x, Fy.x, Fz.x},
+        {Fy.x, Fy.y, Fz.y},
+        {Fz.x, Fz.y, Fz.z}
+    };
+    
+    // Eigen decomposition
+    float eigenValues[3];
+    float eigenVectors[3][3];
+    eigen_decomposition(Hessian, eigenVectors, eigenValues);
+    const float3 e1 = {eigenVectors[0][0], eigenVectors[1][0], eigenVectors[2][0]};
+
+    for(int a = -maxD; a <= maxD; a++) {
+    for(int b = -maxD; b <= maxD; b++) {
+    for(int c = -maxD; c <= maxD; c++) {
+        if(a == 0 && b == 0 && c == 0)
+            continue;
+        const int4 n = pos + (int4)(a,b,c,0);
+        const float3 r = {a,b,c};
+        const float dp = dot(e1,r);
+        const float3 r_projected = r-e1*dp;
+        const float theta = acos(dot(normalize(r), normalize(r_projected)));
+        if(theta < thetaLimit && length(r) < maxD) {
+            if(SQR_MAG(n) < SQR_MAG(pos)) {
+                invalid = true;
+                break;
+            }    
+        }
+    }}}
+
+    if(invalid) {
+        write_imagei(centerpoints, pos, 0);
+    } else {
+        write_imagei(centerpoints, pos, 1);
+    }
+}
+
+
+__kernel void combine(
+    __global float * TDFsmall,
+    __global float * radiusSmall,
+    __global float * TDFlarge,
+    __global float * radiusLarge
+    ) {
+    int i = get_global_id(0);
+    if(TDFlarge[i] < TDFsmall[i]) {
+        TDFlarge[i] = TDFsmall[i];
+        radiusLarge[i] = radiusSmall[i];
+    }
+}
+
+__kernel void initGrowing(
+	__read_only image3d_t centerline,
+	__global char * initSegmentation
+	) {
+    int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
+    if(read_imagei(centerline, sampler, pos).x == 1) {
+	
+        for(int a = -1; a < 2; a++) {
+        for(int b = -1; b < 2; b++) {
+        for(int c = -1; c < 2; c++) {
+            int4 n;
+            n.x = pos.x + a;
+            n.y = pos.y + b;
+            n.z = pos.z + c;
+	    if(read_imagei(centerline, sampler, n).x == 0)
+            initSegmentation[LPOS(n)] = 2; // TODO: seg fault
+        }}}
+	}
+}
+
+
+
+__kernel void grow(
+	__read_only image3d_t currentSegmentation,
+	__read_only image3d_t gvf,
+	__global char * nextSegmentation,
+	__global int * stop
+	) {
+
+    int4 X = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
+    char value = read_imagei(currentSegmentation, sampler, X).x;
+    // value of 2, means to check it, 1 means it is already accepted
+    if(value == 1) {
+        nextSegmentation[LPOS(X)] = 1;
+    }else if(value == 2){
+	float FNXw = read_imagef(gvf, sampler, X).w;
+
+	bool continueGrowing = false;
+	for(int a = -1; a < 2; a++) {
+	for(int b = -1; b < 2; b++) {
+	for(int c = -1; c < 2; c++) {
+	    if(a == 0 && b == 0 && c == 0)
+		continue;
+
+	    int4 Y;
+	    Y.x = X.x + a;
+	    Y.y = X.y + b;
+	    Y.z = X.z + c;
+	    
+	    char valueY = read_imagei(currentSegmentation, sampler, Y).x;
+	    if(valueY != 1) {
+		float4 FNY = read_imagef(gvf, sampler, Y);
+		FNY.x /= FNY.w;
+		FNY.y /= FNY.w;
+		FNY.z /= FNY.w;
+	    if(FNY.w > FNXw || FNXw < 0.1f) {
+
+		int4 Z;
+		float maxDotProduct = -2.0f;
+		for(int a2 = -1; a2 < 2; a2++) {
+		for(int b2 = -1; b2 < 2; b2++) {
+		for(int c2 = -1; c2 < 2; c2++) {
+		    if(a2 == 0 && b2 == 0 && c2 == 0)
+			continue;
+		    int4 Zc;
+		    Zc.x = Y.x+a2;
+		    Zc.y = Y.y+b2;
+		    Zc.z = Y.z+c2;
+		    float3 YZ;
+		    YZ.x = Zc.x-Y.x;
+		    YZ.y = Zc.y-Y.y;
+		    YZ.z = Zc.z-Y.z;
+		    YZ = normalize(YZ);
+		    if(dot(FNY.xyz, YZ) > maxDotProduct) {
+			maxDotProduct = dot(FNY.xyz, YZ);
+			Z = Zc;
+		    }
+		}}}
+
+		if(Z.x == X.x && Z.y == X.y && Z.z == X.z) {
+            nextSegmentation[LPOS(X)] = 1;
+            nextSegmentation[LPOS(Y)] = 2; // TODO: seg fault
+			continueGrowing = true;
+		}
+	    }}
+	}}}
+
+	if(continueGrowing) {
+		// Added new items to list (values of 2)
+		stop[0] = 0;
+	} else {
+		// X was not accepted
+        nextSegmentation[LPOS(X)] = 0;
+	}
+}
 }
 
 
@@ -413,8 +991,6 @@ __kernel void createVectorField(
     vstore4(F, LPOS(pos), vectorField);
 }
 
-// Forward declaration of eigen_decomp function
-void eigen_decomposition(float M[3][3], float V[3][3], float e[3]);
 
 __constant float cosValues[32] = {1.0f, 0.540302f, -0.416147f, -0.989992f, -0.653644f, 0.283662f, 0.96017f, 0.753902f, -0.1455f, -0.91113f, -0.839072f, 0.0044257f, 0.843854f, 0.907447f, 0.136737f, -0.759688f, -0.957659f, -0.275163f, 0.660317f, 0.988705f, 0.408082f, -0.547729f, -0.999961f, -0.532833f, 0.424179f, 0.991203f, 0.646919f, -0.292139f, -0.962606f, -0.748058f, 0.154251f, 0.914742f};
 __constant float sinValues[32] = {0.0f, 0.841471f, 0.909297f, 0.14112f, -0.756802f, -0.958924f, -0.279415f, 0.656987f, 0.989358f, 0.412118f, -0.544021f, -0.99999f, -0.536573f, 0.420167f, 0.990607f, 0.650288f, -0.287903f, -0.961397f, -0.750987f, 0.149877f, 0.912945f, 0.836656f, -0.00885131f, -0.84622f, -0.905578f, -0.132352f, 0.762558f, 0.956376f, 0.270906f, -0.663634f, -0.988032f, -0.404038f};
