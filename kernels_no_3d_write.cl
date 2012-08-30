@@ -689,9 +689,9 @@ __kernel void findCandidateCenterpoints2(
     }}}
 
     if(invalid) {
-        centerpoints[LPOS(pos)] = 0;
+        centerpoints[pos.x+pos.y*get_image_width(TDF)+pos.z*get_image_width(TDF)*get_image_height(TDF)] = 0;
     } else {
-        centerpoints[LPOS(pos)] = 1;
+        centerpoints[pos.x+pos.y*get_image_width(TDF)+pos.z*get_image_width(TDF)*get_image_height(TDF)] = 1;
     }
 }
 

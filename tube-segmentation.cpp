@@ -1592,13 +1592,7 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
             size.x, size.y, size.z,
             0,0,initZeros
     );
-    Image3D centerpointsImage3 = Image3D(
-            ocl.context,
-            CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
-            ImageFormat(CL_R, CL_SIGNED_INT8),
-            size.x, size.y, size.z,
-            0,0,initZeros
-    );
+
     candidates2Kernel.setArg(0, TDF);
     candidates2Kernel.setArg(1, radius);
     candidates2Kernel.setArg(2, vectorField);
@@ -1622,8 +1616,16 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
         candidates2Kernel.setArg(3, centerpointsImage2);
         hp3.traverse(candidates2Kernel, 4);
     }
+
     return centerpointsImage2;
 
+    Image3D centerpointsImage3 = Image3D(
+            ocl.context,
+            CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+            ImageFormat(CL_R, CL_SIGNED_INT8),
+            size.x, size.y, size.z,
+            0,0,initZeros
+    );
     ddKernel.setArg(0, vectorField);
     ddKernel.setArg(1, TDF);
     ddKernel.setArg(2, centerpointsImage2);
