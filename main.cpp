@@ -2,7 +2,6 @@
 
 
 int main(int argc, char ** argv) {
-    SIPL::Init();
     OpenCL ocl; 
 
     ocl.context = createCLContextFromArguments(argc, argv);
