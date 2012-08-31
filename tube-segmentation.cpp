@@ -1521,6 +1521,7 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
     const int totalSize = size.x*size.y*size.z;
     const bool no3Dwrite = parameters.count("3d_write") == 0;
     const int cubeSize = getParami(parameters, "cube-size", 4);
+    const int minTreeLength = getParami(parameters, "min-tree-length", 20);
 
     cl::size_t<3> offset;
     offset[0] = 0;
@@ -1762,8 +1763,6 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
             sizeof(int)
     );
 
-    // TODO: initialize C and S
-
     Kernel labelingKernel(ocl.program, "graphComponentLabeling");
     labelingKernel.setArg(0, edges);
     labelingKernel.setArg(1, C);
@@ -1801,14 +1800,6 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
     ocl.queue.enqueueMarker(&startEvent);
 #endif
     // Remove small trees
-    char * czeros = new char[size.x*size.y*size.z]();
-    Image3D centerlines = Image3D(
-            ocl.context,
-            CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
-            ImageFormat(CL_R, CL_SIGNED_INT8),
-            size.x, size.y, size.z,
-            0, 0, czeros
-    );
     int * zeros = new int[sum]();
     Buffer S = Buffer(
             ocl.context,
@@ -1826,23 +1817,66 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
             NDRange(sum),
             NullRange
     );
-
-    // TODO: init centerlines to 0
+    char * czeros = new char[size.x*size.y*size.z]();
+    Image3D centerlines;    
     Kernel RSTKernel(ocl.program, "removeSmallTrees");
     RSTKernel.setArg(0, edges);
     RSTKernel.setArg(1, vertices);
     RSTKernel.setArg(2, C);
     RSTKernel.setArg(3, S);
-    int minTreeLength = 20; // nodes
     RSTKernel.setArg(4, minTreeLength);
-    RSTKernel.setArg(5, centerlines);
+    if(no3Dwrite) {
+        Buffer centerlinesBuffer = Buffer(
+                ocl.context,
+                CL_MEM_WRITE_ONLY | CL_MEM_COPY_HOST_PTR,
+                sizeof(char)*totalSize,
+                czeros
+        );
 
-    ocl.queue.enqueueNDRangeKernel(
-            RSTKernel,
-            NullRange,
-            NDRange(sum2),
-            NullRange
-    );
+        RSTKernel.setArg(5, centerlinesBuffer);
+        RSTKernel.setArg(6, size.x);
+        RSTKernel.setArg(7, size.y);
+
+        ocl.queue.enqueueNDRangeKernel(
+                RSTKernel,
+                NullRange,
+                NDRange(sum2),
+                NullRange
+        );
+
+        centerlines = Image3D(
+            ocl.context,
+            CL_MEM_READ_WRITE,
+            ImageFormat(CL_R, CL_SIGNED_INT8),
+            size.x, size.y, size.z
+        );
+
+        ocl.queue.enqueueCopyBufferToImage(
+                centerlinesBuffer,
+                centerlines,
+                0,
+                offset,
+                region
+        );
+
+    } else {
+        centerlines = Image3D(
+            ocl.context,
+            CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+            ImageFormat(CL_R, CL_SIGNED_INT8),
+            size.x, size.y, size.z,
+            0, 0, czeros
+        );
+
+        RSTKernel.setArg(5, centerlines);
+
+        ocl.queue.enqueueNDRangeKernel(
+                RSTKernel,
+                NullRange,
+                NDRange(sum2),
+                NullRange
+        );
+    }
 #ifdef TIMING
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();

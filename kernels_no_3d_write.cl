@@ -555,7 +555,9 @@ __kernel void removeSmallTrees(
         __global int const * restrict C,
         __global int const * restrict S,
         __private int minTreeLength,
-        __write_only image3d_t centerlines
+        __global char * centerlines,
+        __private int width,
+        __private int height
     ) {
    // Find the edges that are part of the large trees 
     const int id = get_global_id(0);
@@ -567,7 +569,9 @@ __kernel void removeSmallTrees(
         int l = round(length(xb-xa));
         for(int i = 0; i < l; i++) {
             const float alpha = (float)i/l;
-            write_imagei(centerlines, convert_int3(round(xa+(xb-xa)*alpha)).xyzz, 1);
+            //write_imagei(centerlines, convert_int3(round(xa+(xb-xa)*alpha)).xyzz, 1);
+            const int3 pos = convert_int3(round(xa+(xb-xa)*alpha));
+            centerlines[pos.x+pos.y*width+pos.z*width*height] = 1;
         }
     }
 }
