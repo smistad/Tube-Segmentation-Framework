@@ -277,25 +277,6 @@ __kernel void constructHPLevelBuffer(
     writeHistoPyramid[writePos] = writeValue;
 }
 
-__kernel void constructHPLevel3D(
-    __read_only image3d_t readHistoPyramid,
-    __write_only image3d_t writeHistoPyramid
-    ) { 
-
-    int4 writePos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
-    int4 readPos = writePos*2;
-    int writeValue = read_imagei(readHistoPyramid, hpSampler, readPos).x + // 0
-    read_imagei(readHistoPyramid, hpSampler, readPos+cubeOffsets[1]).x + // 1
-    read_imagei(readHistoPyramid, hpSampler, readPos+cubeOffsets[2]).x + // 2
-    read_imagei(readHistoPyramid, hpSampler, readPos+cubeOffsets[3]).x + // 3
-    read_imagei(readHistoPyramid, hpSampler, readPos+cubeOffsets[4]).x + // 4
-    read_imagei(readHistoPyramid, hpSampler, readPos+cubeOffsets[5]).x + // 5
-    read_imagei(readHistoPyramid, hpSampler, readPos+cubeOffsets[6]).x + // 6
-    read_imagei(readHistoPyramid, hpSampler, readPos+cubeOffsets[7]).x; // 7
-
-    write_imagei(writeHistoPyramid, writePos, writeValue);
-}
-
 __kernel void constructHPLevel2D(
     __read_only image2d_t readHistoPyramid,
     __write_only image2d_t writeHistoPyramid
@@ -338,88 +319,6 @@ int3 scanHPLevel2D(int target, __read_only image2d_t hp, int3 current) {
     cmp.s2*neighbors.s2; 
     return current;
 
-}
-
-
-int4 scanHPLevel3D(int target, __read_only image3d_t hp, int4 current) {
-
-    int8 neighbors = {
-        read_imagei(hp, hpSampler, current).x,
-        read_imagei(hp, hpSampler, current + cubeOffsets[1]).x,
-        read_imagei(hp, hpSampler, current + cubeOffsets[2]).x,
-        read_imagei(hp, hpSampler, current + cubeOffsets[3]).x,
-        read_imagei(hp, hpSampler, current + cubeOffsets[4]).x,
-        read_imagei(hp, hpSampler, current + cubeOffsets[5]).x,
-        read_imagei(hp, hpSampler, current + cubeOffsets[6]).x,
-        0
-    };
-
-    int acc = current.s3 + neighbors.s0;
-    int8 cmp;
-    cmp.s0 = acc <= target;
-    acc += neighbors.s1;
-    cmp.s1 = acc <= target;
-    acc += neighbors.s2;
-    cmp.s2 = acc <= target;
-    acc += neighbors.s3;
-    cmp.s3 = acc <= target;
-    acc += neighbors.s4;
-    cmp.s4 = acc <= target;
-    acc += neighbors.s5;
-    cmp.s5 = acc <= target;
-    acc += neighbors.s6;
-    cmp.s6 = acc <= target;
-
-
-    current += cubeOffsets[(cmp.s0+cmp.s1+cmp.s2+cmp.s3+cmp.s4+cmp.s5+cmp.s6)];
-    current.s0 = current.s0*2;
-    current.s1 = current.s1*2;
-    current.s2 = current.s2*2;
-    current.s3 = current.s3 +
-    cmp.s0*neighbors.s0 +
-    cmp.s1*neighbors.s1 +
-    cmp.s2*neighbors.s2 +
-    cmp.s3*neighbors.s3 +
-    cmp.s4*neighbors.s4 +
-    cmp.s5*neighbors.s5 +
-    cmp.s6*neighbors.s6; 
-    return current;
-
-}
-
-int4 traverseHP3D(
-    int target,
-    int HP_SIZE,
-    image3d_t hp0,
-    image3d_t hp1,
-    image3d_t hp2,
-    image3d_t hp3,
-    image3d_t hp4,
-    image3d_t hp5,
-    image3d_t hp6,
-    image3d_t hp7,
-    image3d_t hp8,
-    image3d_t hp9
-    ) {
-    int4 position = {0,0,0,0}; // x,y,z,sum
-    if(HP_SIZE > 512)
-    position = scanHPLevel3D(target, hp9, position);
-    if(HP_SIZE > 256)
-    position = scanHPLevel3D(target, hp8, position);
-    if(HP_SIZE > 128)
-    position = scanHPLevel3D(target, hp7, position);
-    if(HP_SIZE > 64)
-    position = scanHPLevel3D(target, hp6, position);
-    position = scanHPLevel3D(target, hp5, position);
-    position = scanHPLevel3D(target, hp4, position);
-    position = scanHPLevel3D(target, hp3, position);
-    position = scanHPLevel3D(target, hp2, position);
-    position = scanHPLevel3D(target, hp1, position);
-    position = scanHPLevel3D(target, hp0, position);
-    position.x = position.x / 2;
-    position.y = position.y / 2;
-    position.z = position.z / 2;
-    return position;
 }
 
 int4 scanHPLevelShort(int target, __global ushort * hp, int4 current) {
@@ -638,28 +537,6 @@ int2 traverseHP2D(
     return position.xy;
 }
 
-
-__kernel void createPositions3D(
-        __global int * positions,
-        __private int HP_SIZE,
-        __private int sum,
-        __read_only image3d_t hp0, // Largest HP
-        __read_only image3d_t hp1,
-        __read_only image3d_t hp2,
-        __read_only image3d_t hp3,
-        __read_only image3d_t hp4,
-        __read_only image3d_t hp5
-        ,__read_only image3d_t hp6
-        ,__read_only image3d_t hp7
-        ,__read_only image3d_t hp8
-        ,__read_only image3d_t hp9
-    ) {
-    int target = get_global_id(0);
-    if(target >= sum)
-        target = 0;
-    int4 pos = traverseHP3D(target,HP_SIZE,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,hp8,hp9);
-    vstore3(pos.xyz, target, positions);
-}
 
 __kernel void createPositions3DBuffer(
         __global int * positions,
@@ -973,21 +850,21 @@ __kernel void findCandidateCenterpoints2(
     __global char * centerpoints,
     __private int HP_SIZE,
     __private int sum,
-        __read_only image3d_t hp0, // Largest HP
-        __read_only image3d_t hp1,
-        __read_only image3d_t hp2,
-        __read_only image3d_t hp3,
-        __read_only image3d_t hp4,
-        __read_only image3d_t hp5
-        ,__read_only image3d_t hp6
-        ,__read_only image3d_t hp7
-        ,__read_only image3d_t hp8
-        ,__read_only image3d_t hp9
+    __global uchar * hp0, // Largest HP
+    __global uchar * hp1,
+    __global ushort * hp2,
+    __global ushort * hp3,
+    __global ushort * hp4,
+    __global int * hp5,
+    __global int * hp6,
+    __global int * hp7,
+    __global int * hp8,
+    __global int * hp9
     ) {
     int target = get_global_id(0);
     if(target >= sum)
         target = 0;
-    int4 pos = traverseHP3D(target,HP_SIZE,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,hp8,hp9);
+    int4 pos = traverseHP3DBuffer(target,HP_SIZE,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,hp8,hp9);
 
     const float thetaLimit = 0.5f;
     const float radii = read_imagef(radius, sampler, pos).x;

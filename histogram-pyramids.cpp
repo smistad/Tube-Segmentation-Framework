@@ -214,7 +214,7 @@ void HistogramPyramid3DBuffer::create(Buffer baseLevel, int sizeX, int sizeY, in
     }
 
     int * sum = new int[8];
-    ocl.queue.enqueueReadBuffer(HPlevels[HPlevels.size()-1], CL_FALSE, 0, sizeof(int)*8, sum);
+    ocl.queue.enqueueReadBuffer(HPlevels[HPlevels.size()-1], CL_TRUE, 0, sizeof(int)*8, sum);
     std::cout << sum[0] << std::endl;
     std::cout << sum[1] << std::endl;
     std::cout << sum[2] << std::endl;
