@@ -254,61 +254,6 @@ __kernel void createPositions2D(
     vstore2(pos, target, positions);
 }
 
-__kernel void calculateBestPaths(
-        __read_only image3d_t TDF,
-        __global int const * restrict positions
-    ) {
-    float maxDistance = 10;
-    int3 xa = (vload3(get_global_id(0), positions));
-    for(int i = 0; i < get_global_size(0); i++) {
-        if(i == get_global_id(0)) 
-            continue;
-    int3 xb = (vload3(i, positions));
-    int db = round(distance(convert_float3(xa),convert_float3(xb)));
-    if(db >= maxDistance)
-        continue;
-
-    float A[10];
-    float B[10];
-    float C[10];
-    // Initialize A, B and C
-    for(int i = 0; i < 100; i++) {
-        A[i] = 0; B[i] = 0; C[i] = 0;
-    }
-    A[0] = 1;
-
-    // x = 0, y = 0, z = 0 is startPos
-    int3 startPos = xa.x <= xb.x ? xa : xb;
-    int3 stopPos = xa.x <= xb.x ? xb : xa;
-    int3 l = (int3)(stopPos.x-startPos.x,stopPos.y-startPos.y,stopPos.z-startPos.z);
-    int3 s = convert_int3(sign(convert_float3(l)));
-    printf("l: %d %d %d\n", l.x, l.y,l.z);
-    printf("s: %d %d %d\n", s.x, s.y,s.z);
-
-    // Fill table
-    bool found = false;
-    for(int x = 0; x < l.x; x++) {
-    for(int y = 0; y < abs(l.y) && !found; y++) {
-    for(int z = 0; z < abs(l.z) && !found; z++) {
-
-    int3 readPos = startPos+(int3)(x,y,z)*s;
-    printf("r: %d %d %d\n", readPos.x, readPos.y,readPos.z);
-    float t = (max(max(A[(x)], B[(y)]), C[(z)]) + read_imagef(TDF, sampler, readPos.xyzz).x)*0.5f;
-    A[(x)] = t;
-    B[(y)] = t;
-    C[(z)] = t;
-    if(readPos.x == stopPos.x && readPos.y == stopPos.y && readPos.z == stopPos.z) {
-        // Stop
-        found = true;
-        printf("%f\n", t);
-        break;
-    }
-    }}}
-
-
-    } // End for 
-}
-
 __kernel void linkCenterpoints(
         __read_only image3d_t TDF,
         __read_only image3d_t radius,

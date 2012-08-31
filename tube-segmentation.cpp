@@ -1541,12 +1541,16 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
     cl_ulong start, end;
     ocl.queue.enqueueMarker(&startEvent);
 #endif
-    Image3D centerpointsImage = Image3D(
+    char * initZeros = new char[totalSize]();
+    Image3D centerpointsImage2 = Image3D(
             ocl.context,
-            CL_MEM_READ_WRITE,
+            CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
             ImageFormat(CL_R, CL_SIGNED_INT8),
-            size.x, size.y, size.z
+            size.x, size.y, size.z,
+            0,0,initZeros
     );
+    Buffer vertices;
+    int sum = 0;
 
     if(no3Dwrite) {
         Buffer centerpoints = Buffer(
@@ -1563,41 +1567,9 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
                 NullRange
         );
 
-        ocl.queue.enqueueCopyBufferToImage(
-            centerpoints,
-            centerpointsImage,
-            0,
-            offset,
-            region
-        );
-
-    } else {
-        candidatesKernel.setArg(0, TDF);
-        candidatesKernel.setArg(1, centerpointsImage);
-        ocl.queue.enqueueNDRangeKernel(
-                candidatesKernel,
-                NullRange,
-                NDRange(size.x,size.y,size.z),
-                NullRange
-        );
-    }
-
-    HistogramPyramid3D hp3(ocl);
-    hp3.create(centerpointsImage, size.x, size.y, size.z);
-
-    char * initZeros = new char[totalSize]();
-    Image3D centerpointsImage2 = Image3D(
-            ocl.context,
-            CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
-            ImageFormat(CL_R, CL_SIGNED_INT8),
-            size.x, size.y, size.z,
-            0,0,initZeros
-    );
-
-    candidates2Kernel.setArg(0, TDF);
-    candidates2Kernel.setArg(1, radius);
-    candidates2Kernel.setArg(2, vectorField);
-    if(no3Dwrite) {
+        candidates2Kernel.setArg(0, TDF);
+        candidates2Kernel.setArg(1, radius);
+        candidates2Kernel.setArg(2, vectorField);
         Buffer centerpoints2 = Buffer(
                 ocl.context,
                 CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
@@ -1605,6 +1577,8 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
                 initZeros
         );
         candidates2Kernel.setArg(3, centerpoints2);
+        HistogramPyramid3DBuffer hp3(ocl);
+        hp3.create(centerpoints, size.x, size.y, size.z);
         hp3.traverse(candidates2Kernel, 4);
         ocl.queue.enqueueCopyBufferToImage(
             centerpoints2,
@@ -1613,23 +1587,10 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
             offset,
             region
         );
-    } else {
-        candidates2Kernel.setArg(3, centerpointsImage2);
-        hp3.traverse(candidates2Kernel, 4);
-    }
-
-    Image3D centerpointsImage3 = Image3D(
-            ocl.context,
-            CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
-            ImageFormat(CL_R, CL_SIGNED_INT8),
-            size.x, size.y, size.z,
-            0,0,initZeros
-    );
-    ddKernel.setArg(0, vectorField);
-    ddKernel.setArg(1, TDF);
-    ddKernel.setArg(2, centerpointsImage2);
-    ddKernel.setArg(4, cubeSize);
-    if(no3Dwrite) {
+        ddKernel.setArg(0, vectorField);
+        ddKernel.setArg(1, TDF);
+        ddKernel.setArg(2, centerpointsImage2);
+        ddKernel.setArg(4, cubeSize);
         Buffer centerpoints3 = Buffer(
                 ocl.context,
                 CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
@@ -1644,15 +1605,52 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
                 NullRange
         );
 
-        ocl.queue.enqueueCopyBufferToImage(
-            centerpoints3,
-            centerpointsImage3,
-            0,
-            offset,
-            region
+        // Construct HP of centerpointsImage
+        HistogramPyramid3DBuffer hp(ocl);
+        hp.create(centerpoints3, size.x, size.y, size.z);
+        sum = hp.getSum();
+        std::cout << "number of vertices detected " << sum << std::endl;
+
+        // Run createPositions kernel
+        vertices = hp.createPositionBuffer(); 
+    } else {
+        Image3D centerpointsImage = Image3D(
+                ocl.context,
+                CL_MEM_READ_WRITE,
+                ImageFormat(CL_R, CL_SIGNED_INT8),
+                size.x, size.y, size.z
         );
 
-    } else {
+        candidatesKernel.setArg(0, TDF);
+        candidatesKernel.setArg(1, centerpointsImage);
+        ocl.queue.enqueueNDRangeKernel(
+                candidatesKernel,
+                NullRange,
+                NDRange(size.x,size.y,size.z),
+                NullRange
+        );
+
+
+        candidates2Kernel.setArg(0, TDF);
+        candidates2Kernel.setArg(1, radius);
+        candidates2Kernel.setArg(2, vectorField);
+
+        HistogramPyramid3D hp3(ocl);
+        hp3.create(centerpointsImage, size.x, size.y, size.z);
+        candidates2Kernel.setArg(3, centerpointsImage2);
+        hp3.traverse(candidates2Kernel, 4);
+
+        Image3D centerpointsImage3 = Image3D(
+                ocl.context,
+                CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+                ImageFormat(CL_R, CL_SIGNED_INT8),
+                size.x, size.y, size.z,
+                0,0,initZeros
+        );
+        ddKernel.setArg(0, vectorField);
+        ddKernel.setArg(1, TDF);
+        ddKernel.setArg(2, centerpointsImage2);
+        ddKernel.setArg(4, cubeSize);
         ddKernel.setArg(3, centerpointsImage3);
         ocl.queue.enqueueNDRangeKernel(
                 ddKernel,
@@ -1660,35 +1658,24 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
                 NDRange(ceil(size.x/cubeSize),ceil(size.y/cubeSize),ceil(size.z/cubeSize)),
                 NullRange
         );
+
+        // Construct HP of centerpointsImage
+        HistogramPyramid3D hp(ocl);
+        hp.create(centerpointsImage3, size.x, size.y, size.z);
+        sum = hp.getSum();
+        std::cout << "number of vertices detected " << sum << std::endl;
+
+        // Run createPositions kernel
+        vertices = hp.createPositionBuffer(); 
+
     }
-
 #ifdef TIMING
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
     startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
     endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
-    std::cout << "RUNTIME of centerpoint candidates: " << (end-start)*1.0e-6 << " ms" << std::endl;
+    std::cout << "RUNTIME centerpoint extraction: " << (end-start)*1.0e-6 << " ms" << std::endl;
 #endif 
-
-#ifdef TIMING
-    ocl.queue.enqueueMarker(&startEvent);
-#endif
-    // Construct HP of centerpointsImage
-    HistogramPyramid3D hp(ocl);
-    hp.create(centerpointsImage3, size.x, size.y, size.z);
-    int sum = hp.getSum();
-    std::cout << "number of vertices detected " << sum << std::endl;
-
-    // Run createPositions kernel
-    Buffer vertices = hp.createPositionBuffer(); 
-#ifdef TIMING
-    ocl.queue.enqueueMarker(&endEvent);
-    ocl.queue.finish();
-    startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
-    endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
-    std::cout << "RUNTIME HP creation and traversal: " << (end-start)*1.0e-6 << " ms" << std::endl;
-#endif 
-
 
 #ifdef TIMING
     ocl.queue.enqueueMarker(&startEvent);

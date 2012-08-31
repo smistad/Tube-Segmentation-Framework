@@ -141,6 +141,142 @@ float3 gradient(
     return grad;
 }
 
+/* Morton Code Functions - Kudos to http://fgiesen.wordpress.com/2009/12/13/decoding-morton-codes/ */
+
+// "Insert" two 0 bits after each of the 10 low bits of x
+uint Part1By2(uint x) {
+  x &= 0x000003ff; // x = ---- ---- ---- ---- ---- --98 7654 3210
+  x = (x ^ (x << 16)) & 0xff0000ff; // x = ---- --98 ---- ---- ---- ---- 7654 3210
+  x = (x ^ (x << 8)) & 0x0300f00f; // x = ---- --98 ---- ---- 7654 ---- ---- 3210
+  x = (x ^ (x << 4)) & 0x030c30c3; // x = ---- --98 ---- 76-- --54 ---- 32-- --10
+  x = (x ^ (x << 2)) & 0x09249249; // x = ---- 9--8 --7- -6-- 5--4 --3- -2-- 1--0
+  return x;
+}
+
+uint EncodeMorton3(uint x, uint y, uint z) {
+  return (Part1By2(z) << 2) + (Part1By2(y) << 1) + Part1By2(x);
+}
+
+uint EncodeMorton(int4 v) {
+    return EncodeMorton3(v.x,v.y,v.z);
+}
+
+// Inverse of Part1By2 - "delete" all bits not at positions divisible by 3
+uint Compact1By2(uint x) {
+  x &= 0x09249249; // x = ---- 9--8 --7- -6-- 5--4 --3- -2-- 1--0
+  x = (x ^ (x >> 2)) & 0x030c30c3; // x = ---- --98 ---- 76-- --54 ---- 32-- --10
+  x = (x ^ (x >> 4)) & 0x0300f00f; // x = ---- --98 ---- ---- 7654 ---- ---- 3210
+  x = (x ^ (x >> 8)) & 0xff0000ff; // x = ---- --98 ---- ---- ---- ---- 7654 3210
+  x = (x ^ (x >> 16)) & 0x000003ff; // x = ---- ---- ---- ---- ---- --98 7654 3210
+  return x;
+}
+
+uint DecodeMorton3X(uint code) {
+  return Compact1By2(code >> 0);
+}
+
+uint DecodeMorton3Y(uint code) {
+  return Compact1By2(code >> 1);
+}
+
+uint DecodeMorton3Z(uint code) {
+  return Compact1By2(code >> 2);
+}
+
+__kernel void constructHPLevelCharChar(
+        __global uchar * readHistoPyramid,
+        __global uchar * writeHistoPyramid
+    ) { 
+
+    uint writePos = EncodeMorton3(get_global_id(0), get_global_id(1), get_global_id(2));
+    uint readPos = EncodeMorton3(get_global_id(0)*2, get_global_id(1)*2, get_global_id(2)*2);
+    uchar writeValue = readHistoPyramid[readPos] +
+                    readHistoPyramid[readPos + 1] +
+                    readHistoPyramid[readPos + 2] +
+                    readHistoPyramid[readPos + 3] +
+                    readHistoPyramid[readPos + 4] +
+                    readHistoPyramid[readPos + 5] +
+                    readHistoPyramid[readPos + 6] +
+                    readHistoPyramid[readPos + 7];
+
+    writeHistoPyramid[writePos] = writeValue;
+}
+
+__kernel void constructHPLevelCharShort(
+        __global uchar * readHistoPyramid,
+        __global ushort * writeHistoPyramid
+    ) { 
+
+    uint writePos = EncodeMorton3(get_global_id(0), get_global_id(1), get_global_id(2));
+    uint readPos = EncodeMorton3(get_global_id(0)*2, get_global_id(1)*2, get_global_id(2)*2);
+    ushort writeValue = readHistoPyramid[readPos] +
+                    readHistoPyramid[readPos + 1] +
+                    readHistoPyramid[readPos + 2] +
+                    readHistoPyramid[readPos + 3] +
+                    readHistoPyramid[readPos + 4] +
+                    readHistoPyramid[readPos + 5] +
+                    readHistoPyramid[readPos + 6] +
+                    readHistoPyramid[readPos + 7];
+
+    writeHistoPyramid[writePos] = writeValue;
+}
+__kernel void constructHPLevelShortShort(
+        __global ushort * readHistoPyramid,
+        __global ushort * writeHistoPyramid
+    ) { 
+
+    uint writePos = EncodeMorton3(get_global_id(0), get_global_id(1), get_global_id(2));
+    uint readPos = EncodeMorton3(get_global_id(0)*2, get_global_id(1)*2, get_global_id(2)*2);
+    ushort writeValue = readHistoPyramid[readPos] +
+                    readHistoPyramid[readPos + 1] +
+                    readHistoPyramid[readPos + 2] +
+                    readHistoPyramid[readPos + 3] +
+                    readHistoPyramid[readPos + 4] +
+                    readHistoPyramid[readPos + 5] +
+                    readHistoPyramid[readPos + 6] +
+                    readHistoPyramid[readPos + 7];
+
+    writeHistoPyramid[writePos] = writeValue;
+}
+
+__kernel void constructHPLevelShortInt(
+        __global ushort * readHistoPyramid,
+        __global int * writeHistoPyramid
+    ) { 
+
+    uint writePos = EncodeMorton3(get_global_id(0), get_global_id(1), get_global_id(2));
+    uint readPos = EncodeMorton3(get_global_id(0)*2, get_global_id(1)*2, get_global_id(2)*2);
+    int writeValue = readHistoPyramid[readPos] +
+                    readHistoPyramid[readPos + 1] +
+                    readHistoPyramid[readPos + 2] +
+                    readHistoPyramid[readPos + 3] +
+                    readHistoPyramid[readPos + 4] +
+                    readHistoPyramid[readPos + 5] +
+                    readHistoPyramid[readPos + 6] +
+                    readHistoPyramid[readPos + 7];
+
+    writeHistoPyramid[writePos] = writeValue;
+}
+
+__kernel void constructHPLevelBuffer(
+        __global int * readHistoPyramid,
+        __global int * writeHistoPyramid
+    ) { 
+
+    uint writePos = EncodeMorton3(get_global_id(0), get_global_id(1), get_global_id(2));
+    uint readPos = EncodeMorton3(get_global_id(0)*2, get_global_id(1)*2, get_global_id(2)*2);
+    int writeValue = readHistoPyramid[readPos] +
+                    readHistoPyramid[readPos + 1] +
+                    readHistoPyramid[readPos + 2] +
+                    readHistoPyramid[readPos + 3] +
+                    readHistoPyramid[readPos + 4] +
+                    readHistoPyramid[readPos + 5] +
+                    readHistoPyramid[readPos + 6] +
+                    readHistoPyramid[readPos + 7];
+
+    writeHistoPyramid[writePos] = writeValue;
+}
+
 __kernel void constructHPLevel3D(
     __read_only image3d_t readHistoPyramid,
     __write_only image3d_t writeHistoPyramid
@@ -286,6 +422,185 @@ int4 traverseHP3D(
     return position;
 }
 
+int4 scanHPLevelShort(int target, __global ushort * hp, int4 current) {
+
+    int8 neighbors = {
+        hp[EncodeMorton(current)],
+        hp[EncodeMorton(current + cubeOffsets[1])],
+        hp[EncodeMorton(current + cubeOffsets[2])],
+        hp[EncodeMorton(current + cubeOffsets[3])],
+        hp[EncodeMorton(current + cubeOffsets[4])],
+        hp[EncodeMorton(current + cubeOffsets[5])],
+        hp[EncodeMorton(current + cubeOffsets[6])],
+        hp[EncodeMorton(current + cubeOffsets[7])],
+    };
+
+    int acc = current.s3 + neighbors.s0;
+    int8 cmp;
+    cmp.s0 = acc <= target;
+    acc += neighbors.s1;
+    cmp.s1 = acc <= target;
+    acc += neighbors.s2;
+    cmp.s2 = acc <= target;
+    acc += neighbors.s3;
+    cmp.s3 = acc <= target;
+    acc += neighbors.s4;
+    cmp.s4 = acc <= target;
+    acc += neighbors.s5;
+    cmp.s5 = acc <= target;
+    acc += neighbors.s6;
+    cmp.s6 = acc <= target;
+    cmp.s7 = 0;
+
+
+    current += cubeOffsets[(cmp.s0+cmp.s1+cmp.s2+cmp.s3+cmp.s4+cmp.s5+cmp.s6+cmp.s7)];
+    current.s0 = current.s0*2;
+    current.s1 = current.s1*2;
+    current.s2 = current.s2*2;
+    current.s3 = current.s3 +
+    cmp.s0*neighbors.s0 +
+    cmp.s1*neighbors.s1 +
+    cmp.s2*neighbors.s2 +
+    cmp.s3*neighbors.s3 +
+    cmp.s4*neighbors.s4 +
+    cmp.s5*neighbors.s5 +
+    cmp.s6*neighbors.s6 +
+    cmp.s7*neighbors.s7;
+    return current;
+
+}
+int4 scanHPLevelChar(int target, __global uchar * hp, int4 current) {
+
+    int8 neighbors = {
+        hp[EncodeMorton(current)],
+        hp[EncodeMorton(current + cubeOffsets[1])],
+        hp[EncodeMorton(current + cubeOffsets[2])],
+        hp[EncodeMorton(current + cubeOffsets[3])],
+        hp[EncodeMorton(current + cubeOffsets[4])],
+        hp[EncodeMorton(current + cubeOffsets[5])],
+        hp[EncodeMorton(current + cubeOffsets[6])],
+        hp[EncodeMorton(current + cubeOffsets[7])],
+    };
+
+    int acc = current.s3 + neighbors.s0;
+    int8 cmp;
+    cmp.s0 = acc <= target;
+    acc += neighbors.s1;
+    cmp.s1 = acc <= target;
+    acc += neighbors.s2;
+    cmp.s2 = acc <= target;
+    acc += neighbors.s3;
+    cmp.s3 = acc <= target;
+    acc += neighbors.s4;
+    cmp.s4 = acc <= target;
+    acc += neighbors.s5;
+    cmp.s5 = acc <= target;
+    acc += neighbors.s6;
+    cmp.s6 = acc <= target;
+    cmp.s7 = 0;
+
+
+    current += cubeOffsets[(cmp.s0+cmp.s1+cmp.s2+cmp.s3+cmp.s4+cmp.s5+cmp.s6+cmp.s7)];
+    current.s0 = current.s0*2;
+    current.s1 = current.s1*2;
+    current.s2 = current.s2*2;
+    current.s3 = current.s3 +
+    cmp.s0*neighbors.s0 +
+    cmp.s1*neighbors.s1 +
+    cmp.s2*neighbors.s2 +
+    cmp.s3*neighbors.s3 +
+    cmp.s4*neighbors.s4 +
+    cmp.s5*neighbors.s5 +
+    cmp.s6*neighbors.s6 +
+    cmp.s7*neighbors.s7;
+    return current;
+
+}
+
+int4 scanHPLevel(int target, __global int * hp, int4 current) {
+
+    int8 neighbors = {
+        hp[EncodeMorton(current)],
+        hp[EncodeMorton(current + cubeOffsets[1])],
+        hp[EncodeMorton(current + cubeOffsets[2])],
+        hp[EncodeMorton(current + cubeOffsets[3])],
+        hp[EncodeMorton(current + cubeOffsets[4])],
+        hp[EncodeMorton(current + cubeOffsets[5])],
+        hp[EncodeMorton(current + cubeOffsets[6])],
+        hp[EncodeMorton(current + cubeOffsets[7])],
+    };
+
+    int acc = current.s3 + neighbors.s0;
+    int8 cmp;
+    cmp.s0 = acc <= target;
+    acc += neighbors.s1;
+    cmp.s1 = acc <= target;
+    acc += neighbors.s2;
+    cmp.s2 = acc <= target;
+    acc += neighbors.s3;
+    cmp.s3 = acc <= target;
+    acc += neighbors.s4;
+    cmp.s4 = acc <= target;
+    acc += neighbors.s5;
+    cmp.s5 = acc <= target;
+    acc += neighbors.s6;
+    cmp.s6 = acc <= target;
+    cmp.s7 = 0;
+
+
+    current += cubeOffsets[(cmp.s0+cmp.s1+cmp.s2+cmp.s3+cmp.s4+cmp.s5+cmp.s6+cmp.s7)];
+    current.s0 = current.s0*2;
+    current.s1 = current.s1*2;
+    current.s2 = current.s2*2;
+    current.s3 = current.s3 +
+    cmp.s0*neighbors.s0 +
+    cmp.s1*neighbors.s1 +
+    cmp.s2*neighbors.s2 +
+    cmp.s3*neighbors.s3 +
+    cmp.s4*neighbors.s4 +
+    cmp.s5*neighbors.s5 +
+    cmp.s6*neighbors.s6 +
+    cmp.s7*neighbors.s7;
+    return current;
+
+}
+
+int4 traverseHP3DBuffer(
+    int target,
+    int HP_SIZE,
+    __global uchar * hp0,
+    __global uchar * hp1,
+    __global ushort * hp2,
+    __global ushort * hp3,
+    __global ushort * hp4,
+    __global int * hp5,
+    __global int * hp6,
+    __global int * hp7,
+    __global int * hp8,
+    __global int * hp9
+    ) {
+    int4 position = {0,0,0,0}; // x,y,z,sum
+    if(HP_SIZE > 512)
+    position = scanHPLevel(target, hp9, position);
+    if(HP_SIZE > 256)
+    position = scanHPLevel(target, hp8, position);
+    if(HP_SIZE > 128)
+    position = scanHPLevel(target, hp7, position);
+    if(HP_SIZE > 64)
+    position = scanHPLevel(target, hp6, position);
+    position = scanHPLevel(target, hp5, position);
+    position = scanHPLevelShort(target, hp4, position);
+    position = scanHPLevelShort(target, hp3, position);
+    position = scanHPLevelShort(target, hp2, position);
+    position = scanHPLevelChar(target, hp1, position);
+    position = scanHPLevelChar(target, hp0, position);
+    position.x = position.x / 2;
+    position.y = position.y / 2;
+    position.z = position.z / 2;
+    return position;
+}
+
+
 int2 traverseHP2D(
     int target,
     int HP_SIZE,
@@ -345,6 +660,29 @@ __kernel void createPositions3D(
     int4 pos = traverseHP3D(target,HP_SIZE,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,hp8,hp9);
     vstore3(pos.xyz, target, positions);
 }
+
+__kernel void createPositions3DBuffer(
+        __global int * positions,
+        __private int HP_SIZE,
+        __private int sum,
+        __global uchar * hp0, // Largest HP
+        __global uchar * hp1,
+        __global ushort * hp2,
+        __global ushort * hp3,
+        __global ushort * hp4,
+        __global int * hp5,
+        __global int * hp6,
+        __global int * hp7,
+        __global int * hp8,
+        __global int * hp9
+    ) {
+    int target = get_global_id(0);
+    if(target >= sum)
+        target = 0;
+    int4 pos = traverseHP3DBuffer(target,HP_SIZE,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,hp8,hp9);
+    vstore3(pos.xyz, target, positions);
+}
+
 
 __kernel void createPositions2D(
         __global int * positions,
@@ -582,7 +920,7 @@ __kernel void dd(
     __read_only image3d_t vectorField,
     __read_only image3d_t TDF,
     __read_only image3d_t centerpointCandidates,
-    __global char * centerpoints,
+    __global uchar * centerpoints,
     __private int cubeSize
     ) {
 
@@ -609,7 +947,7 @@ __kernel void dd(
         }
     }}}
     if(found) {
-        centerpoints[bestPos.x+bestPos.y*get_image_width(TDF)+bestPos.z*get_image_width(TDF)*get_image_height(TDF)] = 1;
+        centerpoints[EncodeMorton(bestPos)] = 1;
     }
 }
 
@@ -617,14 +955,14 @@ __kernel void dd(
 
 __kernel void findCandidateCenterpoints(
     __read_only image3d_t TDF,
-    __global char * centerpoints
+    __global uchar * centerpoints
     ) {
     const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
     float TDFlimit = 0.5f;
     if(read_imagef(TDF, sampler, pos).x < TDFlimit) {
-        centerpoints[LPOS(pos)] = 0;
+        centerpoints[EncodeMorton(pos)] = 0;
     } else {
-        centerpoints[LPOS(pos)] = 1;
+        centerpoints[EncodeMorton(pos)] = 1;
     }
 }
 
