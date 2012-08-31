@@ -1579,6 +1579,7 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
         candidates2Kernel.setArg(3, centerpoints2);
         HistogramPyramid3DBuffer hp3(ocl);
         hp3.create(centerpoints, size.x, size.y, size.z);
+        std::cout << "candidates: " << hp3.getSum() << std::endl;
         hp3.traverse(candidates2Kernel, 4);
         ocl.queue.enqueueCopyBufferToImage(
             centerpoints2,
