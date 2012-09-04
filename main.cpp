@@ -20,15 +20,13 @@ int main(int argc, char ** argv) {
     std::string filename = argv[1];
 
     // Compile and create program
-    /*
-    if((int)devices[0].getInfo<CL_DEVICE_EXTENSIONS>().find("cl_khr_3d_image_writes") > -1) {
+    if(parameters.count("buffers-only") == 0 && (int)devices[0].getInfo<CL_DEVICE_EXTENSIONS>().find("cl_khr_3d_image_writes") > -1) {
         ocl.program = buildProgramFromBinary(ocl.context, "kernels.cl");
         parameters["3d_write"] = "true";
     } else {
-    */
         ocl.program = buildProgramFromBinary(ocl.context, "kernels_no_3d_write.cl");
         std::cout << "Writing to 3D textures is not supported on the selected device." << std::endl;
-    //}
+    }
 
     SIPL::int3 size;
     TubeSegmentation TS;

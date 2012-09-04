@@ -104,7 +104,7 @@ void HistogramPyramid3D::create(Image3D baseLevel, int sizeX, int sizeY, int siz
     this->sum = sum[0] + sum[1] + sum[2] + sum[3] + sum[4] + sum[5] + sum[6] + sum[7];
 }
 
-void HistogramPyramid3DBuffer::create(Buffer baseLevel2, int sizeX, int sizeY, int sizeZ) {
+void HistogramPyramid3DBuffer::create(Buffer baseLevel, int sizeX, int sizeY, int sizeZ) {
     // Make baseLevel into power of 2 in all dimensions
     if(sizeX == sizeY && sizeY == sizeZ && log2(sizeX) == round(log2(sizeX))) {
         size = sizeX;
@@ -116,15 +116,8 @@ void HistogramPyramid3DBuffer::create(Buffer baseLevel2, int sizeX, int sizeY, i
             i++;
         size = pow(2, i);
     }
-    unsigned char * initZeros = new unsigned char[size*size*size]();
-    Buffer baseLevel = Buffer(
-            ocl.context, 
-            CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, 
-            sizeof(char)*size*size*size,
-            initZeros
-    );
-    ocl.queue.enqueueCopyBuffer(baseLevel2, baseLevel, 0, 0, sizeX*sizeY*sizeZ);
     std::cout << "3D HP size: " << size << std::endl;
+
 
     // Create all levels
     HPlevels.push_back(baseLevel);
@@ -182,7 +175,7 @@ void HistogramPyramid3DBuffer::create(Buffer baseLevel2, int sizeX, int sizeY, i
         NullRange
     );
 
-        previous /= 2;
+    previous /= 2;
 
     constructHPLevelShortShortKernel.setArg(0, HPlevels[3]);
     constructHPLevelShortShortKernel.setArg(1, HPlevels[4]);
