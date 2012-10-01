@@ -1702,10 +1702,11 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
     Image2D edgeTuples = Image2D(
             ocl.context,
             CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
-            ImageFormat(CL_R, CL_SIGNED_INT8),
+            ImageFormat(CL_R, CL_UNSIGNED_INT8),
             sum, sum,
             0, initZeros2
     );
+
     Kernel linkingKernel(ocl.program, "linkCenterpoints");
     linkingKernel.setArg(0, TDF);
     linkingKernel.setArg(1, radius);
@@ -1734,6 +1735,7 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
     HistogramPyramid2D hp2(ocl);
     hp2.create(edgeTuples, sum, sum);
     std::cout << "number of edges detected " << hp2.getSum() << std::endl;
+
 
     // Run create positions kernel on edges
     Buffer edges = hp2.createPositionBuffer();

@@ -284,13 +284,13 @@ __kernel void constructHPLevel2D(
 
     int2 writePos = {get_global_id(0), get_global_id(1)};
     int2 readPos = writePos*2;
-    int writeValue = 
-        read_imagei(readHistoPyramid, hpSampler, readPos).x + 
-        read_imagei(readHistoPyramid, hpSampler, readPos+(int2)(1,0)).x + 
-        read_imagei(readHistoPyramid, hpSampler, readPos+(int2)(0,1)).x + 
-        read_imagei(readHistoPyramid, hpSampler, readPos+(int2)(1,1)).x;
+    uint writeValue = 
+        read_imageui(readHistoPyramid, hpSampler, readPos).x + 
+        read_imageui(readHistoPyramid, hpSampler, readPos+(int2)(1,0)).x + 
+        read_imageui(readHistoPyramid, hpSampler, readPos+(int2)(0,1)).x + 
+        read_imageui(readHistoPyramid, hpSampler, readPos+(int2)(1,1)).x;
 
-    write_imagei(writeHistoPyramid, writePos, writeValue);
+    write_imageui(writeHistoPyramid, writePos, writeValue);
 }
 
 int3 scanHPLevel2D(int target, __read_only image2d_t hp, int3 current) {
@@ -513,9 +513,15 @@ int2 traverseHP2D(
     image2d_t hp7,
     image2d_t hp8,
     image2d_t hp9,
-    image2d_t hp10
+    image2d_t hp10,
+    image2d_t hp11,
+    image2d_t hp12
     ) {
     int3 position = {0,0,0};
+    if(HP_SIZE > 4096)
+    position = scanHPLevel2D(target, hp12, position);
+    if(HP_SIZE > 2048)
+    position = scanHPLevel2D(target, hp11, position);
     if(HP_SIZE > 1024)
     position = scanHPLevel2D(target, hp10, position);
     if(HP_SIZE > 512)
@@ -576,11 +582,13 @@ __kernel void createPositions2D(
         ,__read_only image2d_t hp8
         ,__read_only image2d_t hp9
         ,__read_only image2d_t hp10
+        ,__read_only image2d_t hp11
+        ,__read_only image2d_t hp12
     ) {
     int target = get_global_id(0);
     if(target >= sum)
         target = 0;
-    int2 pos = traverseHP2D(target,HP_SIZE,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,hp8,hp9,hp10);
+    int2 pos = traverseHP2D(target,HP_SIZE,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,hp8,hp9,hp10,hp11,hp12);
     vstore2(pos, target, positions);
 }
 
@@ -726,8 +734,8 @@ __kernel void linkCenterpoints(
         // Store edges
         int2 edge = {get_global_id(0), bestPair.x};
         int2 edge2 = {get_global_id(0), bestPair.y};
-        write_imagei(edges, edge, 1);
-        write_imagei(edges, edge2, 1);
+        write_imageui(edges, edge, 1);
+        write_imageui(edges, edge2, 1);
     }
 }
 
@@ -942,8 +950,10 @@ __kernel void initGrowing(
             n.x = pos.x + a;
             n.y = pos.y + b;
             n.z = pos.z + c;
-	    if(read_imagei(centerline, sampler, n).x == 0)
-            initSegmentation[LPOS(n)] = 2; // TODO: seg fault
+	    if(read_imagei(centerline, sampler, n).x == 0 &&
+            n.x >= 0 && n.y >= 0 && n.z >= 0 &&
+            n.x < get_global_size(0) && n.y < get_global_size(1) && n.z < get_global_size(2))
+            initSegmentation[LPOS(n)] = 2; 
         }}}
 	}
 }
@@ -1009,8 +1019,12 @@ __kernel void grow(
 
 		if(Z.x == X.x && Z.y == X.y && Z.z == X.z) {
             nextSegmentation[LPOS(X)] = 1;
-            nextSegmentation[LPOS(Y)] = 2; // TODO: seg fault
-			continueGrowing = true;
+            // Check if in bounds
+            if(Y.x >= 0 && Y.y >= 0 && Y.z >= 0 && 
+                Y.x < get_global_size(0) && Y.y < get_global_size(1) && Y.z < get_global_size(2)) {
+                nextSegmentation[LPOS(Y)] = 2; 
+                continueGrowing = true;
+            }
 		}
 	    }}
 	}}}
@@ -1105,7 +1119,10 @@ __kernel void dilate(
         for(int b = -1; b < 2 ; b++) { 
             for(int c = -1; c < 2 ; c++) { 
                 int4 nPos = pos + (int4)(a,b,c,0);
-                result[LPOS(nPos)] = 1; // TODO: seg fault
+                // Check if in bounds
+                if(nPos.x >= 0 && nPos.y >= 0 && nPos.z >= 0 &&
+                    nPos.x < get_global_size(0) && nPos.y < get_global_size(1) && nPos.z < get_global_size(2))
+                result[LPOS(nPos)] = 1;
             }
         }
     }
