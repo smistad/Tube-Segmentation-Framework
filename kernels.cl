@@ -417,10 +417,10 @@ __kernel void graphComponentLabeling(
     } else {
         if(ca < cb) {
             // ca is smallest
-            atomic_min(&C[edge.y], ca);
+            volatile int i = atomic_min(&C[edge.y], ca);
         } else {
             // cb is smallest
-            atomic_min(&C[edge.x], cb);
+            volatile int i = atomic_min(&C[edge.x], cb);
         }
         m[0] = 1; // register change
     }
@@ -1230,7 +1230,7 @@ void tred2(float V[SIZE][SIZE], float d[SIZE], float e[SIZE]) {
 
   // Accumulate transformations.
 
-  for (int i = 0; i < SIZE-1; i++) {
+  for (volatile int i = 0; i < SIZE-1; i++) {
     V[SIZE-1][i] = V[i][i];
     V[i][i] = 1.0f;
     float h = d[i+1];
