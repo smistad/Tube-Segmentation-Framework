@@ -8,6 +8,38 @@ __constant sampler_t hpSampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP
 
 #define LPOS(pos) pos.x+pos.y*get_global_size(0)+pos.z*get_global_size(0)*get_global_size(1)
 
+
+// Intialize 3D image to 0
+__kernel void init3DImage(
+    __write_only image3d_t image
+    ) {
+    write_imagei(image, (int4)(get_global_id(0), get_global_id(1), get_global_id(2), 0), 0);
+}
+
+// Intialize 2D image to 0
+__kernel void init2DImage(
+    __write_only image2d_t image
+    ) {
+    write_imagei(image, (int2)(get_global_id(0), get_global_id(1)), 0);
+}
+
+// Intialize int buffer to 0
+__kernel void initIntBuffer(
+    __global int * buffer
+    ) {
+    buffer[get_global_id(0)] = 0;
+}
+
+// Intialize char buffer to 0
+__kernel void initCharBuffer(
+    __global char * buffer
+    ) {
+    buffer[get_global_id(0)] = 0;
+}
+
+
+
+
 __constant int4 cubeOffsets2D[4] = {
     {0, 0, 0, 0},
     {0, 1, 0, 0},
