@@ -1004,7 +1004,8 @@ TubeSegmentation runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 
 #endif
 
     mask = createBlurMask(1.0, &maskSize);
-    blurMask = Buffer(ocl.context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(float)*(maskSize*2+1)*(maskSize*2+1)*(maskSize*2+1), mask);
+    blurMask = Buffer(ocl.context, CL_MEM_READ_ONLY, sizeof(float)*(maskSize*2+1)*(maskSize*2+1)*(maskSize*2+1));
+    ocl.queue.enqueueWriteBuffer(blurMask, CL_FALSE, 0,sizeof(float)*(maskSize*2+1)*(maskSize*2+1)*(maskSize*2+1), mask);
 
     if(no3Dwrite) {
         // Create auxillary buffer
@@ -1338,7 +1339,8 @@ Image3D runInverseGradientSegmentation(OpenCL ocl, Image3D volume, Image3D vecto
 
 
     int stopGrowing = 0;
-    Buffer stop = Buffer(ocl.context, CL_MEM_WRITE_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(int), &stopGrowing);
+    Buffer stop = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(int));
+    ocl.queue.enqueueWriteBuffer(stop, CL_FALSE, 0, sizeof(int), &stopGrowing);
     
     growKernel.setArg(1, vectorField);	
     growKernel.setArg(3, stop);
@@ -1787,10 +1789,10 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
         initC[i] = i;
     Buffer C = Buffer(
             ocl.context,
-            CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
-            sizeof(int)*sum,
-            initC
+            CL_MEM_READ_WRITE,
+            sizeof(int)*sum
     );
+    ocl.queue.enqueueWriteBuffer(C, CL_FALSE, 0, sizeof(int)*sum, initC);
     /*
     Kernel initCBuffer(ocl.program, "initIntBufferID");
     initCBuffer.setArg(0, C);
@@ -2156,6 +2158,7 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
     if(typeName == "MET_SHORT") {
         type = 1;
         SIPL::Volume<short> * v = new SIPL::Volume<short>(filename);
+        STOP_TIMER("reading dataset")
         cl::size_t<3> offset;
         offset[0] = 0;
         offset[1] = 0;
@@ -2172,7 +2175,6 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
                 v->getWidth(), v->getHeight(), v->getDepth()
         );
         ocl.queue.enqueueWriteImage(dataset, CL_FALSE, offset, region2, 0, 0, v->getData());
-        STOP_TIMER("reading dataset and uploading to GPU")
         size->x = v->getWidth();
         size->y = v->getHeight();
         size->z = v->getDepth();
@@ -2238,13 +2240,17 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         throw SIPL::SIPLException(msg.c_str());
     }
     std::cout << "Dataset of size " << size->x << " " << size->y << " " << size->z << " loaded" << std::endl;
-
+#ifdef TIMING
+        ocl.queue.enqueueMarker(&endEvent);
+        ocl.queue.finish();
+        startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
+        endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
+        std::cout << "RUNTIME of data transfer to device: " << (end-start)*1.0e-6 << " ms" << std::endl;
+        ocl.queue.enqueueMarker(&startEvent);
+#endif
     // Perform cropping if required
     if(parameters.count("cropping") == 1) {
         std::cout << "performing cropping" << std::endl;
-#ifdef TIMING
-        ocl.queue.enqueueMarker(&startEvent);
-#endif
         Kernel cropDatasetKernel(ocl.program, "cropDataset");
 
         Buffer scanLinesInsideX = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(short)*size->x);
@@ -2477,6 +2483,14 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
             NullRange
         );
     }
+#ifdef TIMING
+        ocl.queue.enqueueMarker(&endEvent);
+        ocl.queue.finish();
+        startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
+        endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
+        std::cout << "RUNTIME of to float conversion: " << (end-start)*1.0e-6 << " ms" << std::endl;
+        ocl.queue.enqueueMarker(&startEvent);
+#endif
 
     // Return dataset
     return *convertedDataset;
