@@ -101,6 +101,8 @@ void HistogramPyramid3D::create(Image3D baseLevel, int sizeX, int sizeY, int siz
     region[1] = 2;
     region[2] = 2;
     ocl.queue.enqueueReadImage(HPlevels[HPlevels.size()-1], CL_TRUE, offset, region, 0, 0, sum);
+    //for(int i = 0; i < 8; i++)
+    //std::cout << sum[i] << std::endl;
     this->sum = sum[0] + sum[1] + sum[2] + sum[3] + sum[4] + sum[5] + sum[6] + sum[7];
 }
 

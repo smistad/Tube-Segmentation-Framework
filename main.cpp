@@ -1,7 +1,25 @@
 #include "tube-segmentation.hpp"
 
+#include <chrono>
+#define TIMING
+
+#ifdef TIMING
+#define INIT_TIMER auto timerStart = std::chrono::high_resolution_clock::now();
+#define START_TIMER  timerStart = std::chrono::high_resolution_clock::now();
+#define STOP_TIMER(name)  std::cout << "RUNTIME of " << name << ": " << \
+        std::chrono::duration_cast<std::chrono::milliseconds>( \
+                            std::chrono::high_resolution_clock::now()-timerStart \
+                    ).count() << " ms " << std::endl; 
+#else
+#define INIT_TIMER
+#define START_TIMER
+#define STOP_TIMER(name)
+#endif
+
 
 int main(int argc, char ** argv) {
+    INIT_TIMER
+    START_TIMER
     OpenCL ocl; 
 
     ocl.context = createCLContextFromArguments(argc, argv);
@@ -21,10 +39,10 @@ int main(int argc, char ** argv) {
 
     // Compile and create program
     if(parameters.count("buffers-only") == 0 && (int)devices[0].getInfo<CL_DEVICE_EXTENSIONS>().find("cl_khr_3d_image_writes") > -1) {
-        ocl.program = buildProgramFromSource(ocl.context, "kernels.cl");
+        ocl.program = buildProgramFromBinary(ocl.context, "kernels.cl");
         parameters["3d_write"] = "true";
     } else {
-        ocl.program = buildProgramFromSource(ocl.context, "kernels_no_3d_write.cl");
+        ocl.program = buildProgramFromBinary(ocl.context, "kernels_no_3d_write.cl");
         std::cout << "Writing to 3D textures is not supported on the selected device." << std::endl;
     }
 
@@ -40,8 +58,10 @@ int main(int argc, char ** argv) {
         std::cout << "OpenCL error: " << getCLErrorString(e.err()) << std::endl;
         return 0;
     }
+    STOP_TIMER("total")
 
     // Visualize result (and store)
+    /*
     SIPL::Volume<SIPL::float3> * result = new SIPL::Volume<SIPL::float3>(size.x, size.y, size.z);
     for(int i = 0; i < result->getTotalSize(); i++) {
         SIPL::float3 v;
@@ -53,6 +73,7 @@ int main(int argc, char ** argv) {
         result->set(i,v);
     }
     result->showMIP();
+    */
 
     return 0;
 }

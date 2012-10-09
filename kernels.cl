@@ -37,6 +37,12 @@ __kernel void initCharBuffer(
     buffer[get_global_id(0)] = 0;
 }
 
+// Intialize int buffer to its ID
+__kernel void initIntBufferID(
+    __global int * buffer
+    ) {
+    buffer[get_global_id(0)] = get_global_id(0);
+}
 
 
 
