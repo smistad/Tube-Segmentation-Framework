@@ -39,9 +39,13 @@ __kernel void initCharBuffer(
 
 // Intialize int buffer to its ID
 __kernel void initIntBufferID(
-    __global int * buffer
+    __global int * buffer,
+    __private int sum
     ) {
-    buffer[get_global_id(0)] = get_global_id(0);
+    int id = get_global_id(0); 
+    if(id >= sum)
+        id = 0;
+    buffer[id] = id;
 }
 
 
@@ -297,23 +301,27 @@ __kernel void linkCenterpoints(
         __read_only image3d_t radius,
         __global int const * restrict positions,
         __write_only image2d_t edges,
-        __read_only image3d_t intensity
+        __read_only image3d_t intensity,
+        __private int sum
     ) {
     float maxDistance = 25.0f;
-    float3 xa = convert_float3(vload3(get_global_id(0), positions));
+    int id = get_global_id(0);
+    if(id >= sum)
+        id = 0;
+    float3 xa = convert_float3(vload3(id, positions));
 
     int2 bestPair;
     float shortestDistance = maxDistance*2;
     bool validPairFound = false;
-    for(int i = 0; i < get_global_size(0); i++) {
-        if(i == get_global_id(0)) 
+    for(int i = 0; i < sum; i++) {
+        if(i == id) 
             continue;
     float3 xb = convert_float3(vload3(i, positions));
     int db = round(distance(xa,xb));
     if(db >= maxDistance || db >= shortestDistance)
         continue;
     for(int j = 0; j < i; j++) {
-        if(j == get_global_id(0) || j == i) 
+        if(j == id || j == i) 
             continue;
     float3 xc = convert_float3(vload3(j, positions));
 
@@ -379,9 +387,9 @@ __kernel void linkCenterpoints(
         if(invalid)
             continue;
 
-        if(db > 4 && varIntensity / (db+1) > maxVarTDF)
+        if(db > 4 && varIntensity / (db+1) > maxVarIntensity)
             continue;
-        if(db > 4 && varTDF / (db+1) > maxVarIntensity)
+        if(db > 4 && varTDF / (db+1) > maxVarTDF)
             continue;
 
         avgTDF = 0.0f;
@@ -432,8 +440,8 @@ __kernel void linkCenterpoints(
 
     if(validPairFound) {
         // Store edges
-        int2 edge = {get_global_id(0), bestPair.x};
-        int2 edge2 = {get_global_id(0), bestPair.y};
+        int2 edge = {id, bestPair.x};
+        int2 edge2 = {id, bestPair.y};
         write_imagei(edges, edge, 1);
         write_imagei(edges, edge2, 1);
     }
@@ -442,9 +450,12 @@ __kernel void linkCenterpoints(
 __kernel void graphComponentLabeling(
         __global int const * restrict edges,
         volatile __global int * C,
-        __global int * m
+        __global int * m,
+        __private int sum
         ) {
-    const int id = get_global_id(0);
+    int id = get_global_id(0);
+    if(id >= sum)
+        id = 0;
     int2 edge = vload2(id, edges);
     const int ca = C[edge.x];
     const int cb = C[edge.y];

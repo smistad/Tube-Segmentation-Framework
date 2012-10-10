@@ -679,9 +679,9 @@ __kernel void linkCenterpoints(
         if(invalid)
             continue;
 
-        if(db > 4 && varIntensity / (db+1) > maxVarTDF)
+        if(db > 4 && varIntensity / (db+1) > maxVarIntensity)
             continue;
-        if(db > 4 && varTDF / (db+1) > maxVarIntensity)
+        if(db > 4 && varTDF / (db+1) > maxVarTDF)
             continue;
 
         avgTDF = 0.0f;
