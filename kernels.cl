@@ -874,23 +874,22 @@ __kernel void blurVolumeWithGaussian(
         __constant float * mask
     ) {
 
-    const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
-    // TODO: need to take into account spacing here?
+    int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
+    int size = maskSize*2+1;
     
     // Collect neighbor values and multiply with gaussian
     float sum = 0.0f;
     // Calculate the mask size based on sigma (larger sigma, larger mask)
-    for(int a = -maskSize; a < maskSize+1; a++) {
+    for(int c = -maskSize; c < maskSize+1; c++) {
         for(int b = -maskSize; b < maskSize+1; b++) {
-            for(int c = -maskSize; c < maskSize+1; c++) {
-                sum += mask[a+maskSize+(b+maskSize)*(maskSize*2+1)+(c+maskSize)*(maskSize*2+1)*(maskSize*2+1)]
-                        *read_imagef(volume, sampler, pos + (int4)(a,b,c,0)).x; 
+            for(int a = -maskSize; a < maskSize+1; a++) {
+                sum += mask[a+maskSize+(b+maskSize)*size+(c+maskSize)*size*size]*
+                    read_imagef(volume, sampler, pos + (int4)(a,b,c,0)).x; 
             }
         }
     }
 
     write_imagef(blurredVolume, pos, sum);
-    //blurredVolume[LPOS(pos)] = sum;
 }
 
 __kernel void createVectorField(

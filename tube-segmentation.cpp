@@ -783,6 +783,7 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
                 centerlineStacks[prevConnection] = prevConnectionStack;
             }
         } // end if new point can be added
+        delete[] newCenterlines;
     } // End while queue is not empty
 
     if(centerlineDistances.size() == 0) {
@@ -839,7 +840,7 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
 
 
 float * createBlurMask(float sigma, int * maskSizePointer) {
-    int maskSize = (int)ceil(3.0f*sigma);
+    int maskSize = (int)ceil(3.0f*sigma)-1;
     float * mask = new float[(maskSize*2+1)*(maskSize*2+1)*(maskSize*2+1)];
     float sum = 0.0f;
     for(int a = -maskSize; a < maskSize+1; a++) {
@@ -980,7 +981,7 @@ TubeSegmentation runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 
     circleFittingTDFKernel.setArg(1, TDFsmall);
     circleFittingTDFKernel.setArg(2, radiusSmall);
     circleFittingTDFKernel.setArg(3, radiusMin);
-    circleFittingTDFKernel.setArg(4, 2.0f);
+    circleFittingTDFKernel.setArg(4, 3.0f);
     circleFittingTDFKernel.setArg(5, 0.5f);
 
     ocl.queue.enqueueNDRangeKernel(
@@ -989,6 +990,7 @@ TubeSegmentation runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 
             NDRange(size.x,size.y,size.z),
             NDRange(4,4,4)
     );
+
     // Transfer buffer back to host
 #ifdef TIMING
     ocl.queue.enqueueMarker(&endEvent);
@@ -1049,6 +1051,16 @@ TubeSegmentation runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 
                 NDRange(4,4,4)
         );
     }
+    /*
+    float * tmp = new float[totalSize];
+    ocl.queue.enqueueReadImage(blurredVolume, CL_TRUE, offset, region, 0,0,tmp);
+    int counter = 0;
+    for(int i = 0; i < totalSize; i++) {
+        if(tmp[i] > 0.5f)
+            counter++;
+    }
+    std::cout << "counter is " << counter << std::endl;
+    */
 
 #ifdef TIMING
     ocl.queue.enqueueMarker(&endEvent);
@@ -1263,7 +1275,6 @@ TubeSegmentation runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 
             NDRange(size.x,size.y,size.z),
             NDRange(4,4,4)
     );
-
 #ifdef TIMING
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
@@ -1303,6 +1314,7 @@ TubeSegmentation runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 
         offset,
         region
     );
+
 #ifdef TIMING
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
@@ -1310,6 +1322,7 @@ TubeSegmentation runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 
     endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
     std::cout << "RUNTIME of combine: " << (end-start)*1.0e-6 << " ms" << std::endl;
 #endif
+    delete[] mask;
 
 }
 
@@ -1545,13 +1558,13 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
     Kernel candidatesKernel(ocl.program, "findCandidateCenterpoints");
     Kernel candidates2Kernel(ocl.program, "findCandidateCenterpoints2");
     Kernel ddKernel(ocl.program, "dd");
+    Kernel initCharBuffer(ocl.program, "initCharBuffer");
 
 #ifdef TIMING
     cl::Event startEvent, endEvent;
     cl_ulong start, end;
     ocl.queue.enqueueMarker(&startEvent);
 #endif
-    char * initZeros = new char[totalSize]();
     Image3D centerpointsImage2 = Image3D(
             ocl.context,
             CL_MEM_READ_WRITE,
@@ -1582,13 +1595,21 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
             hpSize = pow(2, i);
         }
 
-        unsigned char * initZ = new unsigned char[hpSize*hpSize*hpSize]();
+
         Buffer centerpoints = Buffer(
                 ocl.context,
-                CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
-                sizeof(char)*hpSize*hpSize*hpSize,
-                initZ
+                CL_MEM_READ_WRITE,
+                sizeof(char)*hpSize*hpSize*hpSize
         );
+
+        initCharBuffer.setArg(0, centerpoints);
+        ocl.queue.enqueueNDRangeKernel(
+                initCharBuffer,
+                NullRange,
+                NDRange(hpSize*hpSize*hpSize),
+                NullRange
+        );
+
         candidatesKernel.setArg(0, TDF);
         candidatesKernel.setArg(1, centerpoints);
         ocl.queue.enqueueNDRangeKernel(
@@ -1606,10 +1627,17 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
         candidates2Kernel.setArg(2, vectorField);
         Buffer centerpoints2 = Buffer(
                 ocl.context,
-                CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
-                sizeof(char)*totalSize,
-                initZeros
+                CL_MEM_READ_WRITE,
+                sizeof(char)*totalSize
         );
+        initCharBuffer.setArg(0, centerpoints2);
+        ocl.queue.enqueueNDRangeKernel(
+                initCharBuffer,
+                NullRange,
+                NDRange(totalSize),
+                NullRange
+        );
+
         candidates2Kernel.setArg(3, centerpoints2);
         std::cout << "candidates: " << hp3.getSum() << std::endl;
         hp3.traverse(candidates2Kernel, 4);
@@ -1626,9 +1654,15 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
         ddKernel.setArg(4, cubeSize);
         Buffer centerpoints3 = Buffer(
                 ocl.context,
-                CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
-                sizeof(char)*hpSize*hpSize*hpSize,
-                initZ
+                CL_MEM_READ_WRITE,
+                sizeof(char)*hpSize*hpSize*hpSize
+        );
+        initCharBuffer.setArg(0, centerpoints3);
+        ocl.queue.enqueueNDRangeKernel(
+                initCharBuffer,
+                NullRange,
+                NDRange(hpSize*hpSize*hpSize),
+                NullRange
         );
         ddKernel.setArg(3, centerpoints3);
         ocl.queue.enqueueNDRangeKernel(
@@ -1786,15 +1820,11 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
 
 
     // Do graph component labeling
-    int * initC = new int[sum];
-    for(int i = 0; i < sum; i++)
-        initC[i] = i;
     Buffer C = Buffer(
             ocl.context,
             CL_MEM_READ_WRITE,
             sizeof(int)*sum
     );
-    //ocl.queue.enqueueWriteBuffer(C, CL_FALSE, 0, sizeof(int)*sum, initC);
     Kernel initCBuffer(ocl.program, "initIntBufferID");
     initCBuffer.setArg(0, C);
     initCBuffer.setArg(1, sum);
@@ -1889,12 +1919,18 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
     RSTKernel.setArg(3, S);
     RSTKernel.setArg(4, minTreeLength);
     if(no3Dwrite) {
-        char * czeros = new char[size.x*size.y*size.z]();
         Buffer centerlinesBuffer = Buffer(
                 ocl.context,
-                CL_MEM_WRITE_ONLY | CL_MEM_COPY_HOST_PTR,
-                sizeof(char)*totalSize,
-                czeros
+                CL_MEM_WRITE_ONLY,
+                sizeof(char)*totalSize
+        );
+
+        initCharBuffer.setArg(0, centerlinesBuffer);
+        ocl.queue.enqueueNDRangeKernel(
+                initCharBuffer,
+                NullRange,
+                NDRange(totalSize),
+                NullRange
         );
 
         RSTKernel.setArg(5, centerlinesBuffer);
@@ -1964,7 +2000,6 @@ TubeSegmentation runCircleFittingAndNewCenterlineAlg(OpenCL ocl, cl::Image3D dat
     TubeSegmentation TS;
     const int totalSize = size.x*size.y*size.z;
     const bool no3Dwrite = parameters.count("3d_write") == 0;
-    const std::string storageDirectory = getParamstr(parameters, "storage-dir", "/home/smistad/");
 
     cl::size_t<3> offset;
     offset[0] = 0;
@@ -1977,48 +2012,56 @@ TubeSegmentation runCircleFittingAndNewCenterlineAlg(OpenCL ocl, cl::Image3D dat
 
     runCircleFittingMethod(ocl, dataset, size, parameters, vectorField, TDF, radius);
     Image3D centerline = runNewCenterlineAlg(ocl, size, parameters, vectorField, TDF, radius, dataset);
-    //TS.centerline = new char[totalSize];
-    //ocl.queue.enqueueReadImage(centerline, CL_TRUE, offset, region, 0, 0, TS.centerline);
+    if(parameters.count("display") > 0 || parameters.count("storage-dir") > 0) {
+        TS.centerline = new char[totalSize];
+        ocl.queue.enqueueReadImage(centerline, CL_TRUE, offset, region, 0, 0, TS.centerline);
+    }
     Image3D segmentation = runInverseGradientSegmentation(ocl, centerline, vectorField, size, parameters);
 
 
     // Transfer result back to host
-    /*
-    START_TIMER
-    TS.segmentation = new char[totalSize];
-    TS.TDF = new float[totalSize];
-    TS.radius = new float[totalSize];
-    ocl.queue.enqueueReadImage(TDF, CL_TRUE, offset, region, 0, 0, TS.TDF);
-    ocl.queue.enqueueReadImage(radius, CL_TRUE, offset, region, 0, 0, TS.radius);
-    ocl.queue.enqueueReadImage(segmentation, CL_TRUE, offset, region, 0, 0, TS.segmentation);
-    TS.Fx = new float[totalSize];
-    TS.Fy = new float[totalSize];
-    TS.Fz = new float[totalSize];
-    if(no3Dwrite) {
-        float * Fs = new float[totalSize*4];
-        ocl.queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
+    if(parameters.count("display") > 0 || parameters.count("storage-dir") > 0) {
+        START_TIMER
+        TS.segmentation = new char[totalSize];
+        TS.TDF = new float[totalSize];
+        TS.radius = new float[totalSize];
+        ocl.queue.enqueueReadImage(TDF, CL_TRUE, offset, region, 0, 0, TS.TDF);
+        ocl.queue.enqueueReadImage(radius, CL_TRUE, offset, region, 0, 0, TS.radius);
+        ocl.queue.enqueueReadImage(segmentation, CL_TRUE, offset, region, 0, 0, TS.segmentation);
+        TS.Fx = new float[totalSize];
+        TS.Fy = new float[totalSize];
+        TS.Fz = new float[totalSize];
+        if(no3Dwrite) {
+            float * Fs = new float[totalSize*4];
+            ocl.queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
 #pragma omp parallel for
-        for(int i = 0; i < totalSize; i++) {
-            TS.Fx[i] = Fs[i*4];
-            TS.Fy[i] = Fs[i*4+1];
-            TS.Fz[i] = Fs[i*4+2];
-        }
-        delete[] Fs;
-    } else {
-        short * Fs = new short[totalSize*4];
-        ocl.queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
+            for(int i = 0; i < totalSize; i++) {
+                TS.Fx[i] = Fs[i*4];
+                TS.Fy[i] = Fs[i*4+1];
+                TS.Fz[i] = Fs[i*4+2];
+            }
+            delete[] Fs;
+        } else {
+            short * Fs = new short[totalSize*4];
+            ocl.queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
 #pragma omp parallel for
-        for(int i = 0; i < totalSize; i++) {
-            TS.Fx[i] = MAX(-1.0f, Fs[i*4] / 32767.0f);
-            TS.Fy[i] = MAX(-1.0f, Fs[i*4+1] / 32767.0f);;
-            TS.Fz[i] = MAX(-1.0f, Fs[i*4+2] / 32767.0f);
+            for(int i = 0; i < totalSize; i++) {
+                TS.Fx[i] = MAX(-1.0f, Fs[i*4] / 32767.0f);
+                TS.Fy[i] = MAX(-1.0f, Fs[i*4+1] / 32767.0f);;
+                TS.Fz[i] = MAX(-1.0f, Fs[i*4+2] / 32767.0f);
+            }
+            delete[] Fs;
         }
-        delete[] Fs;
+        STOP_TIMER("data transfer to host")
     }
-    writeToRaw<char>(TS.centerline, storageDirectory + "centerline.raw", size.x, size.y, size.z);
-    writeToRaw<char>(TS.segmentation, storageDirectory + "segmentation.raw", size.x, size.y, size.z);
-    STOP_TIMER("writing segmentation and centerline to disk")
-    */
+
+    if(parameters.count("storage-dir") > 0) {
+        START_TIMER
+        const std::string storageDirectory = getParamstr(parameters, "storage-dir", "");
+        writeToRaw<char>(TS.centerline, storageDirectory + "centerline.raw", size.x, size.y, size.z);
+        writeToRaw<char>(TS.segmentation, storageDirectory + "segmentation.raw", size.x, size.y, size.z);
+        STOP_TIMER("writing to disk")
+    }
 
     return TS;
 }
@@ -2182,7 +2225,8 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         size->x = v->getWidth();
         size->y = v->getHeight();
         size->z = v->getDepth();
-        //delete v;
+        ocl.queue.finish(); // must finish data transfer before deleting the volume object
+        delete v;
     } else if(typeName == "MET_USHORT") {
         type = 2;
         SIPL::Volume<SIPL::ushort> * v = new SIPL::Volume<SIPL::ushort>(filename);

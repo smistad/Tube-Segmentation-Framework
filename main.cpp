@@ -22,6 +22,25 @@ int main(int argc, char ** argv) {
     START_TIMER
     OpenCL ocl; 
 
+    if(argc == 1 || argv[1] == "--help") {
+        // Print help message
+        std::cout << "usage: " << argv[0] << " mhd-filename [options]" << std::endl << std::endl;
+        std::cout << "available options: " << std::endl;
+        std::vector<std::string> options = {
+            "--device <type>", "which type of device to run calculations on (cpu|gpu)", "gpu",
+            "--buffers-only", "disable writing to 3D images", "off",
+            "--minimum <value>", "set minimum threshold", "0",
+            "--maximum <value>", "set maximum threshold", "1",
+            "--mode <mode>", "look for black or white tubes (white|black)", "black"
+        };
+
+        std::cout << "name\t\t\tdescription\t\t\t\t\t\tdefault value" << std::endl;
+        for(int i = 0; i < options.size(); i += 3) {
+            std::cout << options[i] << "\t" << options[i+1] << "\t" << options[i+2] << std::endl;
+        }
+        return 0;
+    }
+
     ocl.context = createCLContextFromArguments(argc, argv);
 
     // Select first device
@@ -53,27 +72,38 @@ int main(int argc, char ** argv) {
         cl::Image3D dataset = readDatasetAndTransfer(ocl, filename, parameters, &size);
 
         // Run specified method on dataset
-        TS = runCircleFittingAndNewCenterlineAlg(ocl, dataset, size, parameters);
+        if(parameters.count("centerline-method") && parameters["centerline-method"] == "ridge") {
+            TS = runCircleFittingAndRidgeTraversal(ocl, dataset, size, parameters);
+        } else {
+            TS = runCircleFittingAndNewCenterlineAlg(ocl, dataset, size, parameters);
+        }
     } catch(cl::Error e) {
         std::cout << "OpenCL error: " << getCLErrorString(e.err()) << std::endl;
         return 0;
     }
     STOP_TIMER("total")
 
-    // Visualize result (and store)
-    /*
-    SIPL::Volume<SIPL::float3> * result = new SIPL::Volume<SIPL::float3>(size.x, size.y, size.z);
-    for(int i = 0; i < result->getTotalSize(); i++) {
-        SIPL::float3 v;
-        v.x = TS.TDF[i];
-        v.y = 0;
-        v.z = 0;
-        v.y = TS.centerline[i] ? 1.0:0.0;
-        v.z = TS.segmentation[i] ? 1.0:0.0;
-        result->set(i,v);
+    if(parameters.count("display") > 0) {
+        // Visualize result
+        SIPL::Volume<SIPL::float3> * result = new SIPL::Volume<SIPL::float3>(size.x, size.y, size.z);
+        for(int i = 0; i < result->getTotalSize(); i++) {
+            SIPL::float3 v;
+            v.x = TS.TDF[i];
+            v.y = 0;
+            v.z = 0;
+            v.y = TS.centerline[i] ? 1.0:0.0;
+            v.z = TS.segmentation[i] ? 1.0:0.0;
+            result->set(i,v);
+        }
+        result->showMIP();
+        delete result;
     }
-    result->showMIP();
-    */
+    if(parameters.count("display") > 0 || parameters.count("storage-dir") > 0) {
+        delete[] TS.centerline;
+        delete[] TS.segmentation;
+        delete[] TS.TDF;
+        delete[] TS.radius;
+    }
 
     return 0;
 }
