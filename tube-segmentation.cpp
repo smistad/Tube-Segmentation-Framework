@@ -2075,7 +2075,6 @@ TubeSegmentation runCircleFittingAndRidgeTraversal(OpenCL ocl, Image3D dataset, 
     runCircleFittingMethod(ocl, dataset, size, parameters, vectorField, TDF, radius);
     const int totalSize = size.x*size.y*size.z;
     const bool no3Dwrite = parameters.count("3d_write") == 0;
-    const std::string storageDirectory = getParamstr(parameters, "storage-dir", "/home/smistad/");
 
     cl::size_t<3> offset;
     offset[0] = 0;
@@ -2132,13 +2131,17 @@ TubeSegmentation runCircleFittingAndRidgeTraversal(OpenCL ocl, Image3D dataset, 
 
     volume = runInverseGradientSegmentation(ocl, volume, vectorField, size, parameters);
 
-    START_TIMER
+
     // Transfer volume back to host and write to disk
     TS.segmentation = new char[totalSize];
     ocl.queue.enqueueReadImage(volume, CL_TRUE, offset, region, 0, 0, TS.segmentation);
-    writeToRaw<char>(TS.centerline, storageDirectory + "centerline.raw", size.x, size.y, size.z);
-    writeToRaw<char>(TS.segmentation, storageDirectory + "segmentation.raw", size.x, size.y, size.z);
-    STOP_TIMER("writing segmentation and centerline to disk")
+    if(parameters.count("storage-dir") > 0) {
+        START_TIMER
+        const std::string storageDirectory = getParamstr(parameters, "storage-dir", "");
+        writeToRaw<char>(TS.centerline, storageDirectory + "centerline.raw", size.x, size.y, size.z);
+        writeToRaw<char>(TS.segmentation, storageDirectory + "segmentation.raw", size.x, size.y, size.z);
+        STOP_TIMER("writing segmentation and centerline to disk")
+    }
 
     return TS;
 }

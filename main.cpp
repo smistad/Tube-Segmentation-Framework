@@ -96,14 +96,16 @@ int main(int argc, char ** argv) {
             result->set(i,v);
         }
         result->showMIP();
-        delete result;
+        //delete result;
     }
-    if(parameters.count("display") > 0 || parameters.count("storage-dir") > 0) {
+    /*
+    if(parameters.count("display") > 0 || parameters.count("storage-dir") > 0 || parameters["centerline-method"] == "ridge") {
         delete[] TS.centerline;
         delete[] TS.segmentation;
         delete[] TS.TDF;
         delete[] TS.radius;
     }
+    */
 
     return 0;
 }
