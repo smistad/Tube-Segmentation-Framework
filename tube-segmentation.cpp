@@ -1,5 +1,6 @@
 #include "tube-segmentation.hpp"
-#include "SIPL/Exceptions.hpp"
+#include "SIPL/Types.hpp"
+#include <boost/iostreams/device/mapped_file.hpp>
 #include <chrono>
 #include <queue>
 #include <stack>
@@ -22,20 +23,12 @@ T * readFromRaw(std::string filename, int SIZE_X, int SIZE_Y, int SIZE_Z) {
     return data;
 }
 
-#define TIMING
-
-#ifdef TIMING
 #define INIT_TIMER auto timerStart = std::chrono::high_resolution_clock::now();
-#define START_TIMER  timerStart = std::chrono::high_resolution_clock::now();
-#define STOP_TIMER(name)  std::cout << "RUNTIME of " << name << ": " << \
+#define START_TIMER if(parameters.count("timing") > 0) timerStart = std::chrono::high_resolution_clock::now();
+#define STOP_TIMER(name)  if(parameters.count("timing") > 0) std::cout << "RUNTIME of " << name << ": " << \
         std::chrono::duration_cast<std::chrono::milliseconds>( \
                             std::chrono::high_resolution_clock::now()-timerStart \
                     ).count() << " ms " << std::endl; 
-#else
-#define INIT_TIMER
-#define START_TIMER
-#define STOP_TIMER(name)
-#endif
 
 using SIPL::float3;
 using SIPL::int3;
@@ -916,9 +909,9 @@ TubeSegmentation runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 
         blurredVolume = dataset;
     }
 
-#ifdef TIMING
+if(parameters.count("timing") > 0) {
     ocl.queue.enqueueMarker(&startEvent);
-#endif
+}
     if(no3Dwrite) {
         // Create auxillary buffer
         Buffer vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(float)*totalSize);
@@ -964,16 +957,16 @@ TubeSegmentation runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 
 
     }
        
-#ifdef TIMING
+if(parameters.count("timing") > 0) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
     startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
     endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
     std::cout << "RUNTIME of Create vector field: " << (end-start)*1.0e-6 << " ms" << std::endl;
-#endif
-#ifdef TIMING
+}
+if(parameters.count("timing") > 0) {
     ocl.queue.enqueueMarker(&startEvent);
-#endif
+}
     // Run circle fitting TDF kernel
     Buffer TDFsmall = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
     Buffer radiusSmall = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
@@ -992,18 +985,18 @@ TubeSegmentation runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 
     );
 
     // Transfer buffer back to host
-#ifdef TIMING
+if(parameters.count("timing") > 0) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
     startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
     endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
     std::cout << "RUNTIME of TDF small: " << (end-start)*1.0e-6 << " ms" << std::endl;
-#endif
+}
     /* Large Airways */
     
-#ifdef TIMING
+if(parameters.count("timing") > 0) {
     ocl.queue.enqueueMarker(&startEvent);
-#endif
+}
 
     mask = createBlurMask(1.0, &maskSize);
     blurMask = Buffer(ocl.context, CL_MEM_READ_ONLY, sizeof(float)*(maskSize*2+1)*(maskSize*2+1)*(maskSize*2+1));
@@ -1062,16 +1055,16 @@ TubeSegmentation runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 
     std::cout << "counter is " << counter << std::endl;
     */
 
-#ifdef TIMING
+if(parameters.count("timing") > 0) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
     startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
     endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
     std::cout << "RUNTIME blurring: " << (end-start)*1.0e-6 << " ms" << std::endl;
-#endif
-#ifdef TIMING
+}
+if(parameters.count("timing") > 0) {
     ocl.queue.enqueueMarker(&startEvent);
-#endif
+}
    if(no3Dwrite) {
         // Create auxillary buffer
         Buffer vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(float)*totalSize);
@@ -1117,16 +1110,16 @@ TubeSegmentation runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 
 
     } 
     
-#ifdef TIMING
+if(parameters.count("timing") > 0) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
     startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
     endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
     std::cout << "RUNTIME Create vector field: " << (end-start)*1.0e-6 << " ms" << std::endl;
-#endif
-#ifdef TIMING
+}
+if(parameters.count("timing") > 0) {
     ocl.queue.enqueueMarker(&startEvent);
-#endif
+}
 
     // Run GVF on iVectorField as initial vector field
     Kernel GVFInitKernel = Kernel(ocl.program, "GVF3DInit");
@@ -1248,17 +1241,17 @@ TubeSegmentation runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 
                 NDRange(4,4,4)
         );
     }
-#ifdef TIMING
+if(parameters.count("timing") > 0) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
     startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
     endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
     std::cout << "RUNTIME of GVF: " << (end-start)*1.0e-6 << " ms" << std::endl;
-#endif
+}
 
-#ifdef TIMING
+if(parameters.count("timing") > 0) {
     ocl.queue.enqueueMarker(&startEvent);
-#endif
+}
     // Run circle fitting TDF kernel on GVF result
     Buffer TDFlarge = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
     Buffer radiusLarge = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
@@ -1275,16 +1268,16 @@ TubeSegmentation runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 
             NDRange(size.x,size.y,size.z),
             NDRange(4,4,4)
     );
-#ifdef TIMING
+if(parameters.count("timing") > 0) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
     startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
     endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
     std::cout << "RUNTIME of TDF large: " << (end-start)*1.0e-6 << " ms" << std::endl;
-#endif
-#ifdef TIMING
+}
+if(parameters.count("timing") > 0) {
     ocl.queue.enqueueMarker(&startEvent);
-#endif
+}
     combineKernel.setArg(0, TDFsmall);
     combineKernel.setArg(1, radiusSmall);
     combineKernel.setArg(2, TDFlarge);
@@ -1315,25 +1308,25 @@ TubeSegmentation runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 
         region
     );
 
-#ifdef TIMING
+if(parameters.count("timing") > 0) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
     startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
     endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
     std::cout << "RUNTIME of combine: " << (end-start)*1.0e-6 << " ms" << std::endl;
-#endif
-    delete[] mask;
+}
+    //delete[] mask; // need queue.finish()
 
 }
 
 Image3D runInverseGradientSegmentation(OpenCL ocl, Image3D volume, Image3D vectorField, SIPL::int3 size, paramList parameters) {
     const int totalSize = size.x*size.y*size.z;
     const bool no3Dwrite = parameters.count("3d_write") == 0;
-#ifdef TIMING
     cl::Event startEvent, endEvent;
     cl_ulong start, end;
-    ocl.queue.enqueueMarker(&startEvent);
-#endif
+    if(parameters.count("timing") > 0) {
+        ocl.queue.enqueueMarker(&startEvent);
+    }
 
     Kernel dilateKernel = Kernel(ocl.program, "dilate");
     Kernel erodeKernel = Kernel(ocl.program, "erode");
@@ -1529,13 +1522,13 @@ Image3D runInverseGradientSegmentation(OpenCL ocl, Image3D volume, Image3D vecto
             NullRange
         );
     }
-#ifdef TIMING
+if(parameters.count("timing") > 0) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
     startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
     endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
     std::cout << "RUNTIME of segmentation: " << (end-start)*1.0e-6 << " ms" << std::endl;
-#endif
+}
 
     return volume;
 }
@@ -1560,11 +1553,11 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
     Kernel ddKernel(ocl.program, "dd");
     Kernel initCharBuffer(ocl.program, "initCharBuffer");
 
-#ifdef TIMING
     cl::Event startEvent, endEvent;
     cl_ulong start, end;
-    ocl.queue.enqueueMarker(&startEvent);
-#endif
+    if(parameters.count("timing") > 0) {
+        ocl.queue.enqueueMarker(&startEvent);
+    }
     Image3D centerpointsImage2 = Image3D(
             ocl.context,
             CL_MEM_READ_WRITE,
@@ -1744,17 +1737,17 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
         vertices = hp.createPositionBuffer(); 
 
     }
-#ifdef TIMING
+if(parameters.count("timing") > 0) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
     startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
     endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
     std::cout << "RUNTIME centerpoint extraction: " << (end-start)*1.0e-6 << " ms" << std::endl;
-#endif 
+} 
 
-#ifdef TIMING
+if(parameters.count("timing") > 0) {
     ocl.queue.enqueueMarker(&startEvent);
-#endif
+}
     // Run linking kernel
     Image2D edgeTuples = Image2D(
             ocl.context,
@@ -1786,17 +1779,17 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
             NDRange(globalSize),
             NDRange(64)
     );
-#ifdef TIMING
+if(parameters.count("timing") > 0) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
     startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
     endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
     std::cout << "RUNTIME linking: " << (end-start)*1.0e-6 << " ms" << std::endl;
-#endif 
+} 
 
-#ifdef TIMING
+if(parameters.count("timing") > 0) {
     ocl.queue.enqueueMarker(&startEvent);
-#endif
+}
 
     // Run HP on edgeTuples
     HistogramPyramid2D hp2(ocl);
@@ -1806,17 +1799,17 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
 
     // Run create positions kernel on edges
     Buffer edges = hp2.createPositionBuffer();
-#ifdef TIMING
+if(parameters.count("timing") > 0) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
     startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
     endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
     std::cout << "RUNTIME HP creation and traversal: " << (end-start)*1.0e-6 << " ms" << std::endl;
-#endif 
+} 
 
-#ifdef TIMING
+if(parameters.count("timing") > 0) {
     ocl.queue.enqueueMarker(&startEvent);
-#endif
+}
 
 
     // Do graph component labeling
@@ -1875,18 +1868,18 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
         ++i;
     } while(M == 1);
     std::cout << "did graph component labeling in " << i << " iterations " << std::endl;
-#ifdef TIMING
+if(parameters.count("timing") > 0) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
     startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
     endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
     std::cout << "RUNTIME graph component labeling: " << (end-start)*1.0e-6 << " ms" << std::endl;
-#endif 
+} 
 
 
-#ifdef TIMING
+if(parameters.count("timing") > 0) {
     ocl.queue.enqueueMarker(&startEvent);
-#endif
+}
     // Remove small trees
     Buffer S = Buffer(
             ocl.context,
@@ -1984,13 +1977,13 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
                 NullRange
         );
     }
-#ifdef TIMING
+if(parameters.count("timing") > 0) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
     startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
     endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
     std::cout << "RUNTIME of removing small trees: " << (end-start)*1.0e-6 << " ms" << std::endl;
-#endif 
+} 
     return centerlines;
 }
 
@@ -2014,7 +2007,7 @@ TubeSegmentation runCircleFittingAndNewCenterlineAlg(OpenCL ocl, cl::Image3D dat
     Image3D centerline = runNewCenterlineAlg(ocl, size, parameters, vectorField, TDF, radius, dataset);
     if(parameters.count("display") > 0 || parameters.count("storage-dir") > 0) {
         TS.centerline = new char[totalSize];
-        ocl.queue.enqueueReadImage(centerline, CL_TRUE, offset, region, 0, 0, TS.centerline);
+        ocl.queue.enqueueReadImage(centerline, CL_FALSE, offset, region, 0, 0, TS.centerline);
     }
     Image3D segmentation = runInverseGradientSegmentation(ocl, centerline, vectorField, size, parameters);
 
@@ -2024,10 +2017,11 @@ TubeSegmentation runCircleFittingAndNewCenterlineAlg(OpenCL ocl, cl::Image3D dat
         START_TIMER
         TS.segmentation = new char[totalSize];
         TS.TDF = new float[totalSize];
-        TS.radius = new float[totalSize];
+        //TS.radius = new float[totalSize];
         ocl.queue.enqueueReadImage(TDF, CL_TRUE, offset, region, 0, 0, TS.TDF);
-        ocl.queue.enqueueReadImage(radius, CL_TRUE, offset, region, 0, 0, TS.radius);
+        //ocl.queue.enqueueReadImage(radius, CL_TRUE, offset, region, 0, 0, TS.radius);
         ocl.queue.enqueueReadImage(segmentation, CL_TRUE, offset, region, 0, 0, TS.segmentation);
+        /*
         TS.Fx = new float[totalSize];
         TS.Fy = new float[totalSize];
         TS.Fz = new float[totalSize];
@@ -2052,6 +2046,7 @@ TubeSegmentation runCircleFittingAndNewCenterlineAlg(OpenCL ocl, cl::Image3D dat
             }
             delete[] Fs;
         }
+        */
         STOP_TIMER("data transfer to host")
     }
 
@@ -2123,11 +2118,11 @@ TubeSegmentation runCircleFittingAndRidgeTraversal(OpenCL ocl, Image3D dataset, 
 
     // Dilate the centerline
     Image3D volume = Image3D(ocl.context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, ImageFormat(CL_R, CL_SIGNED_INT8), size.x, size.y, size.z, 0, 0, TS.centerline);
-#ifdef TIMING
+if(parameters.count("timing") > 0) {
     ocl.queue.finish();
     STOP_TIMER("Centerline extraction + transfer of data back and forth")
     ocl.queue.enqueueMarker(&startEvent);
-#endif
+}
 
     volume = runInverseGradientSegmentation(ocl, volume, vectorField, size, parameters);
 
@@ -2174,11 +2169,11 @@ paramList getParameters(int argc, char ** argv) {
 }
 
 Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList parameters, SIPL::int3 * size) {
-#ifdef TIMING
-        cl_ulong start, end;
-        Event startEvent, endEvent;
+    cl_ulong start, end;
+    Event startEvent, endEvent;
+    if(parameters.count("timing") > 0) {
         ocl.queue.enqueueMarker(&startEvent);
-#endif
+    }
     INIT_TIMER
     START_TIMER
     // Read mhd file, determine file type
@@ -2187,11 +2182,42 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
     if(!mhdFile)
         throw SIPL::FileNotFoundException(filename.c_str());
     std::string typeName = "";
+    std::string rawFilename = "";
+    bool typeFound = false, sizeFound = false, rawFilenameFound = false;
     do {
         std::string line;
         std::getline(mhdFile, line);
-        if(line.substr(0, 11) == "ElementType") 
+        if(line.substr(0, 11) == "ElementType") {
             typeName = line.substr(11+3);
+            typeFound = true;
+        } else if(line.substr(0, 15) == "ElementDataFile") {
+            rawFilename = line.substr(15+3);
+            rawFilenameFound = true;
+
+            // Remove any trailing spaces
+            int pos = rawFilename.find(" ");
+            if(pos > 0)
+            rawFilename = rawFilename.substr(0,pos);
+            
+            // Get path name
+            pos = filename.rfind('/');
+            if(pos > 0)
+                rawFilename = filename.substr(0,pos+1) + rawFilename;
+        } else if(line.substr(0, 7) == "DimSize") {
+            std::string sizeString = line.substr(7+3);
+            std::string sizeX = sizeString.substr(0,sizeString.find(" "));
+            sizeString = sizeString.substr(sizeString.find(" ")+1);
+            std::string sizeY = sizeString.substr(0,sizeString.find(" "));
+            sizeString = sizeString.substr(sizeString.find(" ")+1);
+            std::string sizeZ = sizeString.substr(0,sizeString.find(" "));
+
+            size->x = atoi(sizeX.c_str());
+            size->y = atoi(sizeY.c_str());
+            size->z = atoi(sizeZ.c_str());
+
+            sizeFound = true;
+        }
+
     } while(!mhdFile.eof());
 
     // Remove any trailing spaces
@@ -2199,106 +2225,89 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
     if(pos > 0)
         typeName = typeName.substr(0,pos);
 
-    if(typeName == "") 
-        throw SIPL::SIPLException("no data type defined in MHD file");
+    if(!typeFound || !sizeFound || !rawFilenameFound) {
+        std::cout << "Error reading mhd file. Type, filename or size not found" << std::endl;
+        exit(-1);
+    }
 
     // Read dataset using SIPL and transfer to device
     Image3D dataset;
     int type = 0;
+    void * data;
+    boost::iostreams::mapped_file_source file;
+    cl::size_t<3> offset;
+    offset[0] = 0;
+    offset[1] = 0;
+    offset[2] = 0;
+    cl::size_t<3> region2;
+    region2[0] = size->x;
+    region2[1] = size->y;
+    region2[2] = size->z;
+
     if(typeName == "MET_SHORT") {
         type = 1;
-        SIPL::Volume<short> * v = new SIPL::Volume<short>(filename);
-        STOP_TIMER("reading dataset")
-        cl::size_t<3> offset;
-        offset[0] = 0;
-        offset[1] = 0;
-        offset[2] = 0;
-        cl::size_t<3> region2;
-        region2[0] = v->getWidth();
-        region2[1] = v->getHeight();
-        region2[2] = v->getDepth();
-
+        file.open(rawFilename, size->x*size->y*size->z*sizeof(short));
+        data = (void *)file.data();
         dataset = Image3D(
                 ocl.context, 
                 CL_MEM_READ_ONLY,
                 ImageFormat(CL_R, CL_SIGNED_INT16),
-                v->getWidth(), v->getHeight(), v->getDepth()
+                size->x, size->y, size->z
         );
-        ocl.queue.enqueueWriteImage(dataset, CL_FALSE, offset, region2, 0, 0, v->getData());
-        size->x = v->getWidth();
-        size->y = v->getHeight();
-        size->z = v->getDepth();
-        ocl.queue.finish(); // must finish data transfer before deleting the volume object
-        delete v;
+        ocl.queue.enqueueWriteImage(dataset, CL_FALSE, offset, region2, 0, 0, data);
     } else if(typeName == "MET_USHORT") {
         type = 2;
-        SIPL::Volume<SIPL::ushort> * v = new SIPL::Volume<SIPL::ushort>(filename);
+        data = (void *)file.data();
         dataset = Image3D(
                 ocl.context, 
                 CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
                 ImageFormat(CL_R, CL_UNSIGNED_INT16),
-                v->getWidth(), v->getHeight(), v->getDepth(),
-                0, 0, v->getData()
+                size->x, size->y, size->z
         );
-        size->x = v->getWidth();
-        size->y = v->getHeight();
-        size->z = v->getDepth();
-        delete v;
+        ocl.queue.enqueueWriteImage(dataset, CL_FALSE, offset, region2, 0, 0, data);
     } else if(typeName == "MET_CHAR") {
         type = 1;
-        SIPL::Volume<char> * v = new SIPL::Volume<char>(filename);
+        data = (void *)file.data();
         dataset = Image3D(
                 ocl.context, 
                 CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
                 ImageFormat(CL_R, CL_SIGNED_INT8),
-                v->getWidth(), v->getHeight(), v->getDepth(),
-                0, 0, v->getData()
+                size->x, size->y, size->z
         );
-        size->x = v->getWidth();
-        size->y = v->getHeight();
-        size->z = v->getDepth();
-        delete v;
+        ocl.queue.enqueueWriteImage(dataset, CL_FALSE, offset, region2, 0, 0, data);
     } else if(typeName == "MET_UCHAR") {
         type = 2;
-        SIPL::Volume<SIPL::uchar> * v = new SIPL::Volume<SIPL::uchar>(filename);
+        data = (void *)file.data();
         dataset = Image3D(
                 ocl.context, 
                 CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
                 ImageFormat(CL_R, CL_UNSIGNED_INT8),
-                v->getWidth(), v->getHeight(), v->getDepth(),
-                0, 0, v->getData()
+                size->x, size->y, size->z
         );
-        size->x = v->getWidth();
-        size->y = v->getHeight();
-        size->z = v->getDepth();
-        delete v;
+        ocl.queue.enqueueWriteImage(dataset, CL_FALSE, offset, region2, 0, 0, data);
     } else if(typeName == "MET_FLOAT") {
         type = 3;
-        SIPL::Volume<float> * v = new SIPL::Volume<float>(filename);
+        data = (void *)file.data();
         dataset = Image3D(
                 ocl.context, 
                 CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
                 ImageFormat(CL_R, CL_FLOAT),
-                v->getWidth(), v->getHeight(), v->getDepth(),
-                0, 0, v->getData()
+                size->x, size->y, size->z
         );
-        size->x = v->getWidth();
-        size->y = v->getHeight();
-        size->z = v->getDepth();
-        delete v;
+        ocl.queue.enqueueWriteImage(dataset, CL_FALSE, offset, region2, 0, 0, data);
     } else {
         std::string msg = "unsupported filetype " + typeName;
-        throw SIPL::SIPLException(msg.c_str());
+        exit(-1);
     }
     std::cout << "Dataset of size " << size->x << " " << size->y << " " << size->z << " loaded" << std::endl;
-#ifdef TIMING
+    if(parameters.count("timing") > 0) {
         ocl.queue.enqueueMarker(&endEvent);
         ocl.queue.finish();
         startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
         endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
         std::cout << "RUNTIME of data transfer to device: " << (end-start)*1.0e-6 << " ms" << std::endl;
         ocl.queue.enqueueMarker(&startEvent);
-#endif
+    }
     // Perform cropping if required
     if(parameters.count("cropping") == 1) {
         std::cout << "performing cropping" << std::endl;
@@ -2458,14 +2467,14 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         srcOffset[2] = z1;
         ocl.queue.enqueueCopyImage(dataset, imageHUvolume, srcOffset, offset, region);
         dataset = imageHUvolume;
-#ifdef TIMING
+if(parameters.count("timing") > 0) {
         ocl.queue.enqueueMarker(&endEvent);
         ocl.queue.finish();
         startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
         endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
         std::cout << "Cropping time: " << (end-start)*1.0e-6 << " ms" << std::endl;
         ocl.queue.enqueueMarker(&startEvent);
-#endif
+}
     } // End cropping
 
     // Run toFloat kernel
@@ -2477,7 +2486,7 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         maximum = atof(parameters["maximum"].c_str());
 
     Kernel toFloatKernel = Kernel(ocl.program, "toFloat");
-    Image3D * convertedDataset = new Image3D(
+    Image3D convertedDataset = Image3D(
         ocl.context,
         CL_MEM_READ_ONLY,
         ImageFormat(CL_R, CL_FLOAT),
@@ -2515,14 +2524,14 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
 
         ocl.queue.enqueueCopyBufferToImage(
                 convertedDatasetBuffer, 
-                *convertedDataset, 
+                convertedDataset, 
                 0,
                 offset,
                 region
         );
     } else {
         toFloatKernel.setArg(0, dataset);
-        toFloatKernel.setArg(1, *convertedDataset);
+        toFloatKernel.setArg(1, convertedDataset);
         toFloatKernel.setArg(2, minimum);
         toFloatKernel.setArg(3, maximum);
         toFloatKernel.setArg(4, type);
@@ -2534,15 +2543,17 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
             NullRange
         );
     }
-#ifdef TIMING
+    if(parameters.count("timing") > 0) {
         ocl.queue.enqueueMarker(&endEvent);
         ocl.queue.finish();
         startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
         endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
         std::cout << "RUNTIME of to float conversion: " << (end-start)*1.0e-6 << " ms" << std::endl;
         ocl.queue.enqueueMarker(&startEvent);
-#endif
+    }
+    ocl.queue.finish();
+    file.close();
 
     // Return dataset
-    return *convertedDataset;
+    return convertedDataset;
 }

@@ -1,6 +1,7 @@
 #include "tube-segmentation.hpp"
 
 #include <chrono>
+#include <vector>
 #define TIMING
 
 #ifdef TIMING
@@ -81,6 +82,7 @@ int main(int argc, char ** argv) {
         std::cout << "OpenCL error: " << getCLErrorString(e.err()) << std::endl;
         return 0;
     }
+    ocl.queue.finish();
     STOP_TIMER("total")
 
     if(parameters.count("display") > 0) {
@@ -95,8 +97,7 @@ int main(int argc, char ** argv) {
             v.z = TS.segmentation[i] ? 1.0:0.0;
             result->set(i,v);
         }
-        result->showMIP();
-        //delete result;
+        result->showMIP(SIPL::Y);
     }
     /*
     if(parameters.count("display") > 0 || parameters.count("storage-dir") > 0 || parameters["centerline-method"] == "ridge") {
