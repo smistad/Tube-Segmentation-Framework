@@ -6,6 +6,7 @@
 #include <stack>
 #include <list>
 #include <cstdio>
+#include <limits>
 #include "histogram-pyramids.hpp"
 
 template <typename T>
@@ -2181,6 +2182,47 @@ void unmapRawfile(cl_mem memobj, void * user_data) {
     delete[] file;
 }
 
+template <typename T> 
+float getMaximum(void * data, const int totalSize) {
+    T * newDataPointer = (T *)data;
+    T maximum = std::numeric_limits<T>::min();
+    for(int i = 0; i < totalSize; i++) 
+        maximum = MAX(maximum, newDataPointer[i]);
+
+    return (float)maximum;
+}
+
+template <typename T> 
+float getMinimum(void * data, const int totalSize) {
+    T * newDataPointer = (T *)data;
+    T minimum = std::numeric_limits<T>::max();
+    for(int i = 0; i < totalSize; i++) 
+        minimum = MIN(minimum, newDataPointer[i]);
+
+    return (float)minimum;
+}
+
+template <typename T>
+void getLimits(paramList parameters, void * data, const int totalSize, float * minimum, float * maximum) {
+    if(parameters.count("minimum") == 1) {
+        *minimum = atof(parameters["minimum"].c_str());
+    } else {
+        std::cout << "NOTE: minimum parameter not set, finding minimum automatically." << std::endl;
+        *minimum = getMinimum<T>(data, totalSize);
+        std::cout << "NOTE: minimum found to be " << *minimum << std::endl;
+    }
+            
+    if(parameters.count("maximum") == 1) {
+        *maximum = atof(parameters["maximum"].c_str());
+    } else {
+        std::cout << "NOTE: maximum parameter not set, finding maximum automatically." << std::endl;
+        *maximum = getMaximum<T>(data, totalSize);
+        std::cout << "NOTE: maximum found to be " << *maximum << std::endl;
+    }
+}
+
+
+
 Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList parameters, SIPL::int3 * size) {
     cl_ulong start, end;
     Event startEvent, endEvent;
@@ -2256,6 +2298,8 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
     region2[0] = size->x;
     region2[1] = size->y;
     region2[2] = size->z;
+    float minimum = 0.0f, maximum = 1.0f;
+    const int totalSize = size->x*size->y*size->z;
 
     if(typeName == "MET_SHORT") {
         type = 1;
@@ -2266,6 +2310,9 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
                 ImageFormat(CL_R, CL_SIGNED_INT16),
                 size->x, size->y, size->z
         );
+        data = (void *)file->data();
+        ocl.queue.enqueueWriteImage(dataset, CL_FALSE, offset, region2, 0, 0, data);
+        getLimits<short>(parameters, data, totalSize, &minimum, &maximum);
     } else if(typeName == "MET_USHORT") {
         type = 2;
         file->open(rawFilename, size->x*size->y*size->z*sizeof(short));
@@ -2275,6 +2322,9 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
                 ImageFormat(CL_R, CL_UNSIGNED_INT16),
                 size->x, size->y, size->z
         );
+        data = (void *)file->data();
+        ocl.queue.enqueueWriteImage(dataset, CL_FALSE, offset, region2, 0, 0, data);
+        getLimits<unsigned short>(parameters, data, totalSize, &minimum, &maximum);
     } else if(typeName == "MET_CHAR") {
         type = 1;
         file->open(rawFilename, size->x*size->y*size->z*sizeof(char));
@@ -2284,6 +2334,9 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
                 ImageFormat(CL_R, CL_SIGNED_INT8),
                 size->x, size->y, size->z
         );
+        data = (void *)file->data();
+        ocl.queue.enqueueWriteImage(dataset, CL_FALSE, offset, region2, 0, 0, data);
+        getLimits<char>(parameters, data, totalSize, &minimum, &maximum);
     } else if(typeName == "MET_UCHAR") {
         type = 2;
         file->open(rawFilename, size->x*size->y*size->z*sizeof(char));
@@ -2293,6 +2346,9 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
                 ImageFormat(CL_R, CL_UNSIGNED_INT8),
                 size->x, size->y, size->z
         );
+        data = (void *)file->data();
+        ocl.queue.enqueueWriteImage(dataset, CL_FALSE, offset, region2, 0, 0, data);
+        getLimits<unsigned char>(parameters, data, totalSize, &minimum, &maximum);
     } else if(typeName == "MET_FLOAT") {
         type = 3;
         file->open(rawFilename, size->x*size->y*size->z*sizeof(float));
@@ -2302,12 +2358,17 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
                 ImageFormat(CL_R, CL_FLOAT),
                 size->x, size->y, size->z
         );
+        data = (void *)file->data();
+        ocl.queue.enqueueWriteImage(dataset, CL_FALSE, offset, region2, 0, 0, data);
+        getLimits<float>(parameters, data, totalSize, &minimum, &maximum);
     } else {
         std::string msg = "unsupported filetype " + typeName;
         exit(-1);
     }
-    data = (void *)file->data();
-    ocl.queue.enqueueWriteImage(dataset, CL_FALSE, offset, region2, 0, 0, data);
+
+    // If  the minimum or maximum parameters are not set, we find the smallest and largest values
+    // and use those
+
     dataset.setDestructorCallback(unmapRawfile, (void *)(file));
 
     std::cout << "Dataset of size " << size->x << " " << size->y << " " << size->z << " loaded" << std::endl;
@@ -2489,12 +2550,6 @@ if(parameters.count("timing") > 0) {
     } // End cropping
 
     // Run toFloat kernel
-    float minimum = 0.0f, maximum = 1.0f;
-    if(parameters.count("minimum") == 1)
-        minimum = atof(parameters["minimum"].c_str());
-    
-    if(parameters.count("maximum") == 1)
-        maximum = atof(parameters["maximum"].c_str());
 
     Kernel toFloatKernel = Kernel(ocl.program, "toFloat");
     Image3D convertedDataset = Image3D(
