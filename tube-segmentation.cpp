@@ -35,6 +35,12 @@ using SIPL::int3;
 
 using namespace cl;
 
+template <typename T>
+void freeData(cl_mem memobj, void * user_data) {
+    T * data = (T *)user_data;
+    delete[] data;
+}
+
 float getParamf(paramList parameters, std::string parameterName, float defaultValue) {
     if(parameters.count(parameterName) == 1) {
         return atof(parameters[parameterName].c_str());
@@ -893,6 +899,7 @@ TubeSegmentation runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 
     if(smallBlurSigma > 0) {
         mask = createBlurMask(smallBlurSigma, &maskSize);
         blurMask = Buffer(ocl.context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(float)*(maskSize*2+1)*(maskSize*2+1)*(maskSize*2+1), mask);
+        blurMask.setDestructorCallback(freeData<float>, (void *)mask);
 
         // Run blurVolumeWithGaussian on processedVolume
         blurVolumeWithGaussianKernel.setArg(0, dataset);
@@ -1000,6 +1007,7 @@ if(parameters.count("timing") > 0) {
 
     mask = createBlurMask(1.0, &maskSize);
     blurMask = Buffer(ocl.context, CL_MEM_READ_ONLY, sizeof(float)*(maskSize*2+1)*(maskSize*2+1)*(maskSize*2+1));
+    blurMask.setDestructorCallback(freeData<float>, (void *)mask);
     ocl.queue.enqueueWriteBuffer(blurMask, CL_FALSE, 0,sizeof(float)*(maskSize*2+1)*(maskSize*2+1)*(maskSize*2+1), mask);
 
     if(no3Dwrite) {
@@ -1315,7 +1323,6 @@ if(parameters.count("timing") > 0) {
     endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
     std::cout << "RUNTIME of combine: " << (end-start)*1.0e-6 << " ms" << std::endl;
 }
-    //delete[] mask; // need queue.finish()
 
 }
 
@@ -2168,6 +2175,12 @@ paramList getParameters(int argc, char ** argv) {
     return parameters;
 }
 
+void unmapRawfile(cl_mem memobj, void * user_data) {
+    boost::iostreams::mapped_file_source * file = (boost::iostreams::mapped_file_source *)user_data;
+    file->close();
+    delete[] file;
+}
+
 Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList parameters, SIPL::int3 * size) {
     cl_ulong start, end;
     Event startEvent, endEvent;
@@ -2234,7 +2247,7 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
     Image3D dataset;
     int type = 0;
     void * data;
-    boost::iostreams::mapped_file_source file;
+    boost::iostreams::mapped_file_source * file = new boost::iostreams::mapped_file_source[1];
     cl::size_t<3> offset;
     offset[0] = 0;
     offset[1] = 0;
@@ -2246,59 +2259,57 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
 
     if(typeName == "MET_SHORT") {
         type = 1;
-        file.open(rawFilename, size->x*size->y*size->z*sizeof(short));
-        data = (void *)file.data();
+        file->open(rawFilename, size->x*size->y*size->z*sizeof(short));
         dataset = Image3D(
                 ocl.context, 
                 CL_MEM_READ_ONLY,
                 ImageFormat(CL_R, CL_SIGNED_INT16),
                 size->x, size->y, size->z
         );
-        ocl.queue.enqueueWriteImage(dataset, CL_FALSE, offset, region2, 0, 0, data);
     } else if(typeName == "MET_USHORT") {
         type = 2;
-        data = (void *)file.data();
+        file->open(rawFilename, size->x*size->y*size->z*sizeof(short));
         dataset = Image3D(
                 ocl.context, 
                 CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
                 ImageFormat(CL_R, CL_UNSIGNED_INT16),
                 size->x, size->y, size->z
         );
-        ocl.queue.enqueueWriteImage(dataset, CL_FALSE, offset, region2, 0, 0, data);
     } else if(typeName == "MET_CHAR") {
         type = 1;
-        data = (void *)file.data();
+        file->open(rawFilename, size->x*size->y*size->z*sizeof(char));
         dataset = Image3D(
                 ocl.context, 
                 CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
                 ImageFormat(CL_R, CL_SIGNED_INT8),
                 size->x, size->y, size->z
         );
-        ocl.queue.enqueueWriteImage(dataset, CL_FALSE, offset, region2, 0, 0, data);
     } else if(typeName == "MET_UCHAR") {
         type = 2;
-        data = (void *)file.data();
+        file->open(rawFilename, size->x*size->y*size->z*sizeof(char));
         dataset = Image3D(
                 ocl.context, 
                 CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
                 ImageFormat(CL_R, CL_UNSIGNED_INT8),
                 size->x, size->y, size->z
         );
-        ocl.queue.enqueueWriteImage(dataset, CL_FALSE, offset, region2, 0, 0, data);
     } else if(typeName == "MET_FLOAT") {
         type = 3;
-        data = (void *)file.data();
+        file->open(rawFilename, size->x*size->y*size->z*sizeof(float));
         dataset = Image3D(
                 ocl.context, 
                 CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
                 ImageFormat(CL_R, CL_FLOAT),
                 size->x, size->y, size->z
         );
-        ocl.queue.enqueueWriteImage(dataset, CL_FALSE, offset, region2, 0, 0, data);
     } else {
         std::string msg = "unsupported filetype " + typeName;
         exit(-1);
     }
+    data = (void *)file->data();
+    ocl.queue.enqueueWriteImage(dataset, CL_FALSE, offset, region2, 0, 0, data);
+    dataset.setDestructorCallback(unmapRawfile, (void *)(file));
+
     std::cout << "Dataset of size " << size->x << " " << size->y << " " << size->z << " loaded" << std::endl;
     if(parameters.count("timing") > 0) {
         ocl.queue.enqueueMarker(&endEvent);
@@ -2551,8 +2562,6 @@ if(parameters.count("timing") > 0) {
         std::cout << "RUNTIME of to float conversion: " << (end-start)*1.0e-6 << " ms" << std::endl;
         ocl.queue.enqueueMarker(&startEvent);
     }
-    ocl.queue.finish();
-    file.close();
 
     // Return dataset
     return convertedDataset;
