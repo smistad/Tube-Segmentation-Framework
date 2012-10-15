@@ -30,9 +30,12 @@ int main(int argc, char ** argv) {
         std::vector<std::string> options = {
             "--device <type>", "which type of device to run calculations on (cpu|gpu)", "gpu",
             "--buffers-only", "disable writing to 3D images", "off",
-            "--minimum <value>", "set minimum threshold", "0",
-            "--maximum <value>", "set maximum threshold", "1",
-            "--mode <mode>", "look for black or white tubes (white|black)", "black"
+            "--display", "display result using SIPL", "off",
+            "--storage-dir <path>", "specify a directory to store the centerline and segmentation in", "off",
+            "--minimum <value>", "set minimum threshold (if not specified it will find min automatically)", "auto",
+            "--maximum <value>", "set maximum threshold (if not specified it will find min automatically)", "auto",
+            "--mode <mode>", "look for black or white tubes (white|black)", "black",
+            "--centerline-method", "specify which centerline method to use (ridge|gpu)", "gpu"
         };
 
         std::cout << "name\t\t\tdescription\t\t\t\t\t\tdefault value" << std::endl;
@@ -99,14 +102,14 @@ int main(int argc, char ** argv) {
         }
         result->showMIP(SIPL::Y);
     }
-    /*
     if(parameters.count("display") > 0 || parameters.count("storage-dir") > 0 || parameters["centerline-method"] == "ridge") {
+        // Cleanup transferred data
         delete[] TS.centerline;
         delete[] TS.segmentation;
         delete[] TS.TDF;
-        delete[] TS.radius;
+        if(parameters["centerline-method"] == "ridge")
+            delete[] TS.radius;
     }
-    */
 
     return 0;
 }

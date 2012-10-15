@@ -2285,7 +2285,7 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         exit(-1);
     }
 
-    // Read dataset using SIPL and transfer to device
+    // Read dataset by memory mapping the file and transfer to device
     Image3D dataset;
     int type = 0;
     void * data;
@@ -2365,9 +2365,6 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         std::string msg = "unsupported filetype " + typeName;
         exit(-1);
     }
-
-    // If  the minimum or maximum parameters are not set, we find the smallest and largest values
-    // and use those
 
     dataset.setDestructorCallback(unmapRawfile, (void *)(file));
 
