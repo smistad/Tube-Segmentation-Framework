@@ -20,7 +20,6 @@
 
 int main(int argc, char ** argv) {
     INIT_TIMER
-    START_TIMER
     OpenCL ocl; 
 
     if(argc == 1 || argv[1] == "--help") {
@@ -69,6 +68,7 @@ int main(int argc, char ** argv) {
         std::cout << "Writing to 3D textures is not supported on the selected device." << std::endl;
     }
 
+    START_TIMER
     SIPL::int3 size;
     TubeSegmentation TS;
     try {
