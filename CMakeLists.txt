@@ -16,5 +16,7 @@ if(OPENMP_FOUND)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}" )
 endif()
 
+find_package(Boost COMPONENTS iostreams REQUIRED)
+
 add_executable(tubeSegmentation main.cpp tube-segmentation.cpp histogram-pyramids.cpp)
-target_link_libraries(tubeSegmentation OCL-Utilities SIPL )
+target_link_libraries(tubeSegmentation OCL-Utilities SIPL ${Boost_LIBRARIES})
