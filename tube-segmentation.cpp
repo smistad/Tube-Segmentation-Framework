@@ -2300,14 +2300,16 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
     region2[2] = size->z;
     float minimum = 0.0f, maximum = 1.0f;
     const int totalSize = size->x*size->y*size->z;
+    ImageFormat imageFormat;
 
     if(typeName == "MET_SHORT") {
         type = 1;
         file->open(rawFilename, size->x*size->y*size->z*sizeof(short));
+        imageFormat = ImageFormat(CL_R, CL_SIGNED_INT16);
         dataset = Image3D(
                 ocl.context, 
                 CL_MEM_READ_ONLY,
-                ImageFormat(CL_R, CL_SIGNED_INT16),
+                imageFormat,
                 size->x, size->y, size->z
         );
         data = (void *)file->data();
@@ -2328,10 +2330,11 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
     } else if(typeName == "MET_CHAR") {
         type = 1;
         file->open(rawFilename, size->x*size->y*size->z*sizeof(char));
+        imageFormat = ImageFormat(CL_R, CL_SIGNED_INT8);
         dataset = Image3D(
                 ocl.context, 
                 CL_MEM_READ_ONLY,
-                ImageFormat(CL_R, CL_SIGNED_INT8),
+                imageFormat,
                 size->x, size->y, size->z
         );
         data = (void *)file->data();
@@ -2340,10 +2343,11 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
     } else if(typeName == "MET_UCHAR") {
         type = 2;
         file->open(rawFilename, size->x*size->y*size->z*sizeof(char));
+        imageFormat = ImageFormat(CL_R, CL_UNSIGNED_INT8);
         dataset = Image3D(
                 ocl.context, 
                 CL_MEM_READ_ONLY,
-                ImageFormat(CL_R, CL_UNSIGNED_INT8),
+                imageFormat,
                 size->x, size->y, size->z
         );
         data = (void *)file->data();
@@ -2352,10 +2356,11 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
     } else if(typeName == "MET_FLOAT") {
         type = 3;
         file->open(rawFilename, size->x*size->y*size->z*sizeof(float));
+        imageFormat = ImageFormat(CL_R, CL_FLOAT);
         dataset = Image3D(
                 ocl.context, 
                 CL_MEM_READ_ONLY,
-                ImageFormat(CL_R, CL_FLOAT),
+                imageFormat,
                 size->x, size->y, size->z
         );
         data = (void *)file->data();
@@ -2536,15 +2541,38 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         srcOffset[2] = z1;
         ocl.queue.enqueueCopyImage(dataset, imageHUvolume, srcOffset, offset, region);
         dataset = imageHUvolume;
-if(parameters.count("timing") > 0) {
-        ocl.queue.enqueueMarker(&endEvent);
-        ocl.queue.finish();
-        startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
-        endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
-        std::cout << "Cropping time: " << (end-start)*1.0e-6 << " ms" << std::endl;
-        ocl.queue.enqueueMarker(&startEvent);
-}
-    } // End cropping
+        if(parameters.count("timing") > 0) {
+            ocl.queue.enqueueMarker(&endEvent);
+            ocl.queue.finish();
+            startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
+            endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
+            std::cout << "Cropping time: " << (end-start)*1.0e-6 << " ms" << std::endl;
+            ocl.queue.enqueueMarker(&startEvent);
+        }
+    } else {// End cropping
+        // If cropping is not done, shrink volume so that each dimension is dividable by 4
+        while(size->x % 4 != 0)
+            size->x--;
+        while(size->y % 4 != 0)
+            size->y--;
+        while(size->z % 4 != 0)
+            size->z--;
+
+        cl::size_t<3> offset;
+        offset[0] = 0;
+        offset[1] = 0;
+        offset[2] = 0;
+        cl::size_t<3> region;
+        region[0] = size->x;
+        region[1] = size->y;
+        region[2] = size->z;
+        Image3D imageHUvolume = Image3D(ocl.context, CL_MEM_READ_ONLY, imageFormat, size->x, size->y, size->z);
+
+        ocl.queue.enqueueCopyImage(dataset, imageHUvolume, offset, offset, region);
+        dataset = imageHUvolume;
+
+        std::cout << "NOTE: reduced size to " << size->x << ", " << size->y << ", " << size->z << std::endl;
+    }
 
     // Run toFloat kernel
 
