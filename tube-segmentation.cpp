@@ -2318,7 +2318,7 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         file->open(rawFilename, size->x*size->y*size->z*sizeof(short));
         dataset = Image3D(
                 ocl.context, 
-                CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                CL_MEM_READ_ONLY,
                 ImageFormat(CL_R, CL_UNSIGNED_INT16),
                 size->x, size->y, size->z
         );
@@ -2330,7 +2330,7 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         file->open(rawFilename, size->x*size->y*size->z*sizeof(char));
         dataset = Image3D(
                 ocl.context, 
-                CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                CL_MEM_READ_ONLY,
                 ImageFormat(CL_R, CL_SIGNED_INT8),
                 size->x, size->y, size->z
         );
@@ -2342,7 +2342,7 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         file->open(rawFilename, size->x*size->y*size->z*sizeof(char));
         dataset = Image3D(
                 ocl.context, 
-                CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                CL_MEM_READ_ONLY,
                 ImageFormat(CL_R, CL_UNSIGNED_INT8),
                 size->x, size->y, size->z
         );
@@ -2354,7 +2354,7 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         file->open(rawFilename, size->x*size->y*size->z*sizeof(float));
         dataset = Image3D(
                 ocl.context, 
-                CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                CL_MEM_READ_ONLY,
                 ImageFormat(CL_R, CL_FLOAT),
                 size->x, size->y, size->z
         );
