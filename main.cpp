@@ -1,10 +1,12 @@
 #include "tube-segmentation.hpp"
 
-#include <chrono>
+
 #include <vector>
-#define TIMING
+
+//#define TIMING
 
 #ifdef TIMING
+#include <chrono>
 #define INIT_TIMER auto timerStart = std::chrono::high_resolution_clock::now();
 #define START_TIMER  timerStart = std::chrono::high_resolution_clock::now();
 #define STOP_TIMER(name)  std::cout << "RUNTIME of " << name << ": " << \
@@ -26,6 +28,7 @@ int main(int argc, char ** argv) {
         // Print help message
         std::cout << "usage: " << argv[0] << " mhd-filename [options]" << std::endl << std::endl;
         std::cout << "available options: " << std::endl;
+		/*
         std::vector<std::string> options = {
             "--device <type>", "which type of device to run calculations on (cpu|gpu)", "gpu",
             "--buffers-only", "disable writing to 3D images", "off",
@@ -41,6 +44,7 @@ int main(int argc, char ** argv) {
         for(int i = 0; i < options.size(); i += 3) {
             std::cout << options[i] << "\t" << options[i+1] << "\t" << options[i+2] << std::endl;
         }
+		*/
         return 0;
     }
 
@@ -110,6 +114,5 @@ int main(int argc, char ** argv) {
         if(parameters["centerline-method"] == "ridge")
             delete[] TS.radius;
     }
-
     return 0;
 }

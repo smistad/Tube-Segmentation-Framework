@@ -3,6 +3,10 @@
 #include <iostream>
 using namespace cl;
 
+// Undefine windows crap
+#undef min
+#undef max
+
 HistogramPyramid2D::HistogramPyramid2D(OpenCL ocl) {
     this->ocl = ocl;
 }
@@ -25,9 +29,9 @@ void HistogramPyramid3D::create(Image3D baseLevel, int sizeX, int sizeY, int siz
         // Find largest size and find closest power of two
         int largestSize = std::max(sizeX, std::max(sizeY, sizeZ));
         int i = 1;
-        while(pow(2, i) < largestSize)
+        while(pow(2.0, i) < largestSize)
             i++;
-        size = pow(2, i);
+        size = pow(2.0, i);
     }
     std::cout << "3D HP size: " << size << std::endl;
 
@@ -114,9 +118,9 @@ void HistogramPyramid3DBuffer::create(Buffer baseLevel, int sizeX, int sizeY, in
         // Find largest size and find closest power of two
         int largestSize = std::max(sizeX, std::max(sizeY, sizeZ));
         int i = 1;
-        while(pow(2, i) < largestSize)
+        while(pow(2.0, i) < largestSize)
             i++;
-        size = pow(2, i);
+        size = pow(2.0, i);
     }
     std::cout << "3D HP size: " << size << std::endl;
 
@@ -229,9 +233,9 @@ void HistogramPyramid2D::create(Image2D baseLevel, int sizeX, int sizeY) {
         // Find largest size and find closest power of two
         int largestSize = std::max(sizeX, sizeY);
         int i = 1;
-        while(pow(2, i) < largestSize)
+        while(pow(2.0, i) < largestSize)
             i++;
-        size = pow(2, i);
+        size = pow(2.0, i);
     }
     std::cout << "2D HP size: " << size << std::endl;
 
@@ -309,7 +313,7 @@ void HistogramPyramid2D::create(Image2D baseLevel, int sizeX, int sizeY) {
 }
 
 void HistogramPyramid2D::traverse(Kernel kernel, int arguments) {
-    for(int i = 0; i < 13; i++) {
+    for(int i = 0; i < 11; i++) {
         int l = i;
         if(i >= HPlevels.size())
             // if not using all levels, just add the last levels as dummy arguments
@@ -391,4 +395,5 @@ Buffer HistogramPyramid3DBuffer::createPositionBuffer() {
 }
 
 std::string insertHPOpenCLCode(std::string source, int size) {
+	return "";
 }

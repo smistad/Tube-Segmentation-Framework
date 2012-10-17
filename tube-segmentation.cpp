@@ -1,13 +1,17 @@
 #include "tube-segmentation.hpp"
 #include "SIPL/Types.hpp"
 #include <boost/iostreams/device/mapped_file.hpp>
-#include <chrono>
 #include <queue>
 #include <stack>
 #include <list>
 #include <cstdio>
 #include <limits>
 #include "histogram-pyramids.hpp"
+
+
+// Undefine windows crap
+#undef min
+#undef max
 
 template <typename T>
 void writeToRaw(T * voxels, std::string filename, int SIZE_X, int SIZE_Y, int SIZE_Z) {
@@ -23,13 +27,21 @@ T * readFromRaw(std::string filename, int SIZE_X, int SIZE_Y, int SIZE_Z) {
     fclose(file);
     return data;
 }
+//#define TIMING
 
+#ifdef TIMING
+#include <chrono>
 #define INIT_TIMER auto timerStart = std::chrono::high_resolution_clock::now();
-#define START_TIMER if(parameters.count("timing") > 0) timerStart = std::chrono::high_resolution_clock::now();
-#define STOP_TIMER(name)  if(parameters.count("timing") > 0) std::cout << "RUNTIME of " << name << ": " << \
+#define START_TIMER  timerStart = std::chrono::high_resolution_clock::now();
+#define STOP_TIMER(name)  std::cout << "RUNTIME of " << name << ": " << \
         std::chrono::duration_cast<std::chrono::milliseconds>( \
                             std::chrono::high_resolution_clock::now()-timerStart \
                     ).count() << " ms " << std::endl; 
+#else
+#define INIT_TIMER
+#define START_TIMER
+#define STOP_TIMER(name)
+#endif
 
 using SIPL::float3;
 using SIPL::int3;
@@ -359,7 +371,7 @@ int3 operator-(int3 a, int3 b) {
 
 float3 normalize(float3 a) {
     float3 b;
-    float sqrMag = sqrt(a.x*a.x+a.y*a.y+a.z*a.z);
+    float sqrMag = sqrt((float)(a.x*a.x+a.y*a.y+a.z*a.z));
     b.x = a.x / sqrMag;
     b.y = a.y / sqrMag;
     b.z = a.z / sqrMag;
@@ -367,7 +379,7 @@ float3 normalize(float3 a) {
 }
 float3 normalize(int3 a) {
     float3 b;
-    float sqrMag = sqrt(a.x*a.x+a.y*a.y+a.z*a.z);
+    float sqrMag = sqrt((float)(a.x*a.x+a.y*a.y+a.z*a.z));
     b.x = a.x / sqrMag;
     b.y = a.y / sqrMag;
     b.z = a.z / sqrMag;
@@ -447,11 +459,7 @@ float3 gradient(TubeSegmentation &TS, int3 pos, int volumeComponent, int dimensi
     break;
     }
 
-    float3 grad = {
-        0.5f*(f100-f_100), 
-        0.5f*(f010-f0_10),
-        0.5f*(f001-f00_1)
-    };
+    float3 grad(0.5f*(f100-f_100), 0.5f*(f010-f0_10), 0.5f*(f001-f00_1));
 
 
     return grad;
@@ -476,7 +484,7 @@ float3 getTubeDirection(TubeSegmentation &T, int3 pos, int3 size) {
     float eigenValues[3];
     float eigenVectors[3][3];
     eigen_decomposition(Hessian, eigenVectors, eigenValues);
-    float3 e1 = {eigenVectors[0][0], eigenVectors[1][0], eigenVectors[2][0]};
+    float3 e1(eigenVectors[0][0], eigenVectors[1][0], eigenVectors[2][0]);
     return e1;
 }
 
@@ -534,12 +542,12 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
                 if(T.TDF[LPOS(x,y,z)] < Thigh)
                     continue;
 
-                int3 pos = {x,y,z};
+                int3 pos(x,y,z);
                 bool valid = true;
                 for(int a = -2; a < 2; a++) {
                     for(int b = -2; b < 2; b++) {
                         for(int c = -2; c < 2; c++) {
-                            int3 nPos = {x+a,y+b,z+c};
+                            int3 nPos(x+a,y+b,z+c);
                             if(T.TDF[POS(nPos)] > T.TDF[POS(pos)]) {
                                 valid = false;
                                 break;
@@ -604,7 +612,7 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
         // For each direction
         for(int direction = -1; direction < 3; direction += 2) {
             int belowTlow = 0;
-            int3 position = {p.x,p.y,p.z};
+            int3 position(p.x,p.y,p.z);
             float3 t_i = getTubeDirection(T, position, size);
             t_i.x *= direction;
             t_i.y *= direction;
@@ -617,7 +625,7 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
 
             // Traverse
             while(true) {
-                int3 maxPoint = {0,0,0};
+                int3 maxPoint(0,0,0);
 
                 // Check for out of bounds
                 if(position.x < 3 || position.x > size.x-3 || position.y < 3 || position.y > size.y-3 || position.z < 3 || position.z > size.z-3)
@@ -627,11 +635,11 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
                 for(int a = -1; a < 2; a++) {
                     for(int b = -1; b < 2; b++) {
                         for(int c = -1; c < 2; c++) {
-                            int3 n = {position.x+a,position.y+b,position.z+c};
+                            int3 n(position.x+a,position.y+b,position.z+c);
                             if((a == 0 && b == 0 && c == 0) || T.TDF[POS(n)] == 0.0f)
                                 continue;
 
-                            float3 dir = {(float)(n.x-position.x),(float)(n.y-position.y),(float)(n.z-position.z)};
+                            float3 dir((float)(n.x-position.x),(float)(n.y-position.y),(float)(n.z-position.z));
                             dir = normalize(dir);
                             if( (dir.x*t_i.x+dir.y*t_i.y+dir.z*t_i.z) <= 0.1)
                                 continue;
@@ -860,7 +868,7 @@ float * createBlurMask(float sigma, int * maskSizePointer) {
     return mask;
 }
 
-TubeSegmentation runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 size, paramList parameters, Image3D &vectorField, Image3D &TDF, Image3D &radiusImage) {
+void runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 size, paramList parameters, Image3D &vectorField, Image3D &TDF, Image3D &radiusImage) {
     // Set up parameters
     const int GVFIterations = getParami(parameters, "gvf-iterations", 250);
     const float radiusMin = getParamf(parameters, "radius-min", 0.5);
@@ -900,7 +908,7 @@ TubeSegmentation runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 
     if(smallBlurSigma > 0) {
         mask = createBlurMask(smallBlurSigma, &maskSize);
         blurMask = Buffer(ocl.context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(float)*(maskSize*2+1)*(maskSize*2+1)*(maskSize*2+1), mask);
-        blurMask.setDestructorCallback(freeData<float>, (void *)mask);
+        //blurMask.setDestructorCallback(freeData<float>, (void *)mask);
 
         // Run blurVolumeWithGaussian on processedVolume
         blurVolumeWithGaussianKernel.setArg(0, dataset);
@@ -1008,7 +1016,7 @@ if(parameters.count("timing") > 0) {
 
     mask = createBlurMask(1.0, &maskSize);
     blurMask = Buffer(ocl.context, CL_MEM_READ_ONLY, sizeof(float)*(maskSize*2+1)*(maskSize*2+1)*(maskSize*2+1));
-    blurMask.setDestructorCallback(freeData<float>, (void *)mask);
+    //blurMask.setDestructorCallback(freeData<float>, (void *)mask);
     ocl.queue.enqueueWriteBuffer(blurMask, CL_FALSE, 0,sizeof(float)*(maskSize*2+1)*(maskSize*2+1)*(maskSize*2+1), mask);
 
     if(no3Dwrite) {
@@ -1591,9 +1599,9 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
             // Find largest size and find closest power of two
             int largestSize = std::max(size.x, std::max(size.y, size.z));
             int i = 1;
-            while(pow(2, i) < largestSize)
+            while(pow(2.0, i) < largestSize)
                 i++;
-            hpSize = pow(2, i);
+            hpSize = pow(2.0, i);
         }
 
 
@@ -1669,7 +1677,7 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
         ocl.queue.enqueueNDRangeKernel(
                 ddKernel,
                 NullRange,
-                NDRange(ceil(size.x/cubeSize),ceil(size.y/cubeSize),ceil(size.z/cubeSize)),
+                NDRange(ceil((float)size.x/cubeSize),ceil((float)size.y/cubeSize),ceil((float)size.z/cubeSize)),
                 NullRange
         );
 
@@ -1731,7 +1739,7 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
         ocl.queue.enqueueNDRangeKernel(
                 ddKernel,
                 NullRange,
-                NDRange(ceil(size.x/cubeSize),ceil(size.y/cubeSize),ceil(size.z/cubeSize)),
+                NDRange(ceil((float)size.x/cubeSize),ceil((float)size.y/cubeSize),ceil((float)size.z/cubeSize)),
                 NullRange
         );
 
@@ -2182,22 +2190,22 @@ void unmapRawfile(cl_mem memobj, void * user_data) {
     delete[] file;
 }
 
-template <typename T> 
+template <class T> 
 float getMaximum(void * data, const int totalSize) {
     T * newDataPointer = (T *)data;
     T maximum = std::numeric_limits<T>::min();
     for(int i = 0; i < totalSize; i++) 
-        maximum = MAX(maximum, newDataPointer[i]);
+        maximum = std::max(maximum, newDataPointer[i]);
 
     return (float)maximum;
 }
 
-template <typename T> 
+template <class T> 
 float getMinimum(void * data, const int totalSize) {
     T * newDataPointer = (T *)data;
     T minimum = std::numeric_limits<T>::max();
     for(int i = 0; i < totalSize; i++) 
-        minimum = MIN(minimum, newDataPointer[i]);
+        minimum = std::min(minimum, newDataPointer[i]);
 
     return (float)minimum;
 }
@@ -2371,7 +2379,7 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         exit(-1);
     }
 
-    dataset.setDestructorCallback(unmapRawfile, (void *)(file));
+    //dataset.setDestructorCallback(unmapRawfile, (void *)(file));
 
     std::cout << "Dataset of size " << size->x << " " << size->y << " " << size->z << " loaded" << std::endl;
     if(parameters.count("timing") > 0) {
