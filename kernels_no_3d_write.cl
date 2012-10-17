@@ -8,6 +8,38 @@ __constant sampler_t hpSampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP
 
 #define LPOS(pos) pos.x+pos.y*get_global_size(0)+pos.z*get_global_size(0)*get_global_size(1)
 
+// Intialize 2D image to 0
+__kernel void init2DImage(
+    __write_only image2d_t image
+    ) {
+    write_imagei(image, (int2)(get_global_id(0), get_global_id(1)), 0);
+}
+
+// Intialize int buffer to 0
+__kernel void initIntBuffer(
+    __global int * buffer
+    ) {
+    buffer[get_global_id(0)] = 0;
+}
+
+// Intialize char buffer to 0
+__kernel void initCharBuffer(
+    __global char * buffer
+    ) {
+    buffer[get_global_id(0)] = 0;
+}
+
+// Intialize int buffer to its ID
+__kernel void initIntBufferID(
+    __global int * buffer,
+    __private int sum
+    ) {
+    int id = get_global_id(0); 
+    if(id >= sum)
+        id = 0;
+    buffer[id] = id;
+}
+
 // Forward declaration of eigen_decomp function
 void eigen_decomposition(float M[3][3], float V[3][3], float e[3]);
 
@@ -513,15 +545,9 @@ int2 traverseHP2D(
     image2d_t hp7,
     image2d_t hp8,
     image2d_t hp9,
-    image2d_t hp10,
-    image2d_t hp11,
-    image2d_t hp12
+    image2d_t hp10
     ) {
     int3 position = {0,0,0};
-    if(HP_SIZE > 4096)
-    position = scanHPLevel2D(target, hp12, position);
-    if(HP_SIZE > 2048)
-    position = scanHPLevel2D(target, hp11, position);
     if(HP_SIZE > 1024)
     position = scanHPLevel2D(target, hp10, position);
     if(HP_SIZE > 512)
@@ -582,13 +608,11 @@ __kernel void createPositions2D(
         ,__read_only image2d_t hp8
         ,__read_only image2d_t hp9
         ,__read_only image2d_t hp10
-        ,__read_only image2d_t hp11
-        ,__read_only image2d_t hp12
     ) {
     int target = get_global_id(0);
     if(target >= sum)
         target = 0;
-    int2 pos = traverseHP2D(target,HP_SIZE,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,hp8,hp9,hp10,hp11,hp12);
+    int2 pos = traverseHP2D(target,HP_SIZE,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,hp8,hp9,hp10);
     vstore2(pos, target, positions);
 }
 
@@ -597,23 +621,27 @@ __kernel void linkCenterpoints(
         __read_only image3d_t radius,
         __global int const * restrict positions,
         __write_only image2d_t edges,
-        __read_only image3d_t intensity
+        __read_only image3d_t intensity,
+        __private int sum
     ) {
     float maxDistance = 25.0f;
-    float3 xa = convert_float3(vload3(get_global_id(0), positions));
+    int id = get_global_id(0);
+    if(id >= sum)
+        id = 0;
+    float3 xa = convert_float3(vload3(id, positions));
 
     int2 bestPair;
     float shortestDistance = maxDistance*2;
     bool validPairFound = false;
     for(int i = 0; i < get_global_size(0); i++) {
-        if(i == get_global_id(0)) 
+        if(i == id) 
             continue;
     float3 xb = convert_float3(vload3(i, positions));
     int db = round(distance(xa,xb));
     if(db >= maxDistance || db >= shortestDistance)
         continue;
     for(int j = 0; j < i; j++) {
-        if(j == get_global_id(0) || j == i) 
+        if(j == id || j == i) 
             continue;
     float3 xc = convert_float3(vload3(j, positions));
 
@@ -732,8 +760,8 @@ __kernel void linkCenterpoints(
 
     if(validPairFound) {
         // Store edges
-        int2 edge = {get_global_id(0), bestPair.x};
-        int2 edge2 = {get_global_id(0), bestPair.y};
+        int2 edge = {id, bestPair.x};
+        int2 edge2 = {id, bestPair.y};
         write_imageui(edges, edge, 1);
         write_imageui(edges, edge2, 1);
     }
@@ -742,9 +770,12 @@ __kernel void linkCenterpoints(
 __kernel void graphComponentLabeling(
         __global int const * restrict edges,
         volatile __global int * C,
-        __global int * m
+        __global int * m,
+        __private int sum
         ) {
-    const int id = get_global_id(0);
+    int id = get_global_id(0);
+    if(id >= sum)
+        id = 0;
     int2 edge = vload2(id, edges);
     const int ca = C[edge.x];
     const int cb = C[edge.y];

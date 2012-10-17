@@ -62,7 +62,7 @@ int main(int argc, char ** argv) {
         ocl.program = buildProgramFromBinary(ocl.context, "kernels.cl");
         parameters["3d_write"] = "true";
     } else {
-        ocl.program = buildProgramFromBinary(ocl.context, "kernels_no_3d_write.cl");
+        ocl.program = buildProgramFromSource(ocl.context, "kernels_no_3d_write.cl");
         std::cout << "Writing to 3D textures is not supported on the selected device." << std::endl;
     }
 

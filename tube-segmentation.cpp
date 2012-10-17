@@ -1585,14 +1585,6 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
             ImageFormat(CL_R, CL_SIGNED_INT8),
             size.x, size.y, size.z
     );
-    Kernel init3DImage(ocl.program, "init3DImage");
-    init3DImage.setArg(0, centerpointsImage2);
-    ocl.queue.enqueueNDRangeKernel(
-        init3DImage,
-        NullRange,
-        NDRange(size.x,size.y,size.z),
-        NullRange
-    );
     Buffer vertices;
     int sum = 0;
 
@@ -1695,6 +1687,15 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
         // Run createPositions kernel
         vertices = hp.createPositionBuffer(); 
     } else {
+        Kernel init3DImage(ocl.program, "init3DImage");
+        init3DImage.setArg(0, centerpointsImage2);
+        ocl.queue.enqueueNDRangeKernel(
+            init3DImage,
+            NullRange,
+            NDRange(size.x,size.y,size.z),
+            NullRange
+        );
+
         Image3D centerpointsImage = Image3D(
                 ocl.context,
                 CL_MEM_READ_WRITE,
@@ -1981,6 +1982,7 @@ if(parameters.count("timing") > 0) {
             size.x, size.y, size.z
         );
 
+        Kernel init3DImage(ocl.program, "init3DImage");
         init3DImage.setArg(0, centerlines);
         ocl.queue.enqueueNDRangeKernel(
             init3DImage,
