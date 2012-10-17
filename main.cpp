@@ -28,23 +28,17 @@ int main(int argc, char ** argv) {
         // Print help message
         std::cout << "usage: " << argv[0] << " mhd-filename [options]" << std::endl << std::endl;
         std::cout << "available options: " << std::endl;
-		/*
-        std::vector<std::string> options = {
-            "--device <type>", "which type of device to run calculations on (cpu|gpu)", "gpu",
-            "--buffers-only", "disable writing to 3D images", "off",
-            "--display", "display result using SIPL", "off",
-            "--storage-dir <path>", "specify a directory to store the centerline and segmentation in", "off",
-            "--minimum <value>", "set minimum threshold (if not specified it will find min automatically)", "auto",
-            "--maximum <value>", "set maximum threshold (if not specified it will find min automatically)", "auto",
-            "--mode <mode>", "look for black or white tubes (white|black)", "black",
-            "--centerline-method", "specify which centerline method to use (ridge|gpu)", "gpu"
-        };
 
-        std::cout << "name\t\t\tdescription\t\t\t\t\t\tdefault value" << std::endl;
-        for(int i = 0; i < options.size(); i += 3) {
-            std::cout << options[i] << "\t" << options[i+1] << "\t" << options[i+2] << std::endl;
-        }
-		*/
+		std::cout << "name\t description [default value]" << std::endl;
+        std::cout << "--device <type>\t which type of device to run calculations on (cpu|gpu) [gpu]" << std::endl;
+		std::cout << "--buffers-only\t disable writing to 3D images [off]" << std::endl;
+        std::cout << "--display\t display result using SIPL [off]" << std::endl;
+        std::cout << "--storage-dir <path>\t specify a directory to store the centerline and segmentation in [off]" << std::endl;
+        std::cout << "--minimum <value>\t set minimum threshold (if not specified it will find min automatically) [auto]" << std::endl;
+        std::cout << "--maximum <value>\t set maximum threshold (if not specified it will find min automatically) [auto]" << std::endl;
+        std::cout << "--mode <mode>\t look for black or white tubes (white|black) [black]" << std::endl;
+        std::cout << "--centerline-method\t specify which centerline method to use (ridge|gpu) [gpu]" << std::endl;
+
         return 0;
     }
 
