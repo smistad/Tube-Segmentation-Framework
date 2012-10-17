@@ -49,7 +49,7 @@ using SIPL::int3;
 using namespace cl;
 
 template <typename T>
-void freeData(cl_mem memobj, void * user_data) {
+void __stdcall freeData(cl_mem memobj, void * user_data) {
     T * data = (T *)user_data;
     delete[] data;
 }
@@ -908,7 +908,7 @@ void runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 size, paramL
     if(smallBlurSigma > 0) {
         mask = createBlurMask(smallBlurSigma, &maskSize);
         blurMask = Buffer(ocl.context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(float)*(maskSize*2+1)*(maskSize*2+1)*(maskSize*2+1), mask);
-        //blurMask.setDestructorCallback(freeData<float>, (void *)mask);
+        blurMask.setDestructorCallback((void (__stdcall *)(cl_mem,void *))(freeData<float>), (void *)mask);
 
         // Run blurVolumeWithGaussian on processedVolume
         blurVolumeWithGaussianKernel.setArg(0, dataset);
@@ -1016,7 +1016,7 @@ if(parameters.count("timing") > 0) {
 
     mask = createBlurMask(1.0, &maskSize);
     blurMask = Buffer(ocl.context, CL_MEM_READ_ONLY, sizeof(float)*(maskSize*2+1)*(maskSize*2+1)*(maskSize*2+1));
-    //blurMask.setDestructorCallback(freeData<float>, (void *)mask);
+    blurMask.setDestructorCallback((void (__stdcall *)(cl_mem,void *))freeData<float>, (void *)mask);
     ocl.queue.enqueueWriteBuffer(blurMask, CL_FALSE, 0,sizeof(float)*(maskSize*2+1)*(maskSize*2+1)*(maskSize*2+1), mask);
 
     if(no3Dwrite) {
@@ -2184,7 +2184,7 @@ paramList getParameters(int argc, char ** argv) {
     return parameters;
 }
 
-void unmapRawfile(cl_mem memobj, void * user_data) {
+void __stdcall unmapRawfile(cl_mem memobj, void * user_data) {
     boost::iostreams::mapped_file_source * file = (boost::iostreams::mapped_file_source *)user_data;
     file->close();
     delete[] file;
@@ -2379,7 +2379,7 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         exit(-1);
     }
 
-    //dataset.setDestructorCallback(unmapRawfile, (void *)(file));
+    dataset.setDestructorCallback((void (__stdcall *)(cl_mem,void *))unmapRawfile, (void *)(file));
 
     std::cout << "Dataset of size " << size->x << " " << size->y << " " << size->z << " loaded" << std::endl;
     if(parameters.count("timing") > 0) {
