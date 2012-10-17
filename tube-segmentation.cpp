@@ -10,8 +10,13 @@
 
 
 // Undefine windows crap
+#ifdef WIN32
 #undef min
 #undef max
+#else
+#define __stdcall
+#endif
+
 
 template <typename T>
 void writeToRaw(T * voxels, std::string filename, int SIZE_X, int SIZE_Y, int SIZE_Z) {
