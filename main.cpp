@@ -3,7 +3,7 @@
 
 #include <vector>
 
-#define TIMING
+//#define TIMING
 
 #ifdef TIMING
 #include <chrono>
