@@ -965,7 +965,11 @@ if(parameters.count("timing") > 0) {
         );
 
     } else {
-        vectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
+        if(parameters.count("32bit-vectors") > 0) {
+            vectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
+        } else {
+            vectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
+        }
      
         // Run create vector field
         createVectorFieldKernel.setArg(0, blurredVolume);
@@ -1119,7 +1123,12 @@ if(parameters.count("timing") > 0) {
         );
 
     } else {
-        vectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
+        if(parameters.count("32bit-vectors") > 0) {
+            vectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
+        } else {
+            vectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
+        }
+
      
         // Run create vector field
         createVectorFieldKernel.setArg(0, blurredVolume);
@@ -1223,8 +1232,15 @@ if(parameters.count("timing") > 0) {
 
 
     } else {
-        Image3D vectorField1 = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
-        Image3D initVectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RG, CL_SNORM_INT16), size.x, size.y, size.z);
+        Image3D vectorField1;
+        Image3D initVectorField; 
+        if(parameters.count("32bit-vectors") > 0) { 
+            vectorField1 = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
+            initVectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RG, CL_FLOAT), size.x, size.y, size.z);
+        } else {
+            vectorField1 = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
+            initVectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RG, CL_SNORM_INT16), size.x, size.y, size.z);
+        }
 
         // init vectorField from image
         GVFInitKernel.setArg(0, vectorField);
