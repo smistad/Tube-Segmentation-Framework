@@ -2032,18 +2032,23 @@ TubeSegmentation runCircleFittingAndNewCenterlineAlg(OpenCL ocl, cl::Image3D dat
         TS.centerline = new char[totalSize];
         ocl.queue.enqueueReadImage(centerline, CL_FALSE, offset, region, 0, 0, TS.centerline);
     }
-    Image3D segmentation = runInverseGradientSegmentation(ocl, centerline, vectorField, size, parameters);
+
+    Image3D segmentation; 
+    if(parameters.count("no-segmentation") == 0)
+        segmentation = runInverseGradientSegmentation(ocl, centerline, vectorField, size, parameters);
 
 
     // Transfer result back to host
     if(parameters.count("display") > 0 || parameters.count("storage-dir") > 0) {
         START_TIMER
-        TS.segmentation = new char[totalSize];
         TS.TDF = new float[totalSize];
-        //TS.radius = new float[totalSize];
         ocl.queue.enqueueReadImage(TDF, CL_TRUE, offset, region, 0, 0, TS.TDF);
+        if(parameters.count("no-segmentation") == 0) {
+            TS.segmentation = new char[totalSize];
+            ocl.queue.enqueueReadImage(segmentation, CL_TRUE, offset, region, 0, 0, TS.segmentation);
+        }
+        //TS.radius = new float[totalSize];
         //ocl.queue.enqueueReadImage(radius, CL_TRUE, offset, region, 0, 0, TS.radius);
-        ocl.queue.enqueueReadImage(segmentation, CL_TRUE, offset, region, 0, 0, TS.segmentation);
         /*
         TS.Fx = new float[totalSize];
         TS.Fy = new float[totalSize];
@@ -2077,7 +2082,8 @@ TubeSegmentation runCircleFittingAndNewCenterlineAlg(OpenCL ocl, cl::Image3D dat
         START_TIMER
         const std::string storageDirectory = getParamstr(parameters, "storage-dir", "");
         writeToRaw<char>(TS.centerline, storageDirectory + "centerline.raw", size.x, size.y, size.z);
-        writeToRaw<char>(TS.segmentation, storageDirectory + "segmentation.raw", size.x, size.y, size.z);
+        if(parameters.count("no-segmentation") == 0)
+            writeToRaw<char>(TS.segmentation, storageDirectory + "segmentation.raw", size.x, size.y, size.z);
         STOP_TIMER("writing to disk")
     }
 
@@ -2139,25 +2145,27 @@ TubeSegmentation runCircleFittingAndRidgeTraversal(OpenCL ocl, Image3D dataset, 
     std::stack<CenterlinePoint> centerlineStack;
     TS.centerline = runRidgeTraversal(TS, size, parameters, centerlineStack);
 
-    // Dilate the centerline
-    Image3D volume = Image3D(ocl.context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, ImageFormat(CL_R, CL_SIGNED_INT8), size.x, size.y, size.z, 0, 0, TS.centerline);
-if(parameters.count("timing") > 0) {
-    ocl.queue.finish();
-    STOP_TIMER("Centerline extraction + transfer of data back and forth")
-    ocl.queue.enqueueMarker(&startEvent);
-}
+    if(parameters.count("timing") > 0) {
+        ocl.queue.finish();
+        STOP_TIMER("Centerline extraction + transfer of data back and forth")
+        ocl.queue.enqueueMarker(&startEvent);
+    }
 
-    volume = runInverseGradientSegmentation(ocl, volume, vectorField, size, parameters);
+    Image3D volume; 
+    if(parameters.count("no-segmentation") == 0) {
+        volume = Image3D(ocl.context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, ImageFormat(CL_R, CL_SIGNED_INT8), size.x, size.y, size.z, 0, 0, TS.centerline);
+        volume = runInverseGradientSegmentation(ocl, volume, vectorField, size, parameters);
+        TS.segmentation = new char[totalSize];
+        ocl.queue.enqueueReadImage(volume, CL_TRUE, offset, region, 0, 0, TS.segmentation);
+    }
 
 
-    // Transfer volume back to host and write to disk
-    TS.segmentation = new char[totalSize];
-    ocl.queue.enqueueReadImage(volume, CL_TRUE, offset, region, 0, 0, TS.segmentation);
     if(parameters.count("storage-dir") > 0) {
         START_TIMER
         const std::string storageDirectory = getParamstr(parameters, "storage-dir", "");
         writeToRaw<char>(TS.centerline, storageDirectory + "centerline.raw", size.x, size.y, size.z);
-        writeToRaw<char>(TS.segmentation, storageDirectory + "segmentation.raw", size.x, size.y, size.z);
+        if(parameters.count("no-segmentation") == 0)
+            writeToRaw<char>(TS.segmentation, storageDirectory + "segmentation.raw", size.x, size.y, size.z);
         STOP_TIMER("writing segmentation and centerline to disk")
     }
 
