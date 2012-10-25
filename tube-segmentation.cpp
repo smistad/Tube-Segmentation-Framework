@@ -6,6 +6,7 @@
 #include <list>
 #include <cstdio>
 #include <limits>
+#include <unordered_set>
 #include "histogram-pyramids.hpp"
 
 
@@ -531,14 +532,16 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
     float Tlow = 0.4f;
     int maxBelowTlow = 2;
     float minMeanTube = 0.6f;
-    int TreeMin = 10;
+    int TreeMin = 200;
     const int totalSize = size.x*size.y*size.z;
 
     int * centerlines = new int[totalSize]();
+    INIT_TIMER
 
     // Create queue
     std::priority_queue<point, std::vector<point>, PointComparison> queue;
     
+    START_TIMER
     // Collect all valid start points
     #pragma omp parallel for 
     for(int z = 2; z < size.z-2; z++) {
@@ -575,6 +578,8 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
     }
 
     std::cout << "Processing " << queue.size() << " valid start points" << std::endl;
+    STOP_TIMER("finding start points")
+    START_TIMER
     int counter = 1;
     T.TDF[0] = 0;
     T.Fx[0] = 1;
@@ -597,8 +602,8 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
         if(centerlines[LPOS(p.x,p.y,p.z)] == 1)
             continue;
 
-        char * newCenterlines = new char[totalSize]();
-        newCenterlines[LPOS(p.x,p.y,p.z)] = 1;
+        std::unordered_set<int> newCenterlines;
+        newCenterlines.insert(LPOS(p.x,p.y,p.z));
         int distance = 1;
         int connections = 0;
         int prevConnection = -1;
@@ -679,7 +684,7 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
                     } else if(M(maxPoint.x,maxPoint.y,maxPoint.z) < Mlow || (belowTlow > maxBelowTlow && T.TDF[LPOS(maxPoint.x,maxPoint.y,maxPoint.z)] < Tlow)) {
                         // New point is below thresholds
                         break;
-                    } else if(newCenterlines[LPOS(maxPoint.x,maxPoint.y,maxPoint.z)] == 1) {
+                    } else if(newCenterlines.count(LPOS(maxPoint.x,maxPoint.y,maxPoint.z)) > 0) {
                         // Loop detected!
                         break;
                     } else {
@@ -719,7 +724,7 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
                         // update position
                         position = maxPoint;
                         distance ++;
-                        newCenterlines[LPOS(maxPoint.x,maxPoint.y,maxPoint.z)] = 1;
+                        newCenterlines.insert(LPOS(maxPoint.x,maxPoint.y,maxPoint.z));
                         meanTube += T.TDF[LPOS(maxPoint.x,maxPoint.y,maxPoint.z)];
 
                         // Create centerline point
@@ -749,13 +754,11 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
             //std::cout << "Finished. Distance " << distance << " meanTube: " << meanTube/distance << std::endl;
             //std::cout << "------------------- New centerlines added #" << counter << " -------------------------" << std::endl;
 
-            // TODO add it
+            std::unordered_set<int>::iterator usit;
             if(prevConnection == -1) {
                 // No connections
-		#pragma omp parallel for 
-                for(int i = 0; i < totalSize;i++) {
-                    if(newCenterlines[i] > 0)
-                        centerlines[i] = counter;
+                for(usit = newCenterlines.begin(); usit != newCenterlines.end(); usit++) {
+                    centerlines[*usit] = counter;
                 }
                 centerlineDistances[counter] = distance;
                 centerlineStacks[counter] = stack;
@@ -769,10 +772,8 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
                     stack.pop();
                 }
 
-		#pragma omp parallel for
-                for(int i = 0; i < totalSize;i++) {
-                    if(newCenterlines[i] > 0)
-                        centerlines[i] = prevConnection;
+                for(usit = newCenterlines.begin(); usit != newCenterlines.end(); usit++) {
+                    centerlines[*usit] = prevConnection;
                 }
                 centerlineDistances[prevConnection] += distance;
                 if(secondConnection != -1) {
@@ -784,7 +785,7 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
                         secondConnectionStack.pop();
                     }
 
-		    #pragma omp parallel for
+                    #pragma omp parallel for
                     for(int i = 0; i < totalSize;i++) {
                         if(centerlines[i] == secondConnection)
                             centerlines[i] = prevConnection;
@@ -796,8 +797,10 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
                 centerlineStacks[prevConnection] = prevConnectionStack;
             }
         } // end if new point can be added
-        delete[] newCenterlines;
     } // End while queue is not empty
+    std::cout << "Finished traversal" << std::endl;
+    STOP_TIMER("traversal")
+    START_TIMER
 
     if(centerlineDistances.size() == 0) {
         //throw SIPL::SIPLException("no centerlines were extracted");
@@ -846,6 +849,7 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
                     
         }
     }
+    STOP_TIMER("finding largest tree")
 
 	delete[] centerlines;
     return returnCenterlines;
