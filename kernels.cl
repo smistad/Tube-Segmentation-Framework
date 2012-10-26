@@ -333,9 +333,9 @@ __kernel void linkCenterpoints(
     float minTDF = 0.0f;
     float minAvgTDF = 0.5f;
     float maxVarTDF = 1.005f;
-    float maxIntensity = 1.3f;
-    float maxAvgIntensity = 1.2f;
-    float maxVarIntensity = 1.005f;
+    //float maxIntensity = 1.3f;
+    //float maxAvgIntensity = 1.2f;
+    //float maxVarIntensity = 1.005f;
 
     if(db+dc < shortestDistance) {
         // Check angle
@@ -346,17 +346,17 @@ __kernel void linkCenterpoints(
             continue;
         // Check TDF
         float avgTDF = 0.0f;
-        float avgIntensity = 0.0f;
+        //float avgIntensity = 0.0f;
         bool invalid = false;
         //printf("%d - %d \n", db, dc);
         for(int k = 0; k <= db; k++) {
             float alpha = (float)k/db;
             float3 p = xa+ab*alpha;
             float t = read_imagef(TDF, interpolationSampler, p.xyzz).x; 
-            float i = read_imagef(intensity, interpolationSampler, p.xyzz).x; 
-            avgIntensity += i;
+            //float i = read_imagef(intensity, interpolationSampler, p.xyzz).x; 
+            //avgIntensity += i;
             avgTDF += t;
-            if(i > maxIntensity || t < minTDF) {
+            if(/*i > maxIntensity ||*/ t < minTDF) {
                 invalid = true;
                 break;
             }
@@ -364,22 +364,24 @@ __kernel void linkCenterpoints(
         if(invalid)
             continue;
         avgTDF /= db+1;
-        avgIntensity /= db+1;
+        //avgIntensity /= db+1;
         if(avgTDF < minAvgTDF)
             continue;
+            /*
         if(avgIntensity > maxAvgIntensity)
             continue;
+            */
 
         float varTDF = 0.0f;
-        float varIntensity = 0.0f;
+        //float varIntensity = 0.0f;
         for(int k = 0; k <= db; k++) {
             float alpha = (float)k/db;
             float3 p = xa+ab*alpha;
             float t = read_imagef(TDF, interpolationSampler, p.xyzz).x; 
-            float i = read_imagef(intensity, interpolationSampler, p.xyzz).x; 
-            varIntensity += (i-avgIntensity)*(i-avgIntensity);
+            //float i = read_imagef(intensity, interpolationSampler, p.xyzz).x; 
+            //varIntensity += (i-avgIntensity)*(i-avgIntensity);
             varTDF += (t-avgTDF)*(t-avgTDF);
-            if(i > maxIntensity || t < minTDF) {
+            if(/*i > maxIntensity || */t < minTDF) {
                 invalid = true;
                 break;
             }
@@ -387,43 +389,49 @@ __kernel void linkCenterpoints(
         if(invalid)
             continue;
 
+        /*
         if(db > 4 && varIntensity / (db+1) > maxVarIntensity)
             continue;
+            */
         if(db > 4 && varTDF / (db+1) > maxVarTDF)
             continue;
 
         avgTDF = 0.0f;
-        avgIntensity = 0.0f;
+        //avgIntensity = 0.0f;
         varTDF = 0.0f;
-        varIntensity = 0.0f;
+        //varIntensity = 0.0f;
         for(int k = 0; k <= dc; k++) {
             float alpha = (float)k/dc;
             float3 p = xa+ac*alpha;
             float t = read_imagef(TDF, interpolationSampler, p.xyzz).x; 
-            float i = read_imagef(intensity, interpolationSampler, p.xyzz).x; 
+            //float i = read_imagef(intensity, interpolationSampler, p.xyzz).x; 
             avgTDF += t;
-            avgIntensity += i;
+            //avgIntensity += i;
         }
         avgTDF /= dc+1;
-        avgIntensity /= dc+1;
+        //avgIntensity /= dc+1;
 
         if(avgTDF < minAvgTDF)
             continue;
 
+        /*
         if(avgIntensity > maxAvgIntensity)
             continue;
+            */
 
         for(int k = 0; k <= db; k++) {
             float alpha = (float)k/db;
             float3 p = xa+ab*alpha;
             float t = read_imagef(TDF, interpolationSampler, p.xyzz).x; 
-            float i = read_imagef(intensity, interpolationSampler, p.xyzz).x; 
-            varIntensity += (i-avgIntensity)*(i-avgIntensity);
+            //float i = read_imagef(intensity, interpolationSampler, p.xyzz).x; 
+            //varIntensity += (i-avgIntensity)*(i-avgIntensity);
             varTDF += (t-avgTDF)*(t-avgTDF);
         }
 
+        /*
         if(dc > 4 && varIntensity / (dc+1) > maxVarIntensity)
             continue;
+            */
         if(dc > 4 && varTDF / (dc+1) > maxVarTDF)
             continue;
         //printf("avg i: %f\n", avgIntensity );
@@ -1113,7 +1121,7 @@ __kernel void findCandidateCenterpoints2(
         const float dp = dot(e1,r);
         const float3 r_projected = r-e1*dp;
         const float theta = acos(dot(normalize(r), normalize(r_projected)));
-        if(theta < thetaLimit && length(r) < maxD) {
+        if((theta < thetaLimit && length(r) < maxD)) {
             if(SQR_MAG(n) < SQR_MAG(pos)) {
                 invalid = true;
                 break;
