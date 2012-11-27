@@ -18,5 +18,8 @@ endif()
 
 find_package(Boost COMPONENTS iostreams REQUIRED)
 
+include_directories(${Boost_INCLUDE_DIRS})
+link_directories (${GTK2_LIBRARY_DIRS} ${Boost_LIBRARY_DIRS})
+
 add_executable(tubeSegmentation main.cpp tube-segmentation.cpp histogram-pyramids.cpp)
 target_link_libraries(tubeSegmentation OCL-Utilities SIPL ${Boost_LIBRARIES})
