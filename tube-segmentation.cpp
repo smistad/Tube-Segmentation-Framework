@@ -1808,13 +1808,72 @@ if(parameters.count("timing") > 0) {
     int globalSize = sum;
     while(globalSize % 64 != 0) globalSize++;
 
+    // Create lengths image
+    Image2D lengths = Image2D(
+            ocl.context,
+            CL_MEM_READ_WRITE,
+            ImageFormat(CL_R, CL_FLOAT),
+            sum, sum
+    );
+
+    // Run linkLengths kernel
+    Kernel linkLengths(ocl.program, "linkLengths");
+    linkLengths.setArg(0, vertices);
+    linkLengths.setArg(1, lengths);
+    ocl.queue.enqueueNDRangeKernel(
+            linkLengths,
+            NullRange,
+            NDRange(sum, sum),
+            NullRange
+    );
+
+    // Create and init compacted_lengths image
+    float * cl = new float[sum*sum*2]();
+    Image2D compacted_lengths = Image2D(
+            ocl.context,
+            CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+            ImageFormat(CL_RG, CL_FLOAT),
+            sum, sum,
+            0,
+            cl
+    );
+
+    // Create and initialize incs buffer
+    Buffer incs = Buffer(
+            ocl.context,
+            CL_MEM_READ_WRITE,
+            sizeof(int)*sum
+    );
+
+    Kernel initIncsBuffer(ocl.program, "initIntBuffer");
+    initIncsBuffer.setArg(0, incs);
+    ocl.queue.enqueueNDRangeKernel(
+        initIncsBuffer,
+        NullRange,
+        NDRange(sum),
+        NullRange
+    );
+
+    // Run compact kernel
+    Kernel compactLengths(ocl.program, "compact");
+    compactLengths.setArg(0, lengths);
+    compactLengths.setArg(1, incs);
+    compactLengths.setArg(2, compacted_lengths);
+    ocl.queue.enqueueNDRangeKernel(
+            compactLengths,
+            NullRange,
+            NDRange(sum, sum),
+            NullRange
+    );
+
     Kernel linkingKernel(ocl.program, "linkCenterpoints");
     linkingKernel.setArg(0, TDF);
     linkingKernel.setArg(1, radius);
     linkingKernel.setArg(2, vertices);
     linkingKernel.setArg(3, edgeTuples);
     linkingKernel.setArg(4, intensity);
-    linkingKernel.setArg(5, sum);
+    linkingKernel.setArg(5, compacted_lengths);
+    linkingKernel.setArg(6, sum);
     ocl.queue.enqueueNDRangeKernel(
             linkingKernel,
             NullRange,
