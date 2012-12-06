@@ -1,0 +1,15 @@
+# Find the TSF includes and library
+#
+# TSF_INCLUDE_DIR - where to find include files.
+# TSF_LIBRARIES - List of fully qualified libraries to link against.
+# TSF_FOUND - set to 1 if found.
+
+set (TSF_FOUND 1)
+
+set (TSF_INCLUDE_DIRS "@TSF_INCLUDE_DIRS@")
+set (TSF_LIBRARY_DIRS "@TSF_LIBRARY_DIRS@")
+
+set (TSF_BUILD_SETTINGS_FILE "@TSF_BINARY_DIR@/TSFBuildSettings.cmake")
+
+set (TSF_USE_FILE "@Tube-Segmentation-Framework_SOURCE_DIR@/CMake/TSFUse.cmake")
+
