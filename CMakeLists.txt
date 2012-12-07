@@ -34,17 +34,17 @@ find_package(Boost COMPONENTS iostreams REQUIRED)
 #
 # Make configure file for find_package module 
 ###########
-set( TSF_INCLUDE_DIRS
+set( Tube-Segmentation-Framework_INCLUDE_DIRS
     ${Tube-Segmentation-Framework_SOURCE_DIR}
     ) 
 
-set(TSF_LIBRARY_DIRS
+set(Tube-Segmentation-Framework_LIBRARY_DIRS
     ${Tube-Segmentation-Framework_BINARY_DIR}
     )    
 
 configure_file (
-    "${PROJECT_SOURCE_DIR}/CMake/TSFConfig.cmake.in"
-    "${PROJECT_BINARY_DIR}/TSFConfig.cmake"
+    "${PROJECT_SOURCE_DIR}/CMake/Tube-Segmentation-FrameworkConfig.cmake.in"
+    "${PROJECT_BINARY_DIR}/Tube-Segmentation-FrameworkConfig.cmake"
     )
 
 #
