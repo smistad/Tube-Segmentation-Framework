@@ -1895,7 +1895,14 @@ if(parameters.count("timing") > 0) {
     // Run HP on edgeTuples
     HistogramPyramid2D hp2(ocl);
     hp2.create(edgeTuples, sum, sum);
-    std::cout << "number of edges detected " << hp2.getSum() << std::endl;
+
+    if(hp2.getSum() == 0) {
+        std::cout << "Error no edges were found" << std::endl;
+        exit(-1);
+    } else {
+        std::cout << "number of edges detected " << hp2.getSum() << std::endl;
+    }
+
 
 
     // Run create positions kernel on edges
