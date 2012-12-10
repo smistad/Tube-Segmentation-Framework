@@ -795,8 +795,8 @@ __kernel void linkCenterpoints(
         // Store edges
         int2 edge = {id, bestPair.x};
         int2 edge2 = {id, bestPair.y};
-        write_imagei(edges, edge, 1);
-        write_imagei(edges, edge2, 1);
+        write_imageui(edges, edge, 1);
+        write_imageui(edges, edge2, 1);
     }
 }
 
