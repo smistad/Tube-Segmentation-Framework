@@ -12,7 +12,7 @@ __constant sampler_t hpSampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP
 __kernel void init2DImage(
     __write_only image2d_t image
     ) {
-    write_imagei(image, (int2)(get_global_id(0), get_global_id(1)), 0);
+    write_imageui(image, (int2)(get_global_id(0), get_global_id(1)), 0);
 }
 
 // Intialize int buffer to 0
