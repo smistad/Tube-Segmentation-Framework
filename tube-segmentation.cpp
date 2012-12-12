@@ -530,7 +530,7 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
     int Dmin = getParami(parameters, "min-distance", 5);
     float Mlow = getParamf(parameters, "m-low", 0.05f); // 0.2
     float Tlow = getParamf(parameters, "tdf-low", 0.5f); // 0.4
-    int maxBelowTlow = 0; // 2
+    int maxBelowTlow = getParami(parameters, "max-below-tdf-low", 0); // 2
     float minMeanTube = getParamf(parameters, "min-mean-tdf", 0.5); //0.6
     int TreeMin = getParami(parameters, "min-tree-length", 5); // 200
     const int totalSize = size.x*size.y*size.z;
