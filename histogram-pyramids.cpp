@@ -313,7 +313,7 @@ void HistogramPyramid2D::create(Image2D baseLevel, int sizeX, int sizeY) {
 }
 
 void HistogramPyramid2D::traverse(Kernel kernel, int arguments) {
-    for(int i = 0; i < 11; i++) {
+    for(int i = 0; i < 13; i++) {
         int l = i;
         if(i >= HPlevels.size())
             // if not using all levels, just add the last levels as dummy arguments

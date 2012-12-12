@@ -545,9 +545,15 @@ int2 traverseHP2D(
     image2d_t hp7,
     image2d_t hp8,
     image2d_t hp9,
-    image2d_t hp10
+    image2d_t hp10,
+    image2d_t hp11,
+    image2d_t hp12
     ) {
     int3 position = {0,0,0};
+    if(HP_SIZE > 4096)
+    position = scanHPLevel2D(target, hp12, position);
+    if(HP_SIZE > 2048)
+    position = scanHPLevel2D(target, hp11, position);
     if(HP_SIZE > 1024)
     position = scanHPLevel2D(target, hp10, position);
     if(HP_SIZE > 512)
@@ -608,11 +614,13 @@ __kernel void createPositions2D(
         ,__read_only image2d_t hp8
         ,__read_only image2d_t hp9
         ,__read_only image2d_t hp10
+        ,__read_only image2d_t hp11
+        ,__read_only image2d_t hp12
     ) {
     int target = get_global_id(0);
     if(target >= sum)
         target = 0;
-    int2 pos = traverseHP2D(target,HP_SIZE,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,hp8,hp9,hp10);
+    int2 pos = traverseHP2D(target,HP_SIZE,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,hp8,hp9,hp10,hp11,hp12);
     vstore2(pos, target, positions);
 }
 

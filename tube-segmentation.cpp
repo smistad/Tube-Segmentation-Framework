@@ -526,13 +526,13 @@ void doEigen(TubeSegmentation &T, int3 pos, int3 size, float3 * lambda, float3 *
 
 char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList parameters, std::stack<CenterlinePoint> centerlineStack) {
 
-    float Thigh = 0.6;
+    float Thigh = 0.5; // 0.6
     int Dmin = 5;
-    float Mlow = 0.2f;
-    float Tlow = 0.4f;
-    int maxBelowTlow = 2;
-    float minMeanTube = 0.6f;
-    int TreeMin = 200;
+    float Mlow = 0.05f; // 0.2
+    float Tlow = 0.5f; // 0.4
+    int maxBelowTlow = 0;
+    float minMeanTube = 0.5; //0.6
+    int TreeMin = 5; // 200
     const int totalSize = size.x*size.y*size.z;
 
     int * centerlines = new int[totalSize]();
@@ -552,9 +552,9 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
 
                 int3 pos(x,y,z);
                 bool valid = true;
-                for(int a = -2; a < 2; a++) {
-                    for(int b = -2; b < 2; b++) {
-                        for(int c = -2; c < 2; c++) {
+                for(int a = -1; a < 2; a++) {
+                    for(int b = -1; b < 2; b++) {
+                        for(int c = -1; c < 2; c++) {
                             int3 nPos(x+a,y+b,z+c);
                             if(T.TDF[POS(nPos)] > T.TDF[POS(pos)]) {
                                 valid = false;
@@ -966,8 +966,10 @@ if(parameters.count("timing") > 0) {
 
     } else {
         if(parameters.count("32bit-vectors") > 0) {
+            std::cout << "NOTE: Using 32 bit vectors" << std::endl;
             vectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
         } else {
+            std::cout << "NOTE: Using 16 bit vectors" << std::endl;
             vectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
         }
      
