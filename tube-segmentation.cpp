@@ -881,7 +881,7 @@ void runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 size, paramL
     // Set up parameters
     const int GVFIterations = getParami(parameters, "gvf-iterations", 250);
     const float radiusMin = getParamf(parameters, "radius-min", 0.5);
-    const float radiusMax = getParamf(parameters, "radius-min", 15.0);
+    const float radiusMax = getParamf(parameters, "radius-max", 15.0);
     const float radiusStep = getParamf(parameters, "radius-step", 0.5);
     const float Fmax = getParamf(parameters, "fmax", 0.2);
     const int totalSize = size.x*size.y*size.z;
