@@ -2,7 +2,7 @@ mode white
 small-blur 1.0
 fmax 0.1
 minimum 0
-maximum 0.75
+maximum 75
 m-low 0.05
 min-tree-length 5
 max-below-tdf-low 0

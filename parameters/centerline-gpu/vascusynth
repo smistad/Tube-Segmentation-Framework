@@ -2,7 +2,7 @@ mode white
 small-blur 1.0
 fmax 0.1
 minimum 0
-maximum 0.75
+maximum 75
 min-mean-tdf 0.35
 cube-size 3
 min-tree-length 5
