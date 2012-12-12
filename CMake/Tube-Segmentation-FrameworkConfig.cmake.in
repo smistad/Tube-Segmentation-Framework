@@ -17,10 +17,10 @@
 
 set (Tube-Segmentation-Framework_FOUND 1)
 
+set (Tube-Segmentation-Framework_BINARY_DIR "@Tube-Segmentation-Framework_BINARY_DIR@")
+
 set (Tube-Segmentation-Framework_INCLUDE_DIRS "@Tube-Segmentation-Framework_INCLUDE_DIRS@")
 set (Tube-Segmentation-Framework_LIBRARY_DIRS "@Tube-Segmentation-Framework_LIBRARY_DIRS@")
-
-set (Tube-Segmentation-Framework_BUILD_SETTINGS_FILE "@Tube-Segmentation-Framework_BINARY_DIR@/Tube-Segmentation-FrameworkBuildSettings.cmake")
 
 set (Tube-Segmentation-Framework_USE_FILE "@Tube-Segmentation-Framework_SOURCE_DIR@/CMake/Tube-Segmentation-FrameworkUse.cmake")
 
