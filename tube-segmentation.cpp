@@ -526,13 +526,13 @@ void doEigen(TubeSegmentation &T, int3 pos, int3 size, float3 * lambda, float3 *
 
 char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList parameters, std::stack<CenterlinePoint> centerlineStack) {
 
-    float Thigh = 0.5; // 0.6
-    int Dmin = 5;
-    float Mlow = 0.05f; // 0.2
-    float Tlow = 0.5f; // 0.4
-    int maxBelowTlow = 0;
-    float minMeanTube = 0.5; //0.6
-    int TreeMin = 5; // 200
+    float Thigh = getParamf(parameters, "tdf-high", 0.5); // 0.6
+    int Dmin = getParami(parameters, "min-distance", 5);
+    float Mlow = getParamf(parameters, "m-low", 0.05f); // 0.2
+    float Tlow = getParamf(parameters, "tdf-low", 0.5f); // 0.4
+    int maxBelowTlow = 0; // 2
+    float minMeanTube = getParamf(parameters, "min-mean-tdf", 0.5); //0.6
+    int TreeMin = getParami(parameters, "min-tree-length", 5); // 200
     const int totalSize = size.x*size.y*size.z;
 
     int * centerlines = new int[totalSize]();
@@ -1029,7 +1029,7 @@ if(parameters.count("timing") > 0) {
     ocl.queue.enqueueMarker(&startEvent);
 }
 
-    mask = createBlurMask(1.0, &maskSize);
+    mask = createBlurMask(getParamf(parameters,"large-blur", 1.0), &maskSize);
     blurMask = Buffer(ocl.context, CL_MEM_READ_ONLY, sizeof(float)*(maskSize*2+1)*(maskSize*2+1)*(maskSize*2+1));
     blurMask.setDestructorCallback((void (__stdcall *)(cl_mem,void *))freeData<float>, (void *)mask);
     ocl.queue.enqueueWriteBuffer(blurMask, CL_FALSE, 0,sizeof(float)*(maskSize*2+1)*(maskSize*2+1)*(maskSize*2+1), mask);
@@ -1581,6 +1581,9 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
     const bool no3Dwrite = parameters.count("3d_write") == 0;
     const int cubeSize = getParami(parameters, "cube-size", 4);
     const int minTreeLength = getParami(parameters, "min-tree-length", 20);
+    const float Thigh = getParamf(parameters, "tdf-high", 0.5f);
+    const float Tmean = getParamf(parameters, "min-mean-tdf", 0.5f);
+    const float maxDistance = getParamf(parameters, "max-distance", 25.0f);
 
     cl::size_t<3> offset;
     offset[0] = 0;
@@ -1640,6 +1643,7 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
 
         candidatesKernel.setArg(0, TDF);
         candidatesKernel.setArg(1, centerpoints);
+        candidatesKernel.setArg(2, Thigh);
         ocl.queue.enqueueNDRangeKernel(
                 candidatesKernel,
                 NullRange,
@@ -1727,6 +1731,7 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
 
         candidatesKernel.setArg(0, TDF);
         candidatesKernel.setArg(1, centerpointsImage);
+        candidatesKernel.setArg(2, Thigh);
         ocl.queue.enqueueNDRangeKernel(
                 candidatesKernel,
                 NullRange,
@@ -1861,6 +1866,7 @@ if(parameters.count("timing") > 0) {
     compactLengths.setArg(0, lengths);
     compactLengths.setArg(1, incs);
     compactLengths.setArg(2, compacted_lengths);
+    compactLengths.setArg(3, maxDistance);
     ocl.queue.enqueueNDRangeKernel(
             compactLengths,
             NullRange,
@@ -1876,6 +1882,8 @@ if(parameters.count("timing") > 0) {
     linkingKernel.setArg(4, intensity);
     linkingKernel.setArg(5, compacted_lengths);
     linkingKernel.setArg(6, sum);
+    linkingKernel.setArg(7, Tmean);
+    linkingKernel.setArg(8, maxDistance);
     ocl.queue.enqueueNDRangeKernel(
             linkingKernel,
             NullRange,

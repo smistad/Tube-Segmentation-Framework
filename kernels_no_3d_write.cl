@@ -637,13 +637,14 @@ __kernel void linkLengths(
 __kernel void compact(
         __read_only image2d_t lengths,
         volatile __global int * incs,
-        __write_only image2d_t compacted_lengths
+        __write_only image2d_t compacted_lengths,
+        __private float maxDistance
         ) {
     const int i = get_global_id(0);
     const int j = get_global_id(1);
 
     float length = read_imagef(lengths, sampler, (int2)(i,j)).x;
-    if(length < 25.0f && length > 0.0f) {
+    if(length < maxDistance && length > 0.0f) {
         volatile int nr = atomic_inc(&(incs[i]));
         write_imagef(compacted_lengths, (int2)(i,nr), (float4)(length, j, 0, 0));
     }
@@ -656,9 +657,10 @@ __kernel void linkCenterpoints(
         __write_only image2d_t edges,
         __read_only image3d_t intensity,
         __read_only image2d_t compacted_lengths,
-        __private int sum
+        __private int sum,
+        __private float minAvgTDF,
+        __private float maxDistance
     ) {
-    float maxDistance = 25.0f;
     int id = get_global_id(0);
     if(id >= sum)
         id = 0;
@@ -692,7 +694,6 @@ __kernel void linkCenterpoints(
     int dc = round(cl2.x);
 
     float minTDF = 0.0f;
-    float minAvgTDF = 0.5f;
     float maxVarTDF = 1.005f;
     float maxIntensity = 1.3f;
     float maxAvgIntensity = 1.2f;
@@ -912,10 +913,10 @@ __kernel void dd(
 
 __kernel void findCandidateCenterpoints(
     __read_only image3d_t TDF,
-    __global uchar * centerpoints
+    __global uchar * centerpoints,
+    __private float TDFlimit
     ) {
     const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
-    float TDFlimit = 0.5f;
     if(read_imagef(TDF, sampler, pos).x < TDFlimit) {
         centerpoints[EncodeMorton(pos)] = 0;
     } else {
