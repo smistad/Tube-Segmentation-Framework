@@ -6,6 +6,7 @@
 #include <list>
 #include <cstdio>
 #include <limits>
+#include <unordered_set>
 #include "histogram-pyramids.hpp"
 
 
@@ -531,14 +532,16 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
     float Tlow = 0.4f;
     int maxBelowTlow = 2;
     float minMeanTube = 0.6f;
-    int TreeMin = 10;
+    int TreeMin = 200;
     const int totalSize = size.x*size.y*size.z;
 
     int * centerlines = new int[totalSize]();
+    INIT_TIMER
 
     // Create queue
     std::priority_queue<point, std::vector<point>, PointComparison> queue;
     
+    START_TIMER
     // Collect all valid start points
     #pragma omp parallel for 
     for(int z = 2; z < size.z-2; z++) {
@@ -575,6 +578,8 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
     }
 
     std::cout << "Processing " << queue.size() << " valid start points" << std::endl;
+    STOP_TIMER("finding start points")
+    START_TIMER
     int counter = 1;
     T.TDF[0] = 0;
     T.Fx[0] = 1;
@@ -597,8 +602,8 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
         if(centerlines[LPOS(p.x,p.y,p.z)] == 1)
             continue;
 
-        char * newCenterlines = new char[totalSize]();
-        newCenterlines[LPOS(p.x,p.y,p.z)] = 1;
+        std::unordered_set<int> newCenterlines;
+        newCenterlines.insert(LPOS(p.x,p.y,p.z));
         int distance = 1;
         int connections = 0;
         int prevConnection = -1;
@@ -679,7 +684,7 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
                     } else if(M(maxPoint.x,maxPoint.y,maxPoint.z) < Mlow || (belowTlow > maxBelowTlow && T.TDF[LPOS(maxPoint.x,maxPoint.y,maxPoint.z)] < Tlow)) {
                         // New point is below thresholds
                         break;
-                    } else if(newCenterlines[LPOS(maxPoint.x,maxPoint.y,maxPoint.z)] == 1) {
+                    } else if(newCenterlines.count(LPOS(maxPoint.x,maxPoint.y,maxPoint.z)) > 0) {
                         // Loop detected!
                         break;
                     } else {
@@ -719,7 +724,7 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
                         // update position
                         position = maxPoint;
                         distance ++;
-                        newCenterlines[LPOS(maxPoint.x,maxPoint.y,maxPoint.z)] = 1;
+                        newCenterlines.insert(LPOS(maxPoint.x,maxPoint.y,maxPoint.z));
                         meanTube += T.TDF[LPOS(maxPoint.x,maxPoint.y,maxPoint.z)];
 
                         // Create centerline point
@@ -749,13 +754,11 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
             //std::cout << "Finished. Distance " << distance << " meanTube: " << meanTube/distance << std::endl;
             //std::cout << "------------------- New centerlines added #" << counter << " -------------------------" << std::endl;
 
-            // TODO add it
+            std::unordered_set<int>::iterator usit;
             if(prevConnection == -1) {
                 // No connections
-		#pragma omp parallel for 
-                for(int i = 0; i < totalSize;i++) {
-                    if(newCenterlines[i] > 0)
-                        centerlines[i] = counter;
+                for(usit = newCenterlines.begin(); usit != newCenterlines.end(); usit++) {
+                    centerlines[*usit] = counter;
                 }
                 centerlineDistances[counter] = distance;
                 centerlineStacks[counter] = stack;
@@ -769,10 +772,8 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
                     stack.pop();
                 }
 
-		#pragma omp parallel for
-                for(int i = 0; i < totalSize;i++) {
-                    if(newCenterlines[i] > 0)
-                        centerlines[i] = prevConnection;
+                for(usit = newCenterlines.begin(); usit != newCenterlines.end(); usit++) {
+                    centerlines[*usit] = prevConnection;
                 }
                 centerlineDistances[prevConnection] += distance;
                 if(secondConnection != -1) {
@@ -784,7 +785,7 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
                         secondConnectionStack.pop();
                     }
 
-		    #pragma omp parallel for
+                    #pragma omp parallel for
                     for(int i = 0; i < totalSize;i++) {
                         if(centerlines[i] == secondConnection)
                             centerlines[i] = prevConnection;
@@ -796,8 +797,10 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
                 centerlineStacks[prevConnection] = prevConnectionStack;
             }
         } // end if new point can be added
-        delete[] newCenterlines;
     } // End while queue is not empty
+    std::cout << "Finished traversal" << std::endl;
+    STOP_TIMER("traversal")
+    START_TIMER
 
     if(centerlineDistances.size() == 0) {
         //throw SIPL::SIPLException("no centerlines were extracted");
@@ -846,6 +849,7 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
                     
         }
     }
+    STOP_TIMER("finding largest tree")
 
 	delete[] centerlines;
     return returnCenterlines;
@@ -961,7 +965,11 @@ if(parameters.count("timing") > 0) {
         );
 
     } else {
-        vectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
+        if(parameters.count("32bit-vectors") > 0) {
+            vectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
+        } else {
+            vectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
+        }
      
         // Run create vector field
         createVectorFieldKernel.setArg(0, blurredVolume);
@@ -1115,7 +1123,12 @@ if(parameters.count("timing") > 0) {
         );
 
     } else {
-        vectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
+        if(parameters.count("32bit-vectors") > 0) {
+            vectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
+        } else {
+            vectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
+        }
+
      
         // Run create vector field
         createVectorFieldKernel.setArg(0, blurredVolume);
@@ -1219,8 +1232,15 @@ if(parameters.count("timing") > 0) {
 
 
     } else {
-        Image3D vectorField1 = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
-        Image3D initVectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RG, CL_SNORM_INT16), size.x, size.y, size.z);
+        Image3D vectorField1;
+        Image3D initVectorField; 
+        if(parameters.count("32bit-vectors") > 0) { 
+            vectorField1 = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
+            initVectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RG, CL_FLOAT), size.x, size.y, size.z);
+        } else {
+            vectorField1 = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
+            initVectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RG, CL_SNORM_INT16), size.x, size.y, size.z);
+        }
 
         // init vectorField from image
         GVFInitKernel.setArg(0, vectorField);
@@ -1788,13 +1808,72 @@ if(parameters.count("timing") > 0) {
     int globalSize = sum;
     while(globalSize % 64 != 0) globalSize++;
 
+    // Create lengths image
+    Image2D lengths = Image2D(
+            ocl.context,
+            CL_MEM_READ_WRITE,
+            ImageFormat(CL_R, CL_FLOAT),
+            sum, sum
+    );
+
+    // Run linkLengths kernel
+    Kernel linkLengths(ocl.program, "linkLengths");
+    linkLengths.setArg(0, vertices);
+    linkLengths.setArg(1, lengths);
+    ocl.queue.enqueueNDRangeKernel(
+            linkLengths,
+            NullRange,
+            NDRange(sum, sum),
+            NullRange
+    );
+
+    // Create and init compacted_lengths image
+    float * cl = new float[sum*sum*2]();
+    Image2D compacted_lengths = Image2D(
+            ocl.context,
+            CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+            ImageFormat(CL_RG, CL_FLOAT),
+            sum, sum,
+            0,
+            cl
+    );
+
+    // Create and initialize incs buffer
+    Buffer incs = Buffer(
+            ocl.context,
+            CL_MEM_READ_WRITE,
+            sizeof(int)*sum
+    );
+
+    Kernel initIncsBuffer(ocl.program, "initIntBuffer");
+    initIncsBuffer.setArg(0, incs);
+    ocl.queue.enqueueNDRangeKernel(
+        initIncsBuffer,
+        NullRange,
+        NDRange(sum),
+        NullRange
+    );
+
+    // Run compact kernel
+    Kernel compactLengths(ocl.program, "compact");
+    compactLengths.setArg(0, lengths);
+    compactLengths.setArg(1, incs);
+    compactLengths.setArg(2, compacted_lengths);
+    ocl.queue.enqueueNDRangeKernel(
+            compactLengths,
+            NullRange,
+            NDRange(sum, sum),
+            NullRange
+    );
+
     Kernel linkingKernel(ocl.program, "linkCenterpoints");
     linkingKernel.setArg(0, TDF);
     linkingKernel.setArg(1, radius);
     linkingKernel.setArg(2, vertices);
     linkingKernel.setArg(3, edgeTuples);
     linkingKernel.setArg(4, intensity);
-    linkingKernel.setArg(5, sum);
+    linkingKernel.setArg(5, compacted_lengths);
+    linkingKernel.setArg(6, sum);
     ocl.queue.enqueueNDRangeKernel(
             linkingKernel,
             NullRange,
@@ -1816,7 +1895,14 @@ if(parameters.count("timing") > 0) {
     // Run HP on edgeTuples
     HistogramPyramid2D hp2(ocl);
     hp2.create(edgeTuples, sum, sum);
-    std::cout << "number of edges detected " << hp2.getSum() << std::endl;
+
+    if(hp2.getSum() == 0) {
+        std::cout << "Error no edges were found" << std::endl;
+        exit(-1);
+    } else {
+        std::cout << "number of edges detected " << hp2.getSum() << std::endl;
+    }
+
 
 
     // Run create positions kernel on edges
@@ -2032,18 +2118,23 @@ TubeSegmentation runCircleFittingAndNewCenterlineAlg(OpenCL ocl, cl::Image3D dat
         TS.centerline = new char[totalSize];
         ocl.queue.enqueueReadImage(centerline, CL_FALSE, offset, region, 0, 0, TS.centerline);
     }
-    Image3D segmentation = runInverseGradientSegmentation(ocl, centerline, vectorField, size, parameters);
+
+    Image3D segmentation; 
+    if(parameters.count("no-segmentation") == 0)
+        segmentation = runInverseGradientSegmentation(ocl, centerline, vectorField, size, parameters);
 
 
     // Transfer result back to host
     if(parameters.count("display") > 0 || parameters.count("storage-dir") > 0) {
         START_TIMER
-        TS.segmentation = new char[totalSize];
         TS.TDF = new float[totalSize];
-        //TS.radius = new float[totalSize];
         ocl.queue.enqueueReadImage(TDF, CL_TRUE, offset, region, 0, 0, TS.TDF);
+        if(parameters.count("no-segmentation") == 0) {
+            TS.segmentation = new char[totalSize];
+            ocl.queue.enqueueReadImage(segmentation, CL_TRUE, offset, region, 0, 0, TS.segmentation);
+        }
+        //TS.radius = new float[totalSize];
         //ocl.queue.enqueueReadImage(radius, CL_TRUE, offset, region, 0, 0, TS.radius);
-        ocl.queue.enqueueReadImage(segmentation, CL_TRUE, offset, region, 0, 0, TS.segmentation);
         /*
         TS.Fx = new float[totalSize];
         TS.Fy = new float[totalSize];
@@ -2077,7 +2168,8 @@ TubeSegmentation runCircleFittingAndNewCenterlineAlg(OpenCL ocl, cl::Image3D dat
         START_TIMER
         const std::string storageDirectory = getParamstr(parameters, "storage-dir", "");
         writeToRaw<char>(TS.centerline, storageDirectory + "centerline.raw", size.x, size.y, size.z);
-        writeToRaw<char>(TS.segmentation, storageDirectory + "segmentation.raw", size.x, size.y, size.z);
+        if(parameters.count("no-segmentation") == 0)
+            writeToRaw<char>(TS.segmentation, storageDirectory + "segmentation.raw", size.x, size.y, size.z);
         STOP_TIMER("writing to disk")
     }
 
@@ -2139,25 +2231,27 @@ TubeSegmentation runCircleFittingAndRidgeTraversal(OpenCL ocl, Image3D dataset, 
     std::stack<CenterlinePoint> centerlineStack;
     TS.centerline = runRidgeTraversal(TS, size, parameters, centerlineStack);
 
-    // Dilate the centerline
-    Image3D volume = Image3D(ocl.context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, ImageFormat(CL_R, CL_SIGNED_INT8), size.x, size.y, size.z, 0, 0, TS.centerline);
-if(parameters.count("timing") > 0) {
-    ocl.queue.finish();
-    STOP_TIMER("Centerline extraction + transfer of data back and forth")
-    ocl.queue.enqueueMarker(&startEvent);
-}
+    if(parameters.count("timing") > 0) {
+        ocl.queue.finish();
+        STOP_TIMER("Centerline extraction + transfer of data back and forth")
+        ocl.queue.enqueueMarker(&startEvent);
+    }
 
-    volume = runInverseGradientSegmentation(ocl, volume, vectorField, size, parameters);
+    Image3D volume; 
+    if(parameters.count("no-segmentation") == 0) {
+        volume = Image3D(ocl.context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, ImageFormat(CL_R, CL_SIGNED_INT8), size.x, size.y, size.z, 0, 0, TS.centerline);
+        volume = runInverseGradientSegmentation(ocl, volume, vectorField, size, parameters);
+        TS.segmentation = new char[totalSize];
+        ocl.queue.enqueueReadImage(volume, CL_TRUE, offset, region, 0, 0, TS.segmentation);
+    }
 
 
-    // Transfer volume back to host and write to disk
-    TS.segmentation = new char[totalSize];
-    ocl.queue.enqueueReadImage(volume, CL_TRUE, offset, region, 0, 0, TS.segmentation);
     if(parameters.count("storage-dir") > 0) {
         START_TIMER
         const std::string storageDirectory = getParamstr(parameters, "storage-dir", "");
         writeToRaw<char>(TS.centerline, storageDirectory + "centerline.raw", size.x, size.y, size.z);
-        writeToRaw<char>(TS.segmentation, storageDirectory + "segmentation.raw", size.x, size.y, size.z);
+        if(parameters.count("no-segmentation") == 0)
+            writeToRaw<char>(TS.segmentation, storageDirectory + "segmentation.raw", size.x, size.y, size.z);
         STOP_TIMER("writing segmentation and centerline to disk")
     }
 

@@ -38,6 +38,7 @@ int main(int argc, char ** argv) {
         std::cout << "--maximum <value>\t set maximum threshold (if not specified it will find min automatically) [auto]" << std::endl;
         std::cout << "--mode <mode>\t look for black or white tubes (white|black) [black]" << std::endl;
         std::cout << "--centerline-method\t specify which centerline method to use (ridge|gpu) [gpu]" << std::endl;
+        std::cout << "--no-segmentation\t turns off segmentation and returns centerline only" << std::endl;
 
         return 0;
     }
@@ -95,7 +96,8 @@ int main(int argc, char ** argv) {
             v.y = 0;
             v.z = 0;
             v.y = TS.centerline[i] ? 1.0:0.0;
-            v.z = TS.segmentation[i] ? 1.0:0.0;
+            if(parameters.count("no-segmentation") == 0)
+                v.z = TS.segmentation[i] ? 1.0:0.0;
             result->set(i,v);
         }
         result->showMIP(SIPL::Y);
@@ -103,8 +105,9 @@ int main(int argc, char ** argv) {
     if(parameters.count("display") > 0 || parameters.count("storage-dir") > 0 || parameters["centerline-method"] == "ridge") {
         // Cleanup transferred data
         delete[] TS.centerline;
-        delete[] TS.segmentation;
         delete[] TS.TDF;
+        if(parameters.count("no-segmentation") == 0)
+            delete[] TS.segmentation;
         if(parameters["centerline-method"] == "ridge")
             delete[] TS.radius;
     }

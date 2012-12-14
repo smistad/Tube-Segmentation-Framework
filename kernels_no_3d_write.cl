@@ -12,7 +12,7 @@ __constant sampler_t hpSampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP
 __kernel void init2DImage(
     __write_only image2d_t image
     ) {
-    write_imagei(image, (int2)(get_global_id(0), get_global_id(1)), 0);
+    write_imageui(image, (int2)(get_global_id(0), get_global_id(1)), 0);
 }
 
 // Intialize int buffer to 0
@@ -616,12 +616,38 @@ __kernel void createPositions2D(
     vstore2(pos, target, positions);
 }
 
+__kernel void linkLengths(
+        __global int const * restrict positions,
+        __write_only image2d_t lengths
+        ) {
+    const float3 xa = convert_float3(vload3(get_global_id(0), positions));
+    const float3 xb = convert_float3(vload3(get_global_id(1), positions));
+
+    write_imagef(lengths, (int2)(get_global_id(0), get_global_id(1)), distance(xa,xb));
+}
+
+__kernel void compact(
+        __read_only image2d_t lengths,
+        volatile __global int * incs,
+        __write_only image2d_t compacted_lengths
+        ) {
+    const int i = get_global_id(0);
+    const int j = get_global_id(1);
+
+    float length = read_imagef(lengths, sampler, (int2)(i,j)).x;
+    if(length < 25.0f && length > 0.0f) {
+        volatile int nr = atomic_inc(&(incs[i]));
+        write_imagef(compacted_lengths, (int2)(i,nr), (float4)(length, j, 0, 0));
+    }
+}
+
 __kernel void linkCenterpoints(
         __read_only image3d_t TDF,
         __read_only image3d_t radius,
         __global int const * restrict positions,
         __write_only image2d_t edges,
         __read_only image3d_t intensity,
+        __read_only image2d_t compacted_lengths,
         __private int sum
     ) {
     float maxDistance = 25.0f;
@@ -633,22 +659,29 @@ __kernel void linkCenterpoints(
     int2 bestPair;
     float shortestDistance = maxDistance*2;
     bool validPairFound = false;
-    for(int i = 0; i < get_global_size(0); i++) {
-        if(i == id) 
-            continue;
-    float3 xb = convert_float3(vload3(i, positions));
-    int db = round(distance(xa,xb));
-    if(db >= maxDistance || db >= shortestDistance)
+    for(int i = 0; i < sum; i++) {
+        float2 cl = read_imagef(compacted_lengths, sampler, (int2)(id,i)).xy;
+
+        // reached the end?
+        if(cl.x == 0.0f)
+            break;
+
+    float3 xb = convert_float3(vload3(cl.y, positions));
+    int db = round(cl.x);
+    if(db >= shortestDistance)
         continue;
     for(int j = 0; j < i; j++) {
-        if(j == id || j == i) 
+        float2 cl2  = read_imagef(compacted_lengths, sampler, (int2)(id,j)).xy;
+        if(cl2.y == cl.y) 
             continue;
-    float3 xc = convert_float3(vload3(j, positions));
+
+        // reached the end?
+        if(cl2.x == 0.0f)
+            break;
+    float3 xc = convert_float3(vload3(cl2.y, positions));
 
     // Check distance between xa and xb
-    int dc = round(distance(xa,xc));
-    if(dc >= maxDistance)
-        continue;
+    int dc = round(cl2.x);
 
     float minTDF = 0.0f;
     float minAvgTDF = 0.5f;
@@ -752,8 +785,8 @@ __kernel void linkCenterpoints(
         //printf("var tdf: %f\n", varTDF / (dc+1));
 
         validPairFound = true;
-        bestPair.x = i;
-        bestPair.y = j;
+        bestPair.x = cl.y;
+        bestPair.y = cl2.y;
         shortestDistance = db+dc;
     }
     }}
