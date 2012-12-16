@@ -100,7 +100,7 @@ int main(int argc, char ** argv) {
 
     // Write out parameter list
     std::cout << "The following parameters are set: " << std::endl;
-    std::unordered_map<std::string, std::string>::iterator it;
+    unordered_map<std::string, std::string>::iterator it;
     for(it = parameters.begin(); it != parameters.end(); it++) {
     	std::cout << it->first << " " << it->second << std::endl;
     }

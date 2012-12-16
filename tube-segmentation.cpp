@@ -6,7 +6,13 @@
 #include <list>
 #include <cstdio>
 #include <limits>
+#ifdef CPP11
 #include <unordered_set>
+using std::unordered_set;
+#else
+#include <boost/unordered_set.hpp>
+using boost::unordered_set;
+#endif
 #include "histogram-pyramids.hpp"
 
 
@@ -588,10 +594,10 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
 
 
     // Create a map of centerline distances
-    std::unordered_map<int, int> centerlineDistances;
+    unordered_map<int, int> centerlineDistances;
 
     // Create a map of centerline stacks
-    std::unordered_map<int, std::stack<CenterlinePoint> > centerlineStacks;
+    unordered_map<int, std::stack<CenterlinePoint> > centerlineStacks;
 
     while(!queue.empty()) {
         // Traverse from new start point
@@ -602,7 +608,7 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
         if(centerlines[LPOS(p.x,p.y,p.z)] == 1)
             continue;
 
-        std::unordered_set<int> newCenterlines;
+        unordered_set<int> newCenterlines;
         newCenterlines.insert(LPOS(p.x,p.y,p.z));
         int distance = 1;
         int connections = 0;
@@ -754,7 +760,7 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
             //std::cout << "Finished. Distance " << distance << " meanTube: " << meanTube/distance << std::endl;
             //std::cout << "------------------- New centerlines added #" << counter << " -------------------------" << std::endl;
 
-            std::unordered_set<int>::iterator usit;
+            unordered_set<int>::iterator usit;
             if(prevConnection == -1) {
                 // No connections
                 for(usit = newCenterlines.begin(); usit != newCenterlines.end(); usit++) {
@@ -809,7 +815,7 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
     }
 
     // Find largest connected tree and all trees above a certain size
-    std::unordered_map<int, int>::iterator it;
+    unordered_map<int, int>::iterator it;
     int max = centerlineDistances.begin()->first;
     std::list<int> trees;
     for(it = centerlineDistances.begin(); it != centerlineDistances.end(); it++) {
