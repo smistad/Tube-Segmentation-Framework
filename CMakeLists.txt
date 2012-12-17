@@ -9,7 +9,10 @@ cmake_minimum_required(VERSION 2.8)
 # Set compiler flags
 ###########
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -O3")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D CP11 -std=c++0x") # uncomment this to use boost libraries instead of C++11
+option(USE_C++11 "use C++11 (Tube-Segmentation-Framework)" ON) # cmake option to use boost libraries instead of C++11
+if(USE_C++11)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D CP11 -std=c++0x")
+endif()
 
 #------------------------------------------------------------------------------
 # External libraries
