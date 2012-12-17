@@ -73,3 +73,20 @@ target_link_libraries(tubeSegmentationLib OCL-Utilities SIPL ${Boost_LIBRARIES} 
 ###########
 add_executable(tubeSegmentation main.cpp tube-segmentation.cpp histogram-pyramids.cpp)
 target_link_libraries(tubeSegmentation SIPL OCL-Utilities ${Boost_LIBRARIES} ${OPENCL_LIBRARIES})
+
+ #------------------------------------------------------------------------------
+ # Configure file for find_package module 
+ #------------------------------------------------------------------------------
+ 
+ set( Tube-Segmentation-Framework_INCLUDE_DIRS
+     ${Tube-Segmentation-Framework_SOURCE_DIR}
+ ) 
+ 
+ set(Tube-Segmentation-Framework_LIBRARY_DIRS
+     ${Tube-Segmentation-Framework_BINARY_DIR}
+ )    
+ 
+ configure_file (
+     "${PROJECT_SOURCE_DIR}/CMake/Tube-Segmentation-FrameworkConfig.cmake.in"
+     "${PROJECT_BINARY_DIR}/Tube-Segmentation-FrameworkConfig.cmake"
+ )
