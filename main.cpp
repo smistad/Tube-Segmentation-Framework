@@ -1,5 +1,6 @@
 #include "tube-segmentation.hpp"
 #include <fstream>
+#include "SIPL/Core.hpp"
 
 
 #include <vector>
