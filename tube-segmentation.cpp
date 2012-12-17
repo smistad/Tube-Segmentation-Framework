@@ -24,6 +24,7 @@ using boost::unordered_set;
 #define __stdcall
 #endif
 
+#define MAX(a,b) a > b ? a : b
 
 template <typename T>
 void writeToRaw(T * voxels, std::string filename, int SIZE_X, int SIZE_Y, int SIZE_Z) {
@@ -2359,8 +2360,10 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
     // Read mhd file, determine file type
     std::fstream mhdFile;
     mhdFile.open(filename.c_str(), std::fstream::in);
-    if(!mhdFile)
-        throw SIPL::FileNotFoundException(filename.c_str());
+    if(!mhdFile) {
+        std::cout << "Could not find mhd file " << filename << std::endl;
+        exit(-1);
+    }
     std::string typeName = "";
     std::string rawFilename = "";
     bool typeFound = false, sizeFound = false, rawFilenameFound = false;

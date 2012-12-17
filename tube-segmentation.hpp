@@ -4,7 +4,7 @@
 #define CL_USE_DEPRECATED_OPENCL_1_1_APIS
 
 #include "OpenCLUtilities/openCLUtilities.hpp"
-#include "SIPL/Core.hpp"
+#include "SIPL/Types.hpp"
 #include <iostream>
 #include <string>
 #ifdef CPP11
