@@ -6,7 +6,13 @@
 #include <list>
 #include <cstdio>
 #include <limits>
+#ifdef CPP11
 #include <unordered_set>
+using std::unordered_set;
+#else
+#include <boost/unordered_set.hpp>
+using boost::unordered_set;
+#endif
 #include "histogram-pyramids.hpp"
 
 
@@ -526,13 +532,13 @@ void doEigen(TubeSegmentation &T, int3 pos, int3 size, float3 * lambda, float3 *
 
 char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList parameters, std::stack<CenterlinePoint> centerlineStack) {
 
-    float Thigh = 0.6;
-    int Dmin = 5;
-    float Mlow = 0.2f;
-    float Tlow = 0.4f;
-    int maxBelowTlow = 2;
-    float minMeanTube = 0.6f;
-    int TreeMin = 200;
+    float Thigh = getParamf(parameters, "tdf-high", 0.5); // 0.6
+    int Dmin = getParami(parameters, "min-distance", 5);
+    float Mlow = getParamf(parameters, "m-low", 0.05f); // 0.2
+    float Tlow = getParamf(parameters, "tdf-low", 0.5f); // 0.4
+    int maxBelowTlow = getParami(parameters, "max-below-tdf-low", 0); // 2
+    float minMeanTube = getParamf(parameters, "min-mean-tdf", 0.5); //0.6
+    int TreeMin = getParami(parameters, "min-tree-length", 5); // 200
     const int totalSize = size.x*size.y*size.z;
 
     int * centerlines = new int[totalSize]();
@@ -552,9 +558,9 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
 
                 int3 pos(x,y,z);
                 bool valid = true;
-                for(int a = -2; a < 2; a++) {
-                    for(int b = -2; b < 2; b++) {
-                        for(int c = -2; c < 2; c++) {
+                for(int a = -1; a < 2; a++) {
+                    for(int b = -1; b < 2; b++) {
+                        for(int c = -1; c < 2; c++) {
                             int3 nPos(x+a,y+b,z+c);
                             if(T.TDF[POS(nPos)] > T.TDF[POS(pos)]) {
                                 valid = false;
@@ -588,10 +594,10 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
 
 
     // Create a map of centerline distances
-    std::unordered_map<int, int> centerlineDistances;
+    unordered_map<int, int> centerlineDistances;
 
     // Create a map of centerline stacks
-    std::unordered_map<int, std::stack<CenterlinePoint> > centerlineStacks;
+    unordered_map<int, std::stack<CenterlinePoint> > centerlineStacks;
 
     while(!queue.empty()) {
         // Traverse from new start point
@@ -602,7 +608,7 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
         if(centerlines[LPOS(p.x,p.y,p.z)] == 1)
             continue;
 
-        std::unordered_set<int> newCenterlines;
+        unordered_set<int> newCenterlines;
         newCenterlines.insert(LPOS(p.x,p.y,p.z));
         int distance = 1;
         int connections = 0;
@@ -754,7 +760,7 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
             //std::cout << "Finished. Distance " << distance << " meanTube: " << meanTube/distance << std::endl;
             //std::cout << "------------------- New centerlines added #" << counter << " -------------------------" << std::endl;
 
-            std::unordered_set<int>::iterator usit;
+            unordered_set<int>::iterator usit;
             if(prevConnection == -1) {
                 // No connections
                 for(usit = newCenterlines.begin(); usit != newCenterlines.end(); usit++) {
@@ -809,7 +815,7 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
     }
 
     // Find largest connected tree and all trees above a certain size
-    std::unordered_map<int, int>::iterator it;
+    unordered_map<int, int>::iterator it;
     int max = centerlineDistances.begin()->first;
     std::list<int> trees;
     for(it = centerlineDistances.begin(); it != centerlineDistances.end(); it++) {
@@ -881,7 +887,7 @@ void runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 size, paramL
     // Set up parameters
     const int GVFIterations = getParami(parameters, "gvf-iterations", 250);
     const float radiusMin = getParamf(parameters, "radius-min", 0.5);
-    const float radiusMax = getParamf(parameters, "radius-min", 15.0);
+    const float radiusMax = getParamf(parameters, "radius-max", 15.0);
     const float radiusStep = getParamf(parameters, "radius-step", 0.5);
     const float Fmax = getParamf(parameters, "fmax", 0.2);
     const int totalSize = size.x*size.y*size.z;
@@ -966,8 +972,10 @@ if(parameters.count("timing") > 0) {
 
     } else {
         if(parameters.count("32bit-vectors") > 0) {
+            std::cout << "NOTE: Using 32 bit vectors" << std::endl;
             vectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
         } else {
+            std::cout << "NOTE: Using 16 bit vectors" << std::endl;
             vectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
         }
      
@@ -1027,7 +1035,7 @@ if(parameters.count("timing") > 0) {
     ocl.queue.enqueueMarker(&startEvent);
 }
 
-    mask = createBlurMask(1.0, &maskSize);
+    mask = createBlurMask(getParamf(parameters,"large-blur", 1.0), &maskSize);
     blurMask = Buffer(ocl.context, CL_MEM_READ_ONLY, sizeof(float)*(maskSize*2+1)*(maskSize*2+1)*(maskSize*2+1));
     blurMask.setDestructorCallback((void (__stdcall *)(cl_mem,void *))freeData<float>, (void *)mask);
     ocl.queue.enqueueWriteBuffer(blurMask, CL_FALSE, 0,sizeof(float)*(maskSize*2+1)*(maskSize*2+1)*(maskSize*2+1), mask);
@@ -1579,6 +1587,9 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
     const bool no3Dwrite = parameters.count("3d_write") == 0;
     const int cubeSize = getParami(parameters, "cube-size", 4);
     const int minTreeLength = getParami(parameters, "min-tree-length", 20);
+    const float Thigh = getParamf(parameters, "tdf-high", 0.5f);
+    const float Tmean = getParamf(parameters, "min-mean-tdf", 0.5f);
+    const float maxDistance = getParamf(parameters, "max-distance", 25.0f);
 
     cl::size_t<3> offset;
     offset[0] = 0;
@@ -1638,6 +1649,7 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
 
         candidatesKernel.setArg(0, TDF);
         candidatesKernel.setArg(1, centerpoints);
+        candidatesKernel.setArg(2, Thigh);
         ocl.queue.enqueueNDRangeKernel(
                 candidatesKernel,
                 NullRange,
@@ -1725,6 +1737,7 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
 
         candidatesKernel.setArg(0, TDF);
         candidatesKernel.setArg(1, centerpointsImage);
+        candidatesKernel.setArg(2, Thigh);
         ocl.queue.enqueueNDRangeKernel(
                 candidatesKernel,
                 NullRange,
@@ -1859,6 +1872,7 @@ if(parameters.count("timing") > 0) {
     compactLengths.setArg(0, lengths);
     compactLengths.setArg(1, incs);
     compactLengths.setArg(2, compacted_lengths);
+    compactLengths.setArg(3, maxDistance);
     ocl.queue.enqueueNDRangeKernel(
             compactLengths,
             NullRange,
@@ -1874,6 +1888,8 @@ if(parameters.count("timing") > 0) {
     linkingKernel.setArg(4, intensity);
     linkingKernel.setArg(5, compacted_lengths);
     linkingKernel.setArg(6, sum);
+    linkingKernel.setArg(7, Tmean);
+    linkingKernel.setArg(8, maxDistance);
     ocl.queue.enqueueNDRangeKernel(
             linkingKernel,
             NullRange,

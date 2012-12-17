@@ -1,4 +1,5 @@
 #include "tube-segmentation.hpp"
+#include <fstream>
 
 
 #include <vector>
@@ -58,9 +59,55 @@ int main(int argc, char ** argv) {
     paramList parameters = getParameters(argc, argv);
     std::string filename = argv[1];
 
+    // Check if parameters is set
+    if(parameters.count("parameters") > 0) {
+    	std::string parameterFilename;
+    	if(parameters.count("centerline-method") == 0 || parameters["centerline-method"] == "gpu") {
+    		parameterFilename = "parameters/centerline-gpu/" + parameters["parameters"];
+    	} else if(parameters["centerline-method"] == "ridge") {
+    		parameterFilename = "parameters/centerline-ridge/" + parameters["parameters"];
+    	}
+    	if(parameterFilename.size() > 0) {
+    		// Load file and parse parameters
+    		std::ifstream file(parameterFilename.c_str());
+    		if(!file.is_open()) {
+    			std::cout << "ERROR: could not open parameter file " << parameterFilename << std::endl;
+    			exit(-1);
+    		}
+
+    		std::string line;
+    		while(!file.eof()) {
+				getline(file, line);
+				if(line.size() == 0)
+					continue;
+    			// split string on the first space
+    			int spacePos = line.find(" ");
+    			if(spacePos != std::string::npos) {
+    				// parameter with value
+					std::string name = line.substr(0, spacePos);
+					std::string value = line.substr(spacePos+1);
+					// Add parameter if it doesn't exist (command line parameters always override
+					if(parameters.count(name) == 0)
+						parameters[name] = value;
+    			} else {
+    				// parameter with no value
+    				parameters[line] = "on";
+    			}
+    		}
+    		file.close();
+    	}
+    }
+
+    // Write out parameter list
+    std::cout << "The following parameters are set: " << std::endl;
+    unordered_map<std::string, std::string>::iterator it;
+    for(it = parameters.begin(); it != parameters.end(); it++) {
+    	std::cout << it->first << " " << it->second << std::endl;
+    }
+
     // Compile and create program
     if(parameters.count("buffers-only") == 0 && (int)devices[0].getInfo<CL_DEVICE_EXTENSIONS>().find("cl_khr_3d_image_writes") > -1) {
-        ocl.program = buildProgramFromBinary(ocl.context, "kernels.cl");
+        ocl.program = buildProgramFromSource(ocl.context, "kernels.cl");
         parameters["3d_write"] = "true";
     } else {
         ocl.program = buildProgramFromSource(ocl.context, "kernels_no_3d_write.cl");

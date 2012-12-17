@@ -1,0 +1,4 @@
+mode white
+radius-min 5
+large-blur 5
+fmax 0.05
