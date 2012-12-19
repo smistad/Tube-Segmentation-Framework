@@ -585,6 +585,10 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
     }
 
     std::cout << "Processing " << queue.size() << " valid start points" << std::endl;
+    if(queue.size() == 0) {
+    	std::cout << "ERROR: no valid start points found!" << std::endl;
+    	exit(-1);
+    }
     STOP_TIMER("finding start points")
     START_TIMER
     int counter = 1;
