@@ -1817,6 +1817,10 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
         vertices = hp.createPositionBuffer(); 
 
     }
+    if(sum < 8 || sum >= 8192) {
+    	std::cout << "ERROR: Too many or too few vertices detected." << std::endl;
+    	exit(-1);
+    }
 if(parameters.count("timing") > 0) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
@@ -1932,19 +1936,21 @@ if(parameters.count("timing") > 0) {
 if(parameters.count("timing") > 0) {
     ocl.queue.enqueueMarker(&startEvent);
 }
-
     // Run HP on edgeTuples
     HistogramPyramid2D hp2(ocl);
     hp2.create(edgeTuples, sum, sum);
 
+	std::cout << "number of edges detected " << hp2.getSum() << std::endl;
     if(hp2.getSum() == 0) {
-        std::cout << "Error no edges were found" << std::endl;
+        std::cout << "ERROR: No edges were found" << std::endl;
         exit(-1);
-    } else {
-        std::cout << "number of edges detected " << hp2.getSum() << std::endl;
+    } else if(hp2.getSum() > 10000000) {
+    	std::cout << "ERROR: More than 10 million edges found. Must be wrong!" << std::endl;
+    	exit(-1);
+    } else if(hp2.getSum() < 0){
+    	std::cout << "ERROR: A negative number of edges was found!" << std::endl;
+    	exit(-1);
     }
-
-
 
     // Run create positions kernel on edges
     Buffer edges = hp2.createPositionBuffer();
