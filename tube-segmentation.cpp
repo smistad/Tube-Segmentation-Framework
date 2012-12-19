@@ -869,7 +869,6 @@ float * createBlurMask(float sigma, int * maskSizePointer) {
     	maskSize = 1;
     if(maskSize > 4) // cap mask size at 9x9
     	maskSize = 4;
-    std::cout << "mask size" << maskSize << std::endl;
     float * mask = new float[(maskSize*2+1)*(maskSize*2+1)*(maskSize*2+1)];
     float sum = 0.0f;
     for(int a = -maskSize; a < maskSize+1; a++) {
