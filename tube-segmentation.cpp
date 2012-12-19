@@ -1058,6 +1058,30 @@ if(parameters.count("timing") > 0) {
             NDRange(4,4,4)
     );
 
+    if(radiusMax < 2.5) {
+    	// Stop here
+    	// Copy TDFsmall to TDF and radiusSmall to radiusImage
+		TDF = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_FLOAT),
+				size.x, size.y, size.z);
+		ocl.queue.enqueueCopyBufferToImage(
+			TDFsmall,
+			TDF,
+			0,
+			offset,
+			region
+		);
+		radiusImage = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_FLOAT),
+				size.x, size.y, size.z);
+		ocl.queue.enqueueCopyBufferToImage(
+			radiusSmall,
+			radiusImage,
+			0,
+			offset,
+			region
+		);
+		return;
+    }
+
     // Transfer buffer back to host
 if(parameters.count("timing") > 0) {
     ocl.queue.enqueueMarker(&endEvent);
