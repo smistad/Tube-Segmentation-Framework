@@ -927,6 +927,9 @@ void runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 size, paramL
     INIT_TIMER
 
     Image3D blurredVolume = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_FLOAT), size.x, size.y, size.z);
+    Buffer TDFsmall;
+    Buffer radiusSmall;
+    if(radiusMin < 2.5f) {
     if(smallBlurSigma > 0) {
     	int maskSize = 1;
 		float * mask = createBlurMask(smallBlurSigma, &maskSize);
@@ -1042,8 +1045,8 @@ if(parameters.count("timing") > 0) {
     ocl.queue.enqueueMarker(&startEvent);
 }
     // Run circle fitting TDF kernel
-    Buffer TDFsmall = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
-    Buffer radiusSmall = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
+    TDFsmall = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
+    radiusSmall = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
     circleFittingTDFKernel.setArg(0, vectorField);
     circleFittingTDFKernel.setArg(1, TDFsmall);
     circleFittingTDFKernel.setArg(2, radiusSmall);
@@ -1081,8 +1084,8 @@ if(parameters.count("timing") > 0) {
 		);
 		return;
     }
+    } // end if radiusMin < 2.5
 
-    // Transfer buffer back to host
 if(parameters.count("timing") > 0) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
@@ -1381,17 +1384,19 @@ if(parameters.count("timing") > 0) {
 if(parameters.count("timing") > 0) {
     ocl.queue.enqueueMarker(&startEvent);
 }
-    combineKernel.setArg(0, TDFsmall);
-    combineKernel.setArg(1, radiusSmall);
-    combineKernel.setArg(2, TDFlarge);
-    combineKernel.setArg(3, radiusLarge);
- 
-    ocl.queue.enqueueNDRangeKernel(
-            combineKernel,
-            NullRange,
-            NDRange(totalSize),
-            NDRange(64)
-    );
+	if(radiusMin < 2.5f) {
+		combineKernel.setArg(0, TDFsmall);
+		combineKernel.setArg(1, radiusSmall);
+		combineKernel.setArg(2, TDFlarge);
+		combineKernel.setArg(3, radiusLarge);
+
+		ocl.queue.enqueueNDRangeKernel(
+				combineKernel,
+				NullRange,
+				NDRange(totalSize),
+				NDRange(64)
+		);
+	}
     TDF = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_FLOAT),
             size.x, size.y, size.z);
     ocl.queue.enqueueCopyBufferToImage(
