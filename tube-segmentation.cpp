@@ -926,21 +926,50 @@ void runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 size, paramL
     Buffer blurMask;
     Image3D blurredVolume = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_FLOAT), size.x, size.y, size.z);
     if(smallBlurSigma > 0) {
-        mask = createBlurMask(smallBlurSigma, &maskSize);
-        blurMask = Buffer(ocl.context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(float)*(maskSize*2+1)*(maskSize*2+1)*(maskSize*2+1), mask);
-        blurMask.setDestructorCallback((void (__stdcall *)(cl_mem,void *))(freeData<float>), (void *)mask);
+		mask = createBlurMask(smallBlurSigma, &maskSize);
+		blurMask = Buffer(ocl.context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(float)*(maskSize*2+1)*(maskSize*2+1)*(maskSize*2+1), mask);
+		blurMask.setDestructorCallback((void (__stdcall *)(cl_mem,void *))(freeData<float>), (void *)mask);
+    	if(no3Dwrite) {
+			// Create auxillary buffer
+			Buffer blurredVolumeBuffer = Buffer(
+					ocl.context,
+					CL_MEM_WRITE_ONLY,
+					sizeof(float)*totalSize
+			);
 
-        // Run blurVolumeWithGaussian on processedVolume
-        blurVolumeWithGaussianKernel.setArg(0, dataset);
-        blurVolumeWithGaussianKernel.setArg(1, blurredVolume);
-        blurVolumeWithGaussianKernel.setArg(2, maskSize);
-        blurVolumeWithGaussianKernel.setArg(3, blurMask);
-        ocl.queue.enqueueNDRangeKernel(
-                blurVolumeWithGaussianKernel,
-                NullRange,
-                NDRange(size.x,size.y,size.z),
-                NullRange
-        );
+			// Run blurVolumeWithGaussian on dataset
+			blurVolumeWithGaussianKernel.setArg(0, dataset);
+			blurVolumeWithGaussianKernel.setArg(1, blurredVolumeBuffer);
+			blurVolumeWithGaussianKernel.setArg(2, maskSize);
+			blurVolumeWithGaussianKernel.setArg(3, blurMask);
+
+			ocl.queue.enqueueNDRangeKernel(
+					blurVolumeWithGaussianKernel,
+					NullRange,
+					NDRange(size.x,size.y,size.z),
+					NullRange
+			);
+
+			ocl.queue.enqueueCopyBufferToImage(
+					blurredVolumeBuffer,
+					blurredVolume,
+					0,
+					offset,
+					region
+			);
+    	} else {
+			// Run blurVolumeWithGaussian on processedVolume
+			blurVolumeWithGaussianKernel.setArg(0, dataset);
+			blurVolumeWithGaussianKernel.setArg(1, blurredVolume);
+			blurVolumeWithGaussianKernel.setArg(2, maskSize);
+			blurVolumeWithGaussianKernel.setArg(3, blurMask);
+			ocl.queue.enqueueNDRangeKernel(
+					blurVolumeWithGaussianKernel,
+					NullRange,
+					NDRange(size.x,size.y,size.z),
+					NullRange
+			);
+    	}
     } else {
         blurredVolume = dataset;
     }
