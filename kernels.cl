@@ -201,8 +201,11 @@ int4 traverseHP3D(
     position = scanHPLevel3D(target, hp7, position);
     if(HP_SIZE > 64)
     position = scanHPLevel3D(target, hp6, position);
+    if(HP_SIZE > 32)
     position = scanHPLevel3D(target, hp5, position);
+    if(HP_SIZE > 16)
     position = scanHPLevel3D(target, hp4, position);
+    if(HP_SIZE > 8)
     position = scanHPLevel3D(target, hp3, position);
     position = scanHPLevel3D(target, hp2, position);
     position = scanHPLevel3D(target, hp1, position);
@@ -245,8 +248,11 @@ int2 traverseHP2D(
     position = scanHPLevel2D(target, hp7, position);
     if(HP_SIZE > 64)
     position = scanHPLevel2D(target, hp6, position);
+    if(HP_SIZE > 32)
     position = scanHPLevel2D(target, hp5, position);
+    if(HP_SIZE > 16)
     position = scanHPLevel2D(target, hp4, position);
+    if(HP_SIZE > 8)
     position = scanHPLevel2D(target, hp3, position);
     position = scanHPLevel2D(target, hp2, position);
     position = scanHPLevel2D(target, hp1, position);
