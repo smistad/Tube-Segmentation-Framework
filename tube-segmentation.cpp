@@ -2446,10 +2446,11 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
     } else if(typeName == "MET_USHORT") {
         type = 2;
         file->open(rawFilename, size->x*size->y*size->z*sizeof(short));
+        imageFormat = ImageFormat(CL_R, CL_UNSIGNED_INT16);
         dataset = Image3D(
                 ocl.context, 
                 CL_MEM_READ_ONLY,
-                ImageFormat(CL_R, CL_UNSIGNED_INT16),
+                imageFormat,
                 size->x, size->y, size->z
         );
         data = (void *)file->data();
@@ -2701,7 +2702,6 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
 
         std::cout << "NOTE: reduced size to " << size->x << ", " << size->y << ", " << size->z << std::endl;
     }
-
     // Run toFloat kernel
 
     Kernel toFloatKernel = Kernel(ocl.program, "toFloat");
@@ -2770,7 +2770,6 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         std::cout << "RUNTIME of to float conversion: " << (end-start)*1.0e-6 << " ms" << std::endl;
         ocl.queue.enqueueMarker(&startEvent);
     }
-
     // Return dataset
     return convertedDataset;
 }

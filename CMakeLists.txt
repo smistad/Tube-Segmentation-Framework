@@ -54,8 +54,8 @@ find_package(Boost COMPONENTS iostreams REQUIRED)
 #------------------------------------------------------------------------------
 # Where to look for includes and libraries
 #------------------------------------------------------------------------------
-include_directories(${Boost_INCLUDE_DIRS})# ${OPENCL_INCLUDE_DIR})
-link_directories(${Boost_LIBRARY_DIRS}) #${GTK2_LIBRARY_DIRS})
+include_directories(${Boost_INCLUDE_DIRS} ${PROJECT_BINARY_DIR})
+link_directories(${Boost_LIBRARY_DIRS})
 
 
 #------------------------------------------------------------------------------
@@ -90,3 +90,15 @@ target_link_libraries(tubeSegmentation SIPL OCL-Utilities ${Boost_LIBRARIES} ${O
      "${PROJECT_SOURCE_DIR}/CMake/Tube-Segmentation-FrameworkConfig.cmake.in"
      "${PROJECT_BINARY_DIR}/Tube-Segmentation-FrameworkConfig.cmake"
  )
+
+ #------------------------------------------------------------------------------
+ # Configure file for settings, filepaths, parameters ...
+ #------------------------------------------------------------------------------
+ 
+ set(PARAMETERS_DIR ${PROJECT_SOURCE_DIR}/parameters)
+ set(KERNELS_DIR ${PROJECT_SOURCE_DIR})
+ 
+ configure_file(
+  "${PROJECT_SOURCE_DIR}/CMake/tsf-config.h.in"
+  "${PROJECT_BINARY_DIR}/tsf-config.h"
+  )

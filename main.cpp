@@ -1,7 +1,7 @@
 #include "tube-segmentation.hpp"
 #include <fstream>
 #include "SIPL/Core.hpp"
-
+#include "tsf-config.h"
 
 #include <vector>
 
@@ -107,11 +107,14 @@ int main(int argc, char ** argv) {
     }
 
     // Compile and create program
+    std::string kernelFile;
     if(parameters.count("buffers-only") == 0 && (int)devices[0].getInfo<CL_DEVICE_EXTENSIONS>().find("cl_khr_3d_image_writes") > -1) {
-        ocl.program = buildProgramFromSource(ocl.context, "kernels.cl");
+    	kernelFile = std::string(KERNELS_DIR) + "/kernels.cl";
+        ocl.program = buildProgramFromSource(ocl.context, kernelFile);
         parameters["3d_write"] = "true";
     } else {
-        ocl.program = buildProgramFromSource(ocl.context, "kernels_no_3d_write.cl");
+    	kernelFile = std::string(KERNELS_DIR) + "/kernels_no_3d_write.cl";
+        ocl.program = buildProgramFromSource(ocl.context, kernelFile);
         std::cout << "Writing to 3D textures is not supported on the selected device." << std::endl;
     }
 
