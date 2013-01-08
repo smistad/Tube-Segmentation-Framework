@@ -6,7 +6,8 @@ include_directories(${SIPL_INCLUDE_DIRS})
 add_subdirectory(OpenCLUtilities)
 include_directories(${OPENCL_INCLUDE_DIRS})
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x -g -O3")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -O3")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D CP11 -std=c++0x") # uncomment this to use boost libraries instead of C++11
 
 find_package(OpenMP)
 if(OPENMP_FOUND)

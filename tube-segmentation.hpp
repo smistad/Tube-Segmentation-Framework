@@ -4,10 +4,16 @@
 #define CL_USE_DEPRECATED_OPENCL_1_1_APIS
 
 #include "OpenCLUtilities/openCLUtilities.hpp"
-#include "SIPL/Core.hpp"
+#include "SIPL/Types.hpp"
 #include <iostream>
 #include <string>
+#ifdef CPP11
 #include <unordered_map>
+using std::unordered_map;
+#else
+#include <boost/unordered_map.hpp>
+using boost::unordered_map;
+#endif
 #include "commons.hpp"
 
 typedef struct TubeSegmentation {
@@ -18,7 +24,7 @@ typedef struct TubeSegmentation {
     char *segmentation;
 } TubeSegmentation;
 
-typedef std::unordered_map<std::string, std::string> paramList;
+typedef unordered_map<std::string, std::string> paramList;
 
 cl::Image3D readDatasetAndTransfer(OpenCL, std::string, paramList, SIPL::int3 *);
 

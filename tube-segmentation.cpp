@@ -6,7 +6,13 @@
 #include <list>
 #include <cstdio>
 #include <limits>
+#ifdef CPP11
 #include <unordered_set>
+using std::unordered_set;
+#else
+#include <boost/unordered_set.hpp>
+using boost::unordered_set;
+#endif
 #include "histogram-pyramids.hpp"
 
 
@@ -18,6 +24,7 @@
 #define __stdcall
 #endif
 
+#define MAX(a,b) a > b ? a : b
 
 template <typename T>
 void writeToRaw(T * voxels, std::string filename, int SIZE_X, int SIZE_Y, int SIZE_Z) {
@@ -526,13 +533,13 @@ void doEigen(TubeSegmentation &T, int3 pos, int3 size, float3 * lambda, float3 *
 
 char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList parameters, std::stack<CenterlinePoint> centerlineStack) {
 
-    float Thigh = 0.6;
-    int Dmin = 5;
-    float Mlow = 0.2f;
-    float Tlow = 0.4f;
-    int maxBelowTlow = 2;
-    float minMeanTube = 0.6f;
-    int TreeMin = 200;
+    float Thigh = getParamf(parameters, "tdf-high", 0.5); // 0.6
+    int Dmin = getParami(parameters, "min-distance", 5);
+    float Mlow = getParamf(parameters, "m-low", 0.05f); // 0.2
+    float Tlow = getParamf(parameters, "tdf-low", 0.5f); // 0.4
+    int maxBelowTlow = getParami(parameters, "max-below-tdf-low", 0); // 2
+    float minMeanTube = getParamf(parameters, "min-mean-tdf", 0.5); //0.6
+    int TreeMin = getParami(parameters, "min-tree-length", 5); // 200
     const int totalSize = size.x*size.y*size.z;
 
     int * centerlines = new int[totalSize]();
@@ -552,9 +559,9 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
 
                 int3 pos(x,y,z);
                 bool valid = true;
-                for(int a = -2; a < 2; a++) {
-                    for(int b = -2; b < 2; b++) {
-                        for(int c = -2; c < 2; c++) {
+                for(int a = -1; a < 2; a++) {
+                    for(int b = -1; b < 2; b++) {
+                        for(int c = -1; c < 2; c++) {
                             int3 nPos(x+a,y+b,z+c);
                             if(T.TDF[POS(nPos)] > T.TDF[POS(pos)]) {
                                 valid = false;
@@ -578,6 +585,10 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
     }
 
     std::cout << "Processing " << queue.size() << " valid start points" << std::endl;
+    if(queue.size() == 0) {
+    	std::cout << "ERROR: no valid start points found!" << std::endl;
+    	exit(-1);
+    }
     STOP_TIMER("finding start points")
     START_TIMER
     int counter = 1;
@@ -588,10 +599,10 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
 
 
     // Create a map of centerline distances
-    std::unordered_map<int, int> centerlineDistances;
+    unordered_map<int, int> centerlineDistances;
 
     // Create a map of centerline stacks
-    std::unordered_map<int, std::stack<CenterlinePoint> > centerlineStacks;
+    unordered_map<int, std::stack<CenterlinePoint> > centerlineStacks;
 
     while(!queue.empty()) {
         // Traverse from new start point
@@ -602,7 +613,7 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
         if(centerlines[LPOS(p.x,p.y,p.z)] == 1)
             continue;
 
-        std::unordered_set<int> newCenterlines;
+        unordered_set<int> newCenterlines;
         newCenterlines.insert(LPOS(p.x,p.y,p.z));
         int distance = 1;
         int connections = 0;
@@ -754,7 +765,7 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
             //std::cout << "Finished. Distance " << distance << " meanTube: " << meanTube/distance << std::endl;
             //std::cout << "------------------- New centerlines added #" << counter << " -------------------------" << std::endl;
 
-            std::unordered_set<int>::iterator usit;
+            unordered_set<int>::iterator usit;
             if(prevConnection == -1) {
                 // No connections
                 for(usit = newCenterlines.begin(); usit != newCenterlines.end(); usit++) {
@@ -809,7 +820,7 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
     }
 
     // Find largest connected tree and all trees above a certain size
-    std::unordered_map<int, int>::iterator it;
+    unordered_map<int, int>::iterator it;
     int max = centerlineDistances.begin()->first;
     std::list<int> trees;
     for(it = centerlineDistances.begin(); it != centerlineDistances.end(); it++) {
@@ -857,7 +868,11 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
 
 
 float * createBlurMask(float sigma, int * maskSizePointer) {
-    int maskSize = (int)ceil(3.0f*sigma)-1;
+    int maskSize = (int)ceil(sigma/0.5f);
+    if(maskSize < 1) // cap min mask size at 3x3
+    	maskSize = 1;
+    if(maskSize > 4) // cap mask size at 9x9
+    	maskSize = 4;
     float * mask = new float[(maskSize*2+1)*(maskSize*2+1)*(maskSize*2+1)];
     float sum = 0.0f;
     for(int a = -maskSize; a < maskSize+1; a++) {
@@ -881,7 +896,7 @@ void runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 size, paramL
     // Set up parameters
     const int GVFIterations = getParami(parameters, "gvf-iterations", 250);
     const float radiusMin = getParamf(parameters, "radius-min", 0.5);
-    const float radiusMax = getParamf(parameters, "radius-min", 15.0);
+    const float radiusMax = getParamf(parameters, "radius-max", 15.0);
     const float radiusStep = getParamf(parameters, "radius-step", 0.5);
     const float Fmax = getParamf(parameters, "fmax", 0.2);
     const int totalSize = size.x*size.y*size.z;
@@ -889,6 +904,7 @@ void runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 size, paramL
     const float MU = getParamf(parameters, "gvf-mu", 0.05);
     const int vectorSign = getParamstr(parameters, "mode", "black") == "black" ? -1 : 1;
     const float smallBlurSigma = getParamf(parameters, "small-blur", 0);
+	const float largeBlurSigma = getParamf(parameters,"large-blur", 1.0);
 
 
     cl::size_t<3> offset;
@@ -910,26 +926,56 @@ void runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 size, paramL
     cl_ulong start, end;
     INIT_TIMER
 
-    int maskSize = 0;
-    float * mask;// = createBlurMask(0.5, &maskSize);
-    Buffer blurMask;
     Image3D blurredVolume = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_FLOAT), size.x, size.y, size.z);
+    Buffer TDFsmall;
+    Buffer radiusSmall;
+    if(radiusMin < 2.5f) {
     if(smallBlurSigma > 0) {
-        mask = createBlurMask(smallBlurSigma, &maskSize);
-        blurMask = Buffer(ocl.context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(float)*(maskSize*2+1)*(maskSize*2+1)*(maskSize*2+1), mask);
-        blurMask.setDestructorCallback((void (__stdcall *)(cl_mem,void *))(freeData<float>), (void *)mask);
+    	int maskSize = 1;
+		float * mask = createBlurMask(smallBlurSigma, &maskSize);
+		Buffer blurMask = Buffer(ocl.context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(float)*(maskSize*2+1)*(maskSize*2+1)*(maskSize*2+1), mask);
+		blurMask.setDestructorCallback((void (__stdcall *)(cl_mem,void *))(freeData<float>), (void *)mask);
+    	if(no3Dwrite) {
+			// Create auxillary buffer
+			Buffer blurredVolumeBuffer = Buffer(
+					ocl.context,
+					CL_MEM_WRITE_ONLY,
+					sizeof(float)*totalSize
+			);
 
-        // Run blurVolumeWithGaussian on processedVolume
-        blurVolumeWithGaussianKernel.setArg(0, dataset);
-        blurVolumeWithGaussianKernel.setArg(1, blurredVolume);
-        blurVolumeWithGaussianKernel.setArg(2, maskSize);
-        blurVolumeWithGaussianKernel.setArg(3, blurMask);
-        ocl.queue.enqueueNDRangeKernel(
-                blurVolumeWithGaussianKernel,
-                NullRange,
-                NDRange(size.x,size.y,size.z),
-                NullRange
-        );
+			// Run blurVolumeWithGaussian on dataset
+			blurVolumeWithGaussianKernel.setArg(0, dataset);
+			blurVolumeWithGaussianKernel.setArg(1, blurredVolumeBuffer);
+			blurVolumeWithGaussianKernel.setArg(2, maskSize);
+			blurVolumeWithGaussianKernel.setArg(3, blurMask);
+
+			ocl.queue.enqueueNDRangeKernel(
+					blurVolumeWithGaussianKernel,
+					NullRange,
+					NDRange(size.x,size.y,size.z),
+					NullRange
+			);
+
+			ocl.queue.enqueueCopyBufferToImage(
+					blurredVolumeBuffer,
+					blurredVolume,
+					0,
+					offset,
+					region
+			);
+    	} else {
+			// Run blurVolumeWithGaussian on processedVolume
+			blurVolumeWithGaussianKernel.setArg(0, dataset);
+			blurVolumeWithGaussianKernel.setArg(1, blurredVolume);
+			blurVolumeWithGaussianKernel.setArg(2, maskSize);
+			blurVolumeWithGaussianKernel.setArg(3, blurMask);
+			ocl.queue.enqueueNDRangeKernel(
+					blurVolumeWithGaussianKernel,
+					NullRange,
+					NDRange(size.x,size.y,size.z),
+					NullRange
+			);
+    	}
     } else {
         blurredVolume = dataset;
     }
@@ -966,8 +1012,10 @@ if(parameters.count("timing") > 0) {
 
     } else {
         if(parameters.count("32bit-vectors") > 0) {
+            std::cout << "NOTE: Using 32 bit vectors" << std::endl;
             vectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
         } else {
+            std::cout << "NOTE: Using 16 bit vectors" << std::endl;
             vectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
         }
      
@@ -997,8 +1045,8 @@ if(parameters.count("timing") > 0) {
     ocl.queue.enqueueMarker(&startEvent);
 }
     // Run circle fitting TDF kernel
-    Buffer TDFsmall = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
-    Buffer radiusSmall = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
+    TDFsmall = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
+    radiusSmall = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
     circleFittingTDFKernel.setArg(0, vectorField);
     circleFittingTDFKernel.setArg(1, TDFsmall);
     circleFittingTDFKernel.setArg(2, radiusSmall);
@@ -1013,7 +1061,31 @@ if(parameters.count("timing") > 0) {
             NDRange(4,4,4)
     );
 
-    // Transfer buffer back to host
+    if(radiusMax < 2.5) {
+    	// Stop here
+    	// Copy TDFsmall to TDF and radiusSmall to radiusImage
+		TDF = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_FLOAT),
+				size.x, size.y, size.z);
+		ocl.queue.enqueueCopyBufferToImage(
+			TDFsmall,
+			TDF,
+			0,
+			offset,
+			region
+		);
+		radiusImage = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_FLOAT),
+				size.x, size.y, size.z);
+		ocl.queue.enqueueCopyBufferToImage(
+			radiusSmall,
+			radiusImage,
+			0,
+			offset,
+			region
+		);
+		return;
+    }
+    } // end if radiusMin < 2.5
+
 if(parameters.count("timing") > 0) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
@@ -1026,64 +1098,56 @@ if(parameters.count("timing") > 0) {
 if(parameters.count("timing") > 0) {
     ocl.queue.enqueueMarker(&startEvent);
 }
+    if(largeBlurSigma > 0) {
+    	int maskSize = 1;
+		float * mask = createBlurMask(largeBlurSigma, &maskSize);
+		Buffer blurMask = Buffer(ocl.context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(float)*(maskSize*2+1)*(maskSize*2+1)*(maskSize*2+1), mask);
+		blurMask.setDestructorCallback((void (__stdcall *)(cl_mem,void *))(freeData<float>), (void *)mask);
+    	if(no3Dwrite) {
+			// Create auxillary buffer
+			Buffer blurredVolumeBuffer = Buffer(
+					ocl.context,
+					CL_MEM_WRITE_ONLY,
+					sizeof(float)*totalSize
+			);
 
-    mask = createBlurMask(1.0, &maskSize);
-    blurMask = Buffer(ocl.context, CL_MEM_READ_ONLY, sizeof(float)*(maskSize*2+1)*(maskSize*2+1)*(maskSize*2+1));
-    blurMask.setDestructorCallback((void (__stdcall *)(cl_mem,void *))freeData<float>, (void *)mask);
-    ocl.queue.enqueueWriteBuffer(blurMask, CL_FALSE, 0,sizeof(float)*(maskSize*2+1)*(maskSize*2+1)*(maskSize*2+1), mask);
+			// Run blurVolumeWithGaussian on dataset
+			blurVolumeWithGaussianKernel.setArg(0, dataset);
+			blurVolumeWithGaussianKernel.setArg(1, blurredVolumeBuffer);
+			blurVolumeWithGaussianKernel.setArg(2, maskSize);
+			blurVolumeWithGaussianKernel.setArg(3, blurMask);
 
-    if(no3Dwrite) {
-        // Create auxillary buffer
-        Buffer blurredVolumeBuffer = Buffer(
-                ocl.context, 
-                CL_MEM_WRITE_ONLY, 
-                sizeof(float)*totalSize
-        );
+			ocl.queue.enqueueNDRangeKernel(
+					blurVolumeWithGaussianKernel,
+					NullRange,
+					NDRange(size.x,size.y,size.z),
+					NullRange
+			);
 
-        // Run blurVolumeWithGaussian on dataset
-        blurVolumeWithGaussianKernel.setArg(0, dataset);
-        blurVolumeWithGaussianKernel.setArg(1, blurredVolumeBuffer);
-        blurVolumeWithGaussianKernel.setArg(2, maskSize);
-        blurVolumeWithGaussianKernel.setArg(3, blurMask);
-
-        ocl.queue.enqueueNDRangeKernel(
-                blurVolumeWithGaussianKernel,
-                NullRange,
-                NDRange(size.x,size.y,size.z),
-                NullRange
-        );
-
-        ocl.queue.enqueueCopyBufferToImage(
-                blurredVolumeBuffer, 
-                blurredVolume, 
-                0,
-                offset,
-                region
-        );
+			ocl.queue.enqueueCopyBufferToImage(
+					blurredVolumeBuffer,
+					blurredVolume,
+					0,
+					offset,
+					region
+			);
+    	} else {
+			// Run blurVolumeWithGaussian on processedVolume
+			blurVolumeWithGaussianKernel.setArg(0, dataset);
+			blurVolumeWithGaussianKernel.setArg(1, blurredVolume);
+			blurVolumeWithGaussianKernel.setArg(2, maskSize);
+			blurVolumeWithGaussianKernel.setArg(3, blurMask);
+			ocl.queue.enqueueNDRangeKernel(
+					blurVolumeWithGaussianKernel,
+					NullRange,
+					NDRange(size.x,size.y,size.z),
+					NullRange
+			);
+    	}
     } else {
-        // Run blurVolumeWithGaussian on processedVolume
-        blurVolumeWithGaussianKernel.setArg(0, dataset);
-        blurVolumeWithGaussianKernel.setArg(1, blurredVolume);
-        blurVolumeWithGaussianKernel.setArg(2, maskSize);
-        blurVolumeWithGaussianKernel.setArg(3, blurMask);
+        blurredVolume = dataset;
+    }
 
-        ocl.queue.enqueueNDRangeKernel(
-                blurVolumeWithGaussianKernel,
-                NullRange,
-                NDRange(size.x,size.y,size.z),
-                NDRange(4,4,4)
-        );
-    }
-    /*
-    float * tmp = new float[totalSize];
-    ocl.queue.enqueueReadImage(blurredVolume, CL_TRUE, offset, region, 0,0,tmp);
-    int counter = 0;
-    for(int i = 0; i < totalSize; i++) {
-        if(tmp[i] > 0.5f)
-            counter++;
-    }
-    std::cout << "counter is " << counter << std::endl;
-    */
 
 if(parameters.count("timing") > 0) {
     ocl.queue.enqueueMarker(&endEvent);
@@ -1320,17 +1384,19 @@ if(parameters.count("timing") > 0) {
 if(parameters.count("timing") > 0) {
     ocl.queue.enqueueMarker(&startEvent);
 }
-    combineKernel.setArg(0, TDFsmall);
-    combineKernel.setArg(1, radiusSmall);
-    combineKernel.setArg(2, TDFlarge);
-    combineKernel.setArg(3, radiusLarge);
- 
-    ocl.queue.enqueueNDRangeKernel(
-            combineKernel,
-            NullRange,
-            NDRange(totalSize),
-            NDRange(64)
-    );
+	if(radiusMin < 2.5f) {
+		combineKernel.setArg(0, TDFsmall);
+		combineKernel.setArg(1, radiusSmall);
+		combineKernel.setArg(2, TDFlarge);
+		combineKernel.setArg(3, radiusLarge);
+
+		ocl.queue.enqueueNDRangeKernel(
+				combineKernel,
+				NullRange,
+				NDRange(totalSize),
+				NDRange(64)
+		);
+	}
     TDF = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_FLOAT),
             size.x, size.y, size.z);
     ocl.queue.enqueueCopyBufferToImage(
@@ -1579,6 +1645,9 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
     const bool no3Dwrite = parameters.count("3d_write") == 0;
     const int cubeSize = getParami(parameters, "cube-size", 4);
     const int minTreeLength = getParami(parameters, "min-tree-length", 20);
+    const float Thigh = getParamf(parameters, "tdf-high", 0.5f);
+    const float Tmean = getParamf(parameters, "min-mean-tdf", 0.5f);
+    const float maxDistance = getParamf(parameters, "max-distance", 25.0f);
 
     cl::size_t<3> offset;
     offset[0] = 0;
@@ -1638,6 +1707,7 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
 
         candidatesKernel.setArg(0, TDF);
         candidatesKernel.setArg(1, centerpoints);
+        candidatesKernel.setArg(2, Thigh);
         ocl.queue.enqueueNDRangeKernel(
                 candidatesKernel,
                 NullRange,
@@ -1725,6 +1795,7 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
 
         candidatesKernel.setArg(0, TDF);
         candidatesKernel.setArg(1, centerpointsImage);
+        candidatesKernel.setArg(2, Thigh);
         ocl.queue.enqueueNDRangeKernel(
                 candidatesKernel,
                 NullRange,
@@ -1778,6 +1849,10 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
         // Run createPositions kernel
         vertices = hp.createPositionBuffer(); 
 
+    }
+    if(sum < 8 || sum >= 8192) {
+    	std::cout << "ERROR: Too many or too few vertices detected." << std::endl;
+    	exit(-1);
     }
 if(parameters.count("timing") > 0) {
     ocl.queue.enqueueMarker(&endEvent);
@@ -1859,6 +1934,7 @@ if(parameters.count("timing") > 0) {
     compactLengths.setArg(0, lengths);
     compactLengths.setArg(1, incs);
     compactLengths.setArg(2, compacted_lengths);
+    compactLengths.setArg(3, maxDistance);
     ocl.queue.enqueueNDRangeKernel(
             compactLengths,
             NullRange,
@@ -1874,6 +1950,8 @@ if(parameters.count("timing") > 0) {
     linkingKernel.setArg(4, intensity);
     linkingKernel.setArg(5, compacted_lengths);
     linkingKernel.setArg(6, sum);
+    linkingKernel.setArg(7, Tmean);
+    linkingKernel.setArg(8, maxDistance);
     ocl.queue.enqueueNDRangeKernel(
             linkingKernel,
             NullRange,
@@ -1891,19 +1969,21 @@ if(parameters.count("timing") > 0) {
 if(parameters.count("timing") > 0) {
     ocl.queue.enqueueMarker(&startEvent);
 }
-
     // Run HP on edgeTuples
     HistogramPyramid2D hp2(ocl);
     hp2.create(edgeTuples, sum, sum);
 
+	std::cout << "number of edges detected " << hp2.getSum() << std::endl;
     if(hp2.getSum() == 0) {
-        std::cout << "Error no edges were found" << std::endl;
+        std::cout << "ERROR: No edges were found" << std::endl;
         exit(-1);
-    } else {
-        std::cout << "number of edges detected " << hp2.getSum() << std::endl;
+    } else if(hp2.getSum() > 10000000) {
+    	std::cout << "ERROR: More than 10 million edges found. Must be wrong!" << std::endl;
+    	exit(-1);
+    } else if(hp2.getSum() < 0){
+    	std::cout << "ERROR: A negative number of edges was found!" << std::endl;
+    	exit(-1);
     }
-
-
 
     // Run create positions kernel on edges
     Buffer edges = hp2.createPositionBuffer();
@@ -2343,8 +2423,10 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
     // Read mhd file, determine file type
     std::fstream mhdFile;
     mhdFile.open(filename.c_str(), std::fstream::in);
-    if(!mhdFile)
-        throw SIPL::FileNotFoundException(filename.c_str());
+    if(!mhdFile) {
+        std::cout << "Could not find mhd file " << filename << std::endl;
+        exit(-1);
+    }
     std::string typeName = "";
     std::string rawFilename = "";
     bool typeFound = false, sizeFound = false, rawFilenameFound = false;
