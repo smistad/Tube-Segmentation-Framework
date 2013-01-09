@@ -2411,7 +2411,6 @@ void getLimits(paramList parameters, void * data, const int totalSize, float * m
 }
 
 
-
 Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList parameters, SIPL::int3 * size) {
     cl_ulong start, end;
     Event startEvent, endEvent;
@@ -2562,7 +2561,6 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         exit(-1);
     }
 
-    dataset.setDestructorCallback((void (__stdcall *)(cl_mem,void *))unmapRawfile, (void *)(file));
 
     std::cout << "Dataset of size " << size->x << " " << size->y << " " << size->z << " loaded" << std::endl;
     if(parameters.count("timing") > 0) {
@@ -2834,6 +2832,7 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         ocl.queue.enqueueMarker(&startEvent);
     }
 
+    dataset.setDestructorCallback((void (__stdcall *)(cl_mem,void *))unmapRawfile, (void *)(file));
     // Return dataset
     return convertedDataset;
 }
