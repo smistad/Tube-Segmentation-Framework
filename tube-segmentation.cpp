@@ -897,7 +897,7 @@ void runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 size, paramL
     const int GVFIterations = getParami(parameters, "gvf-iterations", 250);
     const float radiusMin = getParamf(parameters, "radius-min", 0.5);
     const float radiusMax = getParamf(parameters, "radius-max", 15.0);
-    const float radiusStep = getParamf(parameters, "radius-step", 0.5);
+    const float radiusStep = getParamf(parameters, "radius-step", 1.0);
     const float Fmax = getParamf(parameters, "fmax", 0.2);
     const int totalSize = size.x*size.y*size.z;
     const bool no3Dwrite = parameters.count("3d_write") == 0;
@@ -1366,7 +1366,7 @@ if(parameters.count("timing") > 0) {
     circleFittingTDFKernel.setArg(2, radiusLarge);
     circleFittingTDFKernel.setArg(3, 1.0f);
     circleFittingTDFKernel.setArg(4, radiusMax);
-    circleFittingTDFKernel.setArg(5, 1.0f);
+    circleFittingTDFKernel.setArg(5, radiusStep);
 
     ocl.queue.enqueueNDRangeKernel(
             circleFittingTDFKernel,
@@ -2410,7 +2410,7 @@ void getLimits(paramList parameters, void * data, const int totalSize, float * m
     }
 }
 
-
+boost::iostreams::mapped_file_source * file;
 Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList parameters, SIPL::int3 * size) {
     cl_ulong start, end;
     Event startEvent, endEvent;
@@ -2479,7 +2479,7 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
     Image3D dataset;
     int type = 0;
     void * data;
-    boost::iostreams::mapped_file_source * file = new boost::iostreams::mapped_file_source[1];
+    file = new boost::iostreams::mapped_file_source[1];
     cl::size_t<3> offset;
     offset[0] = 0;
     offset[1] = 0;
