@@ -1850,7 +1850,7 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
         vertices = hp.createPositionBuffer(); 
 
     }
-    if(sum < 8 || sum >= 8192) {
+    if(sum < 8 || sum >= 16384) {
     	std::cout << "ERROR: Too many or too few vertices detected." << std::endl;
     	exit(-1);
     }
