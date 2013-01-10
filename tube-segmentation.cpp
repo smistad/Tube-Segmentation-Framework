@@ -1364,7 +1364,7 @@ if(parameters.count("timing") > 0) {
     circleFittingTDFKernel.setArg(0, vectorField);
     circleFittingTDFKernel.setArg(1, TDFlarge);
     circleFittingTDFKernel.setArg(2, radiusLarge);
-    circleFittingTDFKernel.setArg(3, 1.0f);
+    circleFittingTDFKernel.setArg(3, std::max(1.0f, radiusMin));
     circleFittingTDFKernel.setArg(4, radiusMax);
     circleFittingTDFKernel.setArg(5, radiusStep);
 
@@ -2570,7 +2570,7 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         ocl.queue.enqueueWriteImage(dataset, CL_FALSE, offset, region2, 0, 0, data);
         getLimits<float>(parameters, data, totalSize, &minimum, &maximum);
     } else {
-        std::string msg = "unsupported filetype " + typeName;
+        std::cout << "ERROR: unsupported data type " + typeName << std::endl;
         exit(-1);
     }
 
