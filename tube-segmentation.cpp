@@ -2193,6 +2193,13 @@ TubeSegmentation runCircleFittingAndNewCenterlineAlg(OpenCL ocl, cl::Image3D dat
     region[2] = size.z;
 
     runCircleFittingMethod(ocl, dataset, size, parameters, vectorField, TDF, radius);
+    if(parameters.count("tdf-only") > 0) {
+    	if(parameters.count("display") > 0) {
+			TS.TDF = new float[totalSize];
+			ocl.queue.enqueueReadImage(TDF, CL_TRUE, offset, region, 0, 0, TS.TDF);
+    	}
+    	return TS;
+    }
     Image3D centerline = runNewCenterlineAlg(ocl, size, parameters, vectorField, TDF, radius, dataset);
     if(parameters.count("display") > 0 || parameters.count("storage-dir") > 0) {
         TS.centerline = new char[totalSize];
@@ -2262,6 +2269,7 @@ TubeSegmentation runCircleFittingAndRidgeTraversal(OpenCL ocl, Image3D dataset, 
     cl::Event startEvent, endEvent;
     cl_ulong start, end;
     Image3D vectorField, TDF, radius;
+    TubeSegmentation TS;
     runCircleFittingMethod(ocl, dataset, size, parameters, vectorField, TDF, radius);
     const int totalSize = size.x*size.y*size.z;
     const bool no3Dwrite = parameters.count("3d_write") == 0;
@@ -2275,11 +2283,17 @@ TubeSegmentation runCircleFittingAndRidgeTraversal(OpenCL ocl, Image3D dataset, 
     region[1] = size.y;
     region[2] = size.z;
 
+    TS.TDF = new float[totalSize];
+    if(parameters.count("tdf-only") > 0) {
+    	if(parameters.count("display") > 0) {
+			ocl.queue.enqueueReadImage(TDF, CL_TRUE, offset, region, 0, 0, TS.TDF);
+    	}
+    	return TS;
+    }
 
 
     START_TIMER
     // Transfer buffer back to host
-    TubeSegmentation TS;
     TS.Fx = new float[totalSize];
     TS.Fy = new float[totalSize];
     TS.Fz = new float[totalSize];
@@ -2304,7 +2318,6 @@ TubeSegmentation runCircleFittingAndRidgeTraversal(OpenCL ocl, Image3D dataset, 
         }
         delete[] Fs;
     }
-    TS.TDF = new float[totalSize];
     TS.radius = new float[totalSize];
     ocl.queue.enqueueReadImage(TDF, CL_TRUE, offset, region, 0, 0, TS.TDF);
     ocl.queue.enqueueReadImage(radius, CL_TRUE, offset, region, 0, 0, TS.radius);
