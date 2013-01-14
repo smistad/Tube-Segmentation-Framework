@@ -1744,6 +1744,10 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
             offset,
             region
         );
+
+		if(parameters.count("centerpoints-only") > 0) {
+			return centerpointsImage2;
+		}
         ddKernel.setArg(0, vectorField);
         ddKernel.setArg(1, TDF);
         ddKernel.setArg(2, centerpointsImage2);
@@ -1828,6 +1832,9 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
             NullRange
         );
 
+		if(parameters.count("centerpoints-only") > 0) {
+			return centerpointsImage2;
+		}
         ddKernel.setArg(0, vectorField);
         ddKernel.setArg(1, TDF);
         ddKernel.setArg(2, centerpointsImage2);
@@ -1854,6 +1861,7 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
     	std::cout << "ERROR: Too many or too few vertices detected." << std::endl;
     	exit(-1);
     }
+
 if(parameters.count("timing") > 0) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
