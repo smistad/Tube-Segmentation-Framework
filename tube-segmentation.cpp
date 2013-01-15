@@ -2297,7 +2297,8 @@ TubeSegmentation runCircleFittingAndRidgeTraversal(OpenCL ocl, Image3D dataset, 
     TS.Fx = new float[totalSize];
     TS.Fy = new float[totalSize];
     TS.Fz = new float[totalSize];
-    if(no3Dwrite) {
+    if(no3Dwrite || parameters.count("32bit-vectors") > 0) {
+    	// 32 bit vector fields
         float * Fs = new float[totalSize*4];
         ocl.queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
 #pragma omp parallel for
@@ -2308,6 +2309,7 @@ TubeSegmentation runCircleFittingAndRidgeTraversal(OpenCL ocl, Image3D dataset, 
         }
         delete[] Fs;
     } else {
+    	// 16 bit vector fields
         short * Fs = new short[totalSize*4];
         ocl.queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
 #pragma omp parallel for
