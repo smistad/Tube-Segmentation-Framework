@@ -787,7 +787,7 @@ float3 gradient(
 
 
 
-__kernel void cropDataset(
+__kernel void cropDatasetLung(
         __read_only image3d_t volume,
         __global short * scanLinesInside,
         __private int sliceDirection

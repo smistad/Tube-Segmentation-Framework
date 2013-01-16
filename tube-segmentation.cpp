@@ -2588,9 +2588,15 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         ocl.queue.enqueueMarker(&startEvent);
     }
     // Perform cropping if required
-    if(parameters.count("cropping") == 1) {
+    std::string cropping = getParamstr(parameters, "cropping", "no");
+    if(cropping == "lung" || cropping == "threshold") {
         std::cout << "performing cropping" << std::endl;
-        Kernel cropDatasetKernel(ocl.program, "cropDataset");
+        Kernel cropDatasetKernel;
+        if(cropping == "lung") {
+			cropDatasetKernel = Kernel(ocl.program, "cropDatasetLung");
+        } else if(cropping == "threshold") {
+        	cropDatasetKernel = Kernel(ocl.program, "cropDatasetThreshold");
+        }
 
         Buffer scanLinesInsideX = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(short)*size->x);
         Buffer scanLinesInsideY = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(short)*size->y);
