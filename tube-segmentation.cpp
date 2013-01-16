@@ -2762,27 +2762,33 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         }
     } else {// End cropping
         // If cropping is not done, shrink volume so that each dimension is dividable by 4
-        while(size->x % 4 != 0)
-            size->x--;
-        while(size->y % 4 != 0)
-            size->y--;
-        while(size->z % 4 != 0)
-            size->z--;
+    	bool notDividable = false;
+    	if(size->x % 4 != 0 || size->y % 4 != 0 || size->z % 4 != 0)
+    		notDividable = true;
 
-        cl::size_t<3> offset;
-        offset[0] = 0;
-        offset[1] = 0;
-        offset[2] = 0;
-        cl::size_t<3> region;
-        region[0] = size->x;
-        region[1] = size->y;
-        region[2] = size->z;
-        Image3D imageHUvolume = Image3D(ocl.context, CL_MEM_READ_ONLY, imageFormat, size->x, size->y, size->z);
+    	if(notDividable) {
+			while(size->x % 4 != 0)
+				size->x--;
+			while(size->y % 4 != 0)
+				size->y--;
+			while(size->z % 4 != 0)
+				size->z--;
 
-        ocl.queue.enqueueCopyImage(dataset, imageHUvolume, offset, offset, region);
-        dataset = imageHUvolume;
+			cl::size_t<3> offset;
+			offset[0] = 0;
+			offset[1] = 0;
+			offset[2] = 0;
+			cl::size_t<3> region;
+			region[0] = size->x;
+			region[1] = size->y;
+			region[2] = size->z;
+			Image3D imageHUvolume = Image3D(ocl.context, CL_MEM_READ_ONLY, imageFormat, size->x, size->y, size->z);
 
-        std::cout << "NOTE: reduced size to " << size->x << ", " << size->y << ", " << size->z << std::endl;
+			ocl.queue.enqueueCopyImage(dataset, imageHUvolume, offset, offset, region);
+			dataset = imageHUvolume;
+
+			std::cout << "NOTE: reduced size to " << size->x << ", " << size->y << ", " << size->z << std::endl;
+    	}
     }
 
     // Run toFloat kernel
