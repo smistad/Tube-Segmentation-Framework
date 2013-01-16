@@ -2592,10 +2592,14 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
     if(cropping == "lung" || cropping == "threshold") {
         std::cout << "performing cropping" << std::endl;
         Kernel cropDatasetKernel;
+        int minScanLines;
         if(cropping == "lung") {
 			cropDatasetKernel = Kernel(ocl.program, "cropDatasetLung");
+			minScanLines = getParami(parameters, "min-scan-lines", 200);
         } else if(cropping == "threshold") {
         	cropDatasetKernel = Kernel(ocl.program, "cropDatasetThreshold");
+			minScanLines = getParami(parameters, "min-scan-lines", 10);
+			cropDatasetKernel.setArg(3, getParamf(parameters, "cropping-threshold", 0.0f));
         }
 
         Buffer scanLinesInsideX = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(short)*size->x);
@@ -2633,7 +2637,6 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         ocl.queue.enqueueReadBuffer(scanLinesInsideY, CL_FALSE, 0, sizeof(short)*size->y, scanLinesY);
         ocl.queue.enqueueReadBuffer(scanLinesInsideZ, CL_FALSE, 0, sizeof(short)*size->z, scanLinesZ);
 
-        int minScanLines = 200;
         int x1 = 0,x2 = size->x,y1 = 0,y2 = size->y,z1 = 0,z2 = size->z;
         ocl.queue.finish();
 #pragma omp parallel sections
@@ -2703,7 +2706,7 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         int SIZE_Z = z2-z1;
 	    // Make them dividable by 4
 	    bool lower = false;
-	    while(SIZE_X % 4 != 0) {
+	    while(SIZE_X % 4 != 0 && SIZE_X < size->x) {
             if(lower && x1 > 0) {
                 x1--;
             } else if(x2 < size->x) {
@@ -2712,7 +2715,11 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
             lower = !lower;
             SIZE_X = x2-x1;
 	    }
-	    while(SIZE_Y % 4 != 0) {
+	    if(SIZE_X % 4 != 0) {
+			while(SIZE_X % 4 != 0)
+				SIZE_X--;
+	    }
+	    while(SIZE_Y % 4 != 0 && SIZE_Y < size->y) {
             if(lower && y1 > 0) {
                 y1--;
             } else if(y2 < size->y) {
@@ -2721,7 +2728,11 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
             lower = !lower;
             SIZE_Y = y2-y1;
 	    }
-	    while(SIZE_Z % 4 != 0) {
+	    if(SIZE_Y % 4 != 0) {
+			while(SIZE_Y % 4 != 0)
+				SIZE_Y--;
+	    }
+	    while(SIZE_Z % 4 != 0 && SIZE_Z < size->z) {
             if(lower && z1 > 0) {
                 z1--;
             } else if(z2 < size->z) {
@@ -2730,13 +2741,17 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
             lower = !lower;
             SIZE_Z = z2-z1;
 	    }
+	    if(SIZE_Z % 4 != 0) {
+			while(SIZE_Z % 4 != 0)
+				SIZE_Z--;
+	    }
         size->x = SIZE_X;
         size->y = SIZE_Y;
         size->z = SIZE_Z;
  
 
         std::cout << "Dataset cropped to " << SIZE_X << ", " << SIZE_Y << ", " << SIZE_Z << std::endl;
-        Image3D imageHUvolume = Image3D(ocl.context, CL_MEM_READ_ONLY, ImageFormat(CL_R, CL_SIGNED_INT16), SIZE_X, SIZE_Y, SIZE_Z);
+        Image3D imageHUvolume = Image3D(ocl.context, CL_MEM_READ_ONLY, imageFormat, SIZE_X, SIZE_Y, SIZE_Z);
 
         cl::size_t<3> offset;
         offset[0] = 0;

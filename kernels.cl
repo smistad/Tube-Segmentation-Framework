@@ -789,9 +789,9 @@ float3 gradient(
 __kernel void cropDatasetThreshold(
         __read_only image3d_t volume,
         __global short * scanLinesInside,
-        __private int sliceDirection
+        __private int sliceDirection,
+        __private float threshold
     ) {
-	float threshold = 20;
 	int sliceNr = get_global_id(0);
     short scanLines = 0;
     int scanLineSize, scanLineElementSize;
