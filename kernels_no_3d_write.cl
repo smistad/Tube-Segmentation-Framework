@@ -1118,7 +1118,51 @@ __kernel void grow(
 }
 }
 
+__kernel void cropDatasetThreshold(
+        __read_only image3d_t volume,
+        __global short * scanLinesInside,
+        __private int sliceDirection
+    ) {
+	float threshold = 20;
+	int sliceNr = get_global_id(0);
+    short scanLines = 0;
+    int scanLineSize, scanLineElementSize;
 
+    if(sliceDirection == 0) {
+        scanLineSize = get_image_height(volume);
+        scanLineElementSize = get_image_depth(volume);
+    } else if(sliceDirection == 1) {
+        scanLineSize = get_image_width(volume);
+        scanLineElementSize = get_image_depth(volume);
+    } else {
+        scanLineSize = get_image_height(volume);
+        scanLineElementSize = get_image_width(volume);
+    }
+
+    for(int scanLine = 0; scanLine < scanLineSize; scanLine++) {
+
+        for(int scanLineElement = 0; scanLineElement < scanLineElementSize; scanLineElement ++) {
+			int4 pos;
+            if(sliceDirection == 0) {
+                pos.x = sliceNr;
+                pos.y = scanLine;
+                pos.z = scanLineElement;
+            } else if(sliceDirection == 1) {
+                pos.x = scanLine;
+                pos.y = sliceNr;
+                pos.z = scanLineElement;
+            } else {
+                pos.x = scanLineElement;
+                pos.y = scanLine;
+                pos.z = sliceNr;
+            }
+
+        	if(read_imagef(volume,sampler,pos).x > threshold)
+				scanLines++;
+        } // End scan line
+    }
+    scanLinesInside[sliceNr] = scanLines;
+}
 
 __kernel void cropDatasetLung(
         __read_only image3d_t volume,
