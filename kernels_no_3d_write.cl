@@ -1122,9 +1122,89 @@ __kernel void grow(
 }
 }
 
+__kernel void sphereSegmentation(
+		__read_only image3d_t centerlines,
+		__read_only image3d_t radius,
+		__global char * segmentation
+		) {
 
+    int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
 
-__kernel void cropDataset(
+    if(read_imagei(centerlines,sampler,pos).x == 0)
+    	return;
+
+    float r = read_imagef(radius, sampler ,pos).x;
+    int N = ceil(r);
+    for(int x = -N; x <= N; x++) {
+    for(int y = -N; y <= N; y++) {
+    for(int z = -N; z <= N; z++) {
+    	// calculate distance
+    	if(length((float3)(x,y,z)) < r) {
+			int4 posN = pos + (int4)(x,y,z,0);
+			segmentation[posN.x+posN.y*get_global_size(0)+posN.z*get_global_size(0)*get_global_size(1)] = 1;
+    	}
+    }}}
+}
+
+__kernel void cropDatasetThreshold(
+        __read_only image3d_t volume,
+        __global short * scanLinesInside,
+        __private int sliceDirection,
+        __private float threshold,
+        __private int type
+    ) {
+	int sliceNr = get_global_id(0);
+    short scanLines = 0;
+    int scanLineSize, scanLineElementSize;
+
+    if(sliceDirection == 0) {
+        scanLineSize = get_image_height(volume);
+        scanLineElementSize = get_image_depth(volume);
+    } else if(sliceDirection == 1) {
+        scanLineSize = get_image_width(volume);
+        scanLineElementSize = get_image_depth(volume);
+    } else {
+        scanLineSize = get_image_height(volume);
+        scanLineElementSize = get_image_width(volume);
+    }
+
+    for(int scanLine = 0; scanLine < scanLineSize; scanLine++) {
+
+    	bool found = false;
+        for(int scanLineElement = 0; scanLineElement < scanLineElementSize; scanLineElement ++) {
+			int4 pos;
+            if(sliceDirection == 0) {
+                pos.x = sliceNr;
+                pos.y = scanLine;
+                pos.z = scanLineElement;
+            } else if(sliceDirection == 1) {
+                pos.x = scanLine;
+                pos.y = sliceNr;
+                pos.z = scanLineElement;
+            } else {
+                pos.x = scanLineElement;
+                pos.y = scanLine;
+                pos.z = sliceNr;
+            }
+
+            if(type == 1) {
+				if(read_imagei(volume,sampler,pos).x > threshold)
+					found = true;
+            } else if(type == 2) {
+				if(read_imageui(volume,sampler,pos).x > threshold)
+					found = true;
+            } else {
+				if(read_imagef(volume,sampler,pos).x > threshold)
+					found = true;
+            }
+        } // End scan line
+        if(found)
+        	scanLines++;
+    }
+    scanLinesInside[sliceNr] = scanLines;
+}
+
+__kernel void cropDatasetLung(
         __read_only image3d_t volume,
         __global short * scanLinesInside,
         __private int sliceDirection
@@ -1229,7 +1309,7 @@ __kernel void erode(
             }
         }
     }
-        result[LPOS(pos)] = keep ? 100 : 0;
+        result[LPOS(pos)] = keep ? 1 : 0;
     } else {
         result[LPOS(pos)] = 0;
     }
