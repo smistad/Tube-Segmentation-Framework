@@ -871,8 +871,8 @@ float * createBlurMask(float sigma, int * maskSizePointer) {
     int maskSize = (int)ceil(sigma/0.5f);
     if(maskSize < 1) // cap min mask size at 3x3
     	maskSize = 1;
-    if(maskSize > 4) // cap mask size at 9x9
-    	maskSize = 4;
+    if(maskSize > 8) // cap mask size at 17x17
+    	maskSize = 8;
     float * mask = new float[(maskSize*2+1)*(maskSize*2+1)*(maskSize*2+1)];
     float sum = 0.0f;
     for(int a = -maskSize; a < maskSize+1; a++) {
