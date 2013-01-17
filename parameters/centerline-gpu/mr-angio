@@ -1,0 +1,7 @@
+mode white
+minimum 100
+maximum 300
+fmax 0.05
+max-distance 10
+small-blur 1.0
+min-tree-length 5
