@@ -1141,6 +1141,7 @@ __kernel void cropDatasetThreshold(
 
     for(int scanLine = 0; scanLine < scanLineSize; scanLine++) {
 
+    	bool found = false;
         for(int scanLineElement = 0; scanLineElement < scanLineElementSize; scanLineElement ++) {
 			int4 pos;
             if(sliceDirection == 0) {
@@ -1157,9 +1158,19 @@ __kernel void cropDatasetThreshold(
                 pos.z = sliceNr;
             }
 
-        	if(read_imagef(volume,sampler,pos).x > threshold)
-				scanLines++;
+            if(type == 1) {
+				if(read_imagei(volume,sampler,pos).x > threshold)
+					found = true;
+            } else if(type == 2) {
+				if(read_imageui(volume,sampler,pos).x > threshold)
+					found = true;
+            } else {
+				if(read_imagef(volume,sampler,pos).x > threshold)
+					found = true;
+            }
         } // End scan line
+        if(found)
+        	scanLines++;
     }
     scanLinesInside[sliceNr] = scanLines;
 }

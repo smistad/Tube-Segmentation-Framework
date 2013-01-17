@@ -2593,13 +2593,17 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         std::cout << "performing cropping" << std::endl;
         Kernel cropDatasetKernel;
         int minScanLines;
+        std::string cropping_start_z;
         if(cropping == "lung") {
 			cropDatasetKernel = Kernel(ocl.program, "cropDatasetLung");
 			minScanLines = getParami(parameters, "min-scan-lines", 200);
+			cropping_start_z = "middle";
         } else if(cropping == "threshold") {
         	cropDatasetKernel = Kernel(ocl.program, "cropDatasetThreshold");
 			minScanLines = getParami(parameters, "min-scan-lines", 10);
 			cropDatasetKernel.setArg(3, getParamf(parameters, "cropping-threshold", 0.0f));
+			cropDatasetKernel.setArg(4, type);
+			cropping_start_z = getParamstr(parameters, "cropping-start-z", "end");
         }
 
         Buffer scanLinesInsideX = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(short)*size->x);
@@ -2639,6 +2643,15 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
 
         int x1 = 0,x2 = size->x,y1 = 0,y2 = size->y,z1 = 0,z2 = size->z;
         ocl.queue.finish();
+        int startSlice, a;
+		if(cropping_start_z == "middle") {
+			startSlice = size->z / 2;
+			a = -1;
+		} else {
+			startSlice = 0;
+			a = 1;
+		}
+
 #pragma omp parallel sections
 {
 #pragma omp section
@@ -2678,10 +2691,11 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
             }
         }
 }
+
 #pragma omp section
 {
-        for(int sliceNr = (size->z)/2; sliceNr < size->z; sliceNr++) {
-            if(scanLinesZ[sliceNr] < minScanLines) {
+		for(int sliceNr = startSlice; sliceNr < size->z; sliceNr++) {
+            if(a*scanLinesZ[sliceNr] > a*minScanLines) {
                 z2 = sliceNr;
                 break;
             }
@@ -2689,14 +2703,20 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
 }
 #pragma omp section
 {
-        for(int sliceNr = (size->z)/2; sliceNr > 0; sliceNr--) {
-            if(scanLinesZ[sliceNr] < minScanLines) {
+        for(int sliceNr = size->z - startSlice - 1; sliceNr > 0; sliceNr--) {
+            if(a*scanLinesZ[sliceNr] > a*minScanLines) {
                 z1 = sliceNr;
                 break;
             }
         }
 }
 }
+		if(cropping_start_z == "end") {
+			int tmp = z1;
+			z1 = z2;
+			z2 = tmp;
+		}
+
         delete[] scanLinesX;
         delete[] scanLinesY;
         delete[] scanLinesZ;
@@ -2704,6 +2724,10 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         int SIZE_X = x2-x1;
         int SIZE_Y = y2-y1;
         int SIZE_Z = z2-z1;
+        if(SIZE_X == 0 || SIZE_Y == 0 || SIZE_Z == 0) {
+        	std::cout << "ERROR: Invalid cropping to new size " << SIZE_X << ", " << SIZE_Y << ", " << SIZE_Z << std::endl;
+        	exit(-1);
+        }
 	    // Make them dividable by 4
 	    bool lower = false;
 	    while(SIZE_X % 4 != 0 && SIZE_X < size->x) {
