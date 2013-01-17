@@ -5,3 +5,6 @@ fmax 0.05
 max-distance 10
 small-blur 1.0
 min-tree-length 5
+cropping threshold
+cropping-threshold 200
+min-scan-lines 10
