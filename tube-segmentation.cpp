@@ -1426,6 +1426,92 @@ if(parameters.count("timing") > 0) {
 
 }
 
+Image3D runSphereSegmentation(OpenCL ocl, Image3D centerline, Image3D radius, SIPL::int3 size, paramList parameters) {
+	const bool no3Dwrite = parameters.count("3d_write") == 0;
+	if(no3Dwrite) {
+		cl::size_t<3> offset;
+		offset[0] = 0;
+		offset[1] = 0;
+		offset[2] = 0;
+		cl::size_t<3> region;
+		region[0] = size.x;
+		region[1] = size.y;
+		region[2] = size.z;
+
+		const int totalSize = size.x*size.y*size.z;
+		Buffer segmentation = Buffer(
+				ocl.context,
+				CL_MEM_WRITE_ONLY,
+				sizeof(char)*totalSize
+		);
+		Kernel initKernel = Kernel(ocl.program, "initCharBuffer");
+		initKernel.setArg(0, segmentation);
+		ocl.queue.enqueueNDRangeKernel(
+				initKernel,
+				NullRange,
+				NDRange(totalSize),
+				NDRange(4*4*4)
+		);
+
+		Kernel kernel = Kernel(ocl.program, "sphereSegmentation");
+		kernel.setArg(0, centerline);
+		kernel.setArg(1, radius);
+		kernel.setArg(2, segmentation);
+		ocl.queue.enqueueNDRangeKernel(
+				kernel,
+				NullRange,
+			NDRange(size.x, size.y, size.z),
+			NDRange(4,4,4)
+		);
+
+		Image3D segmentationImage = Image3D(
+				ocl.context,
+				CL_MEM_WRITE_ONLY,
+				ImageFormat(CL_R, CL_UNSIGNED_INT8),
+				size.x, size.y, size.z
+		);
+
+		ocl.queue.enqueueCopyBufferToImage(
+				segmentation,
+				segmentationImage,
+				0,
+				offset,
+				region
+		);
+
+		return segmentationImage;
+	} else {
+		Image3D segmentation = Image3D(
+				ocl.context,
+				CL_MEM_WRITE_ONLY,
+				ImageFormat(CL_R, CL_UNSIGNED_INT8),
+				size.x, size.y, size.z
+		);
+		Kernel initKernel = Kernel(ocl.program, "init3DImage");
+		initKernel.setArg(0, segmentation);
+		ocl.queue.enqueueNDRangeKernel(
+				initKernel,
+				NullRange,
+				NDRange(size.x, size.y, size.z),
+				NDRange(4,4,4)
+		);
+
+		Kernel kernel = Kernel(ocl.program, "sphereSegmentation");
+		kernel.setArg(0, centerline);
+		kernel.setArg(1, radius);
+		kernel.setArg(2, segmentation);
+		ocl.queue.enqueueNDRangeKernel(
+				kernel,
+				NullRange,
+			NDRange(size.x, size.y, size.z),
+			NDRange(4,4,4)
+		);
+
+		return segmentation;
+	}
+
+}
+
 Image3D runInverseGradientSegmentation(OpenCL ocl, Image3D volume, Image3D vectorField, SIPL::int3 size, paramList parameters) {
     const int totalSize = size.x*size.y*size.z;
     const bool no3Dwrite = parameters.count("3d_write") == 0;
@@ -2207,8 +2293,13 @@ TubeSegmentation runCircleFittingAndNewCenterlineAlg(OpenCL ocl, cl::Image3D dat
     }
 
     Image3D segmentation; 
-    if(parameters.count("no-segmentation") == 0)
-        segmentation = runInverseGradientSegmentation(ocl, centerline, vectorField, size, parameters);
+    if(parameters.count("no-segmentation") == 0) {
+    	if(parameters.count("sphere-segmentation") == 0) {
+			segmentation = runInverseGradientSegmentation(ocl, centerline, vectorField, size, parameters);
+    	} else {
+			segmentation = runSphereSegmentation(ocl,centerline, radius, size, parameters);
+    	}
+    }
 
 
     // Transfer result back to host
@@ -2335,7 +2426,11 @@ TubeSegmentation runCircleFittingAndRidgeTraversal(OpenCL ocl, Image3D dataset, 
     Image3D volume; 
     if(parameters.count("no-segmentation") == 0) {
         volume = Image3D(ocl.context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, ImageFormat(CL_R, CL_SIGNED_INT8), size.x, size.y, size.z, 0, 0, TS.centerline);
-        volume = runInverseGradientSegmentation(ocl, volume, vectorField, size, parameters);
+    	if(parameters.count("sphere-segmentation") == 0) {
+			volume = runInverseGradientSegmentation(ocl, volume, vectorField, size, parameters);
+    	} else {
+			volume = runSphereSegmentation(ocl,volume, radius, size, parameters);
+    	}
         TS.segmentation = new char[totalSize];
         ocl.queue.enqueueReadImage(volume, CL_TRUE, offset, region, 0, 0, TS.segmentation);
     }

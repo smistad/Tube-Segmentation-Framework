@@ -673,6 +673,30 @@ __kernel void grow(
 }
 }
 
+__kernel void sphereSegmentation(
+		__read_only image3d_t centerlines,
+		__read_only image3d_t radius,
+		__write_only image3d_t segmentation
+		) {
+
+    int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
+
+    if(read_imagei(centerlines,sampler,pos).x == 0)
+    	return;
+
+    float r = read_imagef(radius, sampler ,pos).x;
+    int N = ceil(r);
+    for(int x = -N; x <= N; x++) {
+    for(int y = -N; y <= N; y++) {
+    for(int z = -N; z <= N; z++) {
+    	// calculate distance
+    	if(length((float3)(x,y,z)) < r) {
+			int4 posN = pos + (int4)(x,y,z,0);
+			write_imageui(segmentation, posN, 1);
+    	}
+    }}}
+}
+
 float3 gradientNormalized(
         __read_only image3d_t volume,   // Volume to perform gradient on
         int4 pos,                       // Position to perform gradient on
