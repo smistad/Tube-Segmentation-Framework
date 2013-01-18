@@ -231,9 +231,12 @@ int2 traverseHP2D(
     image2d_t hp9,
     image2d_t hp10,
     image2d_t hp11,
-    image2d_t hp12
+    image2d_t hp12,
+    image2d_t hp13
     ) {
     int3 position = {0,0,0};
+    if(HP_SIZE > 8192)
+    position = scanHPLevel2D(target, hp13, position);
     if(HP_SIZE > 4096)
     position = scanHPLevel2D(target, hp12, position);
     if(HP_SIZE > 2048)
@@ -302,11 +305,12 @@ __kernel void createPositions2D(
         ,__read_only image2d_t hp10
         ,__read_only image2d_t hp11
         ,__read_only image2d_t hp12
+        ,__read_only image2d_t hp13
     ) {
     int target = get_global_id(0);
     if(target >= sum)
         target = 0;
-    int2 pos = traverseHP2D(target,HP_SIZE,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,hp8,hp9,hp10,hp11,hp12);
+    int2 pos = traverseHP2D(target,HP_SIZE,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,hp8,hp9,hp10,hp11,hp12,hp13);
     vstore2(pos, target, positions);
 }
 
@@ -381,9 +385,9 @@ __kernel void linkCenterpoints(
 
     float minTDF = 0.0f;
     float maxVarTDF = 1.005f;
-    float maxIntensity = 1.3f;
-    float maxAvgIntensity = 1.2f;
-    float maxVarIntensity = 1.005f;
+    //float maxIntensity = 1.3f;
+    //float maxAvgIntensity = 1.2f;
+    //float maxVarIntensity = 1.005f;
 
     if(db+dc < shortestDistance) {
         // Check angle
@@ -394,17 +398,17 @@ __kernel void linkCenterpoints(
             continue;
         // Check TDF
         float avgTDF = 0.0f;
-        float avgIntensity = 0.0f;
+        //float avgIntensity = 0.0f;
         bool invalid = false;
         //printf("%d - %d \n", db, dc);
         for(int k = 0; k <= db; k++) {
             float alpha = (float)k/db;
             float3 p = xa+ab*alpha;
             float t = read_imagef(TDF, interpolationSampler, p.xyzz).x; 
-            float i = read_imagef(intensity, interpolationSampler, p.xyzz).x; 
-            avgIntensity += i;
+            //float i = read_imagef(intensity, interpolationSampler, p.xyzz).x; 
+            //avgIntensity += i;
             avgTDF += t;
-            if(i > maxIntensity || t < minTDF) {
+            if(/*i > maxIntensity ||*/ t < minTDF) {
                 invalid = true;
                 break;
             }
@@ -412,22 +416,24 @@ __kernel void linkCenterpoints(
         if(invalid)
             continue;
         avgTDF /= db+1;
-        avgIntensity /= db+1;
+        //avgIntensity /= db+1;
         if(avgTDF < minAvgTDF)
             continue;
+            /*
         if(avgIntensity > maxAvgIntensity)
             continue;
+            */
 
         float varTDF = 0.0f;
-        float varIntensity = 0.0f;
+        //float varIntensity = 0.0f;
         for(int k = 0; k <= db; k++) {
             float alpha = (float)k/db;
             float3 p = xa+ab*alpha;
             float t = read_imagef(TDF, interpolationSampler, p.xyzz).x; 
-            float i = read_imagef(intensity, interpolationSampler, p.xyzz).x; 
-            varIntensity += (i-avgIntensity)*(i-avgIntensity);
+            //float i = read_imagef(intensity, interpolationSampler, p.xyzz).x; 
+            //varIntensity += (i-avgIntensity)*(i-avgIntensity);
             varTDF += (t-avgTDF)*(t-avgTDF);
-            if(i > maxIntensity || t < minTDF) {
+            if(/*i > maxIntensity || */t < minTDF) {
                 invalid = true;
                 break;
             }
@@ -435,43 +441,49 @@ __kernel void linkCenterpoints(
         if(invalid)
             continue;
 
+        /*
         if(db > 4 && varIntensity / (db+1) > maxVarIntensity)
             continue;
+            */
         if(db > 4 && varTDF / (db+1) > maxVarTDF)
             continue;
 
         avgTDF = 0.0f;
-        avgIntensity = 0.0f;
+        //avgIntensity = 0.0f;
         varTDF = 0.0f;
-        varIntensity = 0.0f;
+        //varIntensity = 0.0f;
         for(int k = 0; k <= dc; k++) {
             float alpha = (float)k/dc;
             float3 p = xa+ac*alpha;
             float t = read_imagef(TDF, interpolationSampler, p.xyzz).x; 
-            float i = read_imagef(intensity, interpolationSampler, p.xyzz).x; 
+            //float i = read_imagef(intensity, interpolationSampler, p.xyzz).x; 
             avgTDF += t;
-            avgIntensity += i;
+            //avgIntensity += i;
         }
         avgTDF /= dc+1;
-        avgIntensity /= dc+1;
+        //avgIntensity /= dc+1;
 
         if(avgTDF < minAvgTDF)
             continue;
 
+        /*
         if(avgIntensity > maxAvgIntensity)
             continue;
+            */
 
         for(int k = 0; k <= db; k++) {
             float alpha = (float)k/db;
             float3 p = xa+ab*alpha;
             float t = read_imagef(TDF, interpolationSampler, p.xyzz).x; 
-            float i = read_imagef(intensity, interpolationSampler, p.xyzz).x; 
-            varIntensity += (i-avgIntensity)*(i-avgIntensity);
+            //float i = read_imagef(intensity, interpolationSampler, p.xyzz).x; 
+            //varIntensity += (i-avgIntensity)*(i-avgIntensity);
             varTDF += (t-avgTDF)*(t-avgTDF);
         }
 
+        /*
         if(dc > 4 && varIntensity / (dc+1) > maxVarIntensity)
             continue;
+            */
         if(dc > 4 && varTDF / (dc+1) > maxVarTDF)
             continue;
         //printf("avg i: %f\n", avgIntensity );
@@ -665,6 +677,30 @@ __kernel void grow(
 }
 }
 
+__kernel void sphereSegmentation(
+		__read_only image3d_t centerlines,
+		__read_only image3d_t radius,
+		__write_only image3d_t segmentation
+		) {
+
+    int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
+
+    if(read_imagei(centerlines,sampler,pos).x == 0)
+    	return;
+
+    float r = read_imagef(radius, sampler ,pos).x;
+    int N = ceil(r);
+    for(int x = -N; x <= N; x++) {
+    for(int y = -N; y <= N; y++) {
+    for(int z = -N; z <= N; z++) {
+    	// calculate distance
+    	if(length((float3)(x,y,z)) < r) {
+			int4 posN = pos + (int4)(x,y,z,0);
+			write_imageui(segmentation, posN, 1);
+    	}
+    }}}
+}
+
 float3 gradientNormalized(
         __read_only image3d_t volume,   // Volume to perform gradient on
         int4 pos,                       // Position to perform gradient on
@@ -778,8 +814,65 @@ float3 gradient(
 }
 
 
+__kernel void cropDatasetThreshold(
+        __read_only image3d_t volume,
+        __global short * scanLinesInside,
+        __private int sliceDirection,
+        __private float threshold,
+        __private int type
+    ) {
+	int sliceNr = get_global_id(0);
+    short scanLines = 0;
+    int scanLineSize, scanLineElementSize;
 
-__kernel void cropDataset(
+    if(sliceDirection == 0) {
+        scanLineSize = get_image_height(volume);
+        scanLineElementSize = get_image_depth(volume);
+    } else if(sliceDirection == 1) {
+        scanLineSize = get_image_width(volume);
+        scanLineElementSize = get_image_depth(volume);
+    } else {
+        scanLineSize = get_image_height(volume);
+        scanLineElementSize = get_image_width(volume);
+    }
+
+    for(int scanLine = 0; scanLine < scanLineSize; scanLine++) {
+
+    	bool found = false;
+        for(int scanLineElement = 0; scanLineElement < scanLineElementSize; scanLineElement ++) {
+			int4 pos;
+            if(sliceDirection == 0) {
+                pos.x = sliceNr;
+                pos.y = scanLine;
+                pos.z = scanLineElement;
+            } else if(sliceDirection == 1) {
+                pos.x = scanLine;
+                pos.y = sliceNr;
+                pos.z = scanLineElement;
+            } else {
+                pos.x = scanLineElement;
+                pos.y = scanLine;
+                pos.z = sliceNr;
+            }
+
+            if(type == 1) {
+				if(read_imagei(volume,sampler,pos).x > threshold)
+					found = true;
+            } else if(type == 2) {
+				if(read_imageui(volume,sampler,pos).x > threshold)
+					found = true;
+            } else {
+				if(read_imagef(volume,sampler,pos).x > threshold)
+					found = true;
+            }
+        } // End scan line
+        if(found)
+        	scanLines++;
+    }
+    scanLinesInside[sliceNr] = scanLines;
+}
+
+__kernel void cropDatasetLung(
         __read_only image3d_t volume,
         __global short * scanLinesInside,
         __private int sliceDirection
@@ -1161,7 +1254,7 @@ __kernel void findCandidateCenterpoints2(
         const float dp = dot(e1,r);
         const float3 r_projected = r-e1*dp;
         const float theta = acos(dot(normalize(r), normalize(r_projected)));
-        if(theta < thetaLimit && length(r) < maxD) {
+        if((theta < thetaLimit && length(r) < maxD)) {
             if(SQR_MAG(n) < SQR_MAG(pos)) {
                 invalid = true;
                 break;

@@ -1,4 +1,7 @@
 mode white
 radius-min 5
-large-blur 5
+large-blur 10
 fmax 0.05
+cropping threshold
+cropping-threshold 100
+min-scan-lines 5

@@ -146,8 +146,9 @@ int main(int argc, char ** argv) {
             v.x = TS.TDF[i];
             v.y = 0;
             v.z = 0;
-            v.y = TS.centerline[i] ? 1.0:0.0;
-            if(parameters.count("no-segmentation") == 0)
+            if(parameters.count("tdf-only") == 0)
+				v.y = TS.centerline[i] ? 1.0:0.0;
+            if(parameters.count("no-segmentation") == 0 && parameters.count("tdf-only") == 0)
                 v.z = TS.segmentation[i] ? 1.0:0.0;
             result->set(i,v);
         }
@@ -155,12 +156,16 @@ int main(int argc, char ** argv) {
     }
     if(parameters.count("display") > 0 || parameters.count("storage-dir") > 0 || parameters["centerline-method"] == "ridge") {
         // Cleanup transferred data
-        delete[] TS.centerline;
-        delete[] TS.TDF;
-        if(parameters.count("no-segmentation") == 0)
-            delete[] TS.segmentation;
-        if(parameters["centerline-method"] == "ridge")
-            delete[] TS.radius;
+    	if(parameters.count("tdf-only") > 0) {
+			delete[] TS.TDF;
+    	} else {
+			delete[] TS.centerline;
+			delete[] TS.TDF;
+			if(parameters.count("no-segmentation") == 0)
+				delete[] TS.segmentation;
+			if(parameters["centerline-method"] == "ridge")
+				delete[] TS.radius;
+    	}
     }
     return 0;
 }

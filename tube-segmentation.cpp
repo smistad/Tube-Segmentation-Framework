@@ -871,8 +871,8 @@ float * createBlurMask(float sigma, int * maskSizePointer) {
     int maskSize = (int)ceil(sigma/0.5f);
     if(maskSize < 1) // cap min mask size at 3x3
     	maskSize = 1;
-    if(maskSize > 4) // cap mask size at 9x9
-    	maskSize = 4;
+    if(maskSize > 8) // cap mask size at 17x17
+    	maskSize = 8;
     float * mask = new float[(maskSize*2+1)*(maskSize*2+1)*(maskSize*2+1)];
     float sum = 0.0f;
     for(int a = -maskSize; a < maskSize+1; a++) {
@@ -897,7 +897,7 @@ void runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 size, paramL
     const int GVFIterations = getParami(parameters, "gvf-iterations", 250);
     const float radiusMin = getParamf(parameters, "radius-min", 0.5);
     const float radiusMax = getParamf(parameters, "radius-max", 15.0);
-    const float radiusStep = getParamf(parameters, "radius-step", 0.5);
+    const float radiusStep = getParamf(parameters, "radius-step", 1.0);
     const float Fmax = getParamf(parameters, "fmax", 0.2);
     const int totalSize = size.x*size.y*size.z;
     const bool no3Dwrite = parameters.count("3d_write") == 0;
@@ -1364,9 +1364,9 @@ if(parameters.count("timing") > 0) {
     circleFittingTDFKernel.setArg(0, vectorField);
     circleFittingTDFKernel.setArg(1, TDFlarge);
     circleFittingTDFKernel.setArg(2, radiusLarge);
-    circleFittingTDFKernel.setArg(3, 1.0f);
+    circleFittingTDFKernel.setArg(3, std::max(1.0f, radiusMin));
     circleFittingTDFKernel.setArg(4, radiusMax);
-    circleFittingTDFKernel.setArg(5, 1.0f);
+    circleFittingTDFKernel.setArg(5, radiusStep);
 
     ocl.queue.enqueueNDRangeKernel(
             circleFittingTDFKernel,
@@ -1423,6 +1423,92 @@ if(parameters.count("timing") > 0) {
     endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
     std::cout << "RUNTIME of combine: " << (end-start)*1.0e-6 << " ms" << std::endl;
 }
+
+}
+
+Image3D runSphereSegmentation(OpenCL ocl, Image3D centerline, Image3D radius, SIPL::int3 size, paramList parameters) {
+	const bool no3Dwrite = parameters.count("3d_write") == 0;
+	if(no3Dwrite) {
+		cl::size_t<3> offset;
+		offset[0] = 0;
+		offset[1] = 0;
+		offset[2] = 0;
+		cl::size_t<3> region;
+		region[0] = size.x;
+		region[1] = size.y;
+		region[2] = size.z;
+
+		const int totalSize = size.x*size.y*size.z;
+		Buffer segmentation = Buffer(
+				ocl.context,
+				CL_MEM_WRITE_ONLY,
+				sizeof(char)*totalSize
+		);
+		Kernel initKernel = Kernel(ocl.program, "initCharBuffer");
+		initKernel.setArg(0, segmentation);
+		ocl.queue.enqueueNDRangeKernel(
+				initKernel,
+				NullRange,
+				NDRange(totalSize),
+				NDRange(4*4*4)
+		);
+
+		Kernel kernel = Kernel(ocl.program, "sphereSegmentation");
+		kernel.setArg(0, centerline);
+		kernel.setArg(1, radius);
+		kernel.setArg(2, segmentation);
+		ocl.queue.enqueueNDRangeKernel(
+				kernel,
+				NullRange,
+			NDRange(size.x, size.y, size.z),
+			NDRange(4,4,4)
+		);
+
+		Image3D segmentationImage = Image3D(
+				ocl.context,
+				CL_MEM_WRITE_ONLY,
+				ImageFormat(CL_R, CL_UNSIGNED_INT8),
+				size.x, size.y, size.z
+		);
+
+		ocl.queue.enqueueCopyBufferToImage(
+				segmentation,
+				segmentationImage,
+				0,
+				offset,
+				region
+		);
+
+		return segmentationImage;
+	} else {
+		Image3D segmentation = Image3D(
+				ocl.context,
+				CL_MEM_WRITE_ONLY,
+				ImageFormat(CL_R, CL_UNSIGNED_INT8),
+				size.x, size.y, size.z
+		);
+		Kernel initKernel = Kernel(ocl.program, "init3DImage");
+		initKernel.setArg(0, segmentation);
+		ocl.queue.enqueueNDRangeKernel(
+				initKernel,
+				NullRange,
+				NDRange(size.x, size.y, size.z),
+				NDRange(4,4,4)
+		);
+
+		Kernel kernel = Kernel(ocl.program, "sphereSegmentation");
+		kernel.setArg(0, centerline);
+		kernel.setArg(1, radius);
+		kernel.setArg(2, segmentation);
+		ocl.queue.enqueueNDRangeKernel(
+				kernel,
+				NullRange,
+			NDRange(size.x, size.y, size.z),
+			NDRange(4,4,4)
+		);
+
+		return segmentation;
+	}
 
 }
 
@@ -1744,6 +1830,10 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
             offset,
             region
         );
+
+		if(parameters.count("centerpoints-only") > 0) {
+			return centerpointsImage2;
+		}
         ddKernel.setArg(0, vectorField);
         ddKernel.setArg(1, TDF);
         ddKernel.setArg(2, centerpointsImage2);
@@ -1828,6 +1918,9 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
             NullRange
         );
 
+		if(parameters.count("centerpoints-only") > 0) {
+			return centerpointsImage2;
+		}
         ddKernel.setArg(0, vectorField);
         ddKernel.setArg(1, TDF);
         ddKernel.setArg(2, centerpointsImage2);
@@ -1850,10 +1943,11 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
         vertices = hp.createPositionBuffer(); 
 
     }
-    if(sum < 8 || sum >= 8192) {
+    if(sum < 8 || sum >= 16384) {
     	std::cout << "ERROR: Too many or too few vertices detected." << std::endl;
     	exit(-1);
     }
+
 if(parameters.count("timing") > 0) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
@@ -2193,6 +2287,13 @@ TubeSegmentation runCircleFittingAndNewCenterlineAlg(OpenCL ocl, cl::Image3D dat
     region[2] = size.z;
 
     runCircleFittingMethod(ocl, dataset, size, parameters, vectorField, TDF, radius);
+    if(parameters.count("tdf-only") > 0) {
+    	if(parameters.count("display") > 0) {
+			TS.TDF = new float[totalSize];
+			ocl.queue.enqueueReadImage(TDF, CL_TRUE, offset, region, 0, 0, TS.TDF);
+    	}
+    	return TS;
+    }
     Image3D centerline = runNewCenterlineAlg(ocl, size, parameters, vectorField, TDF, radius, dataset);
     if(parameters.count("display") > 0 || parameters.count("storage-dir") > 0) {
         TS.centerline = new char[totalSize];
@@ -2200,8 +2301,13 @@ TubeSegmentation runCircleFittingAndNewCenterlineAlg(OpenCL ocl, cl::Image3D dat
     }
 
     Image3D segmentation; 
-    if(parameters.count("no-segmentation") == 0)
-        segmentation = runInverseGradientSegmentation(ocl, centerline, vectorField, size, parameters);
+    if(parameters.count("no-segmentation") == 0) {
+    	if(parameters.count("sphere-segmentation") == 0) {
+			segmentation = runInverseGradientSegmentation(ocl, centerline, vectorField, size, parameters);
+    	} else {
+			segmentation = runSphereSegmentation(ocl,centerline, radius, size, parameters);
+    	}
+    }
 
 
     // Transfer result back to host
@@ -2262,6 +2368,7 @@ TubeSegmentation runCircleFittingAndRidgeTraversal(OpenCL ocl, Image3D dataset, 
     cl::Event startEvent, endEvent;
     cl_ulong start, end;
     Image3D vectorField, TDF, radius;
+    TubeSegmentation TS;
     runCircleFittingMethod(ocl, dataset, size, parameters, vectorField, TDF, radius);
     const int totalSize = size.x*size.y*size.z;
     const bool no3Dwrite = parameters.count("3d_write") == 0;
@@ -2275,15 +2382,23 @@ TubeSegmentation runCircleFittingAndRidgeTraversal(OpenCL ocl, Image3D dataset, 
     region[1] = size.y;
     region[2] = size.z;
 
+    TS.TDF = new float[totalSize];
+    if(parameters.count("tdf-only") > 0) {
+    	if(parameters.count("display") > 0) {
+			ocl.queue.enqueueReadImage(TDF, CL_TRUE, offset, region, 0, 0, TS.TDF);
+    	}
+    	return TS;
+    }
 
 
     START_TIMER
     // Transfer buffer back to host
-    TubeSegmentation TS;
+
     TS.Fx = new float[totalSize];
     TS.Fy = new float[totalSize];
     TS.Fz = new float[totalSize];
-    if(no3Dwrite) {
+    if(no3Dwrite || parameters.count("32bit-vectors") > 0) {
+    	// 32 bit vector fields
         float * Fs = new float[totalSize*4];
         ocl.queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
 #pragma omp parallel for
@@ -2294,6 +2409,7 @@ TubeSegmentation runCircleFittingAndRidgeTraversal(OpenCL ocl, Image3D dataset, 
         }
         delete[] Fs;
     } else {
+    	// 16 bit vector fields
         short * Fs = new short[totalSize*4];
         ocl.queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
 #pragma omp parallel for
@@ -2304,7 +2420,7 @@ TubeSegmentation runCircleFittingAndRidgeTraversal(OpenCL ocl, Image3D dataset, 
         }
         delete[] Fs;
     }
-    TS.TDF = new float[totalSize];
+  
     TS.radius = new float[totalSize];
     ocl.queue.enqueueReadImage(TDF, CL_TRUE, offset, region, 0, 0, TS.TDF);
     ocl.queue.enqueueReadImage(radius, CL_TRUE, offset, region, 0, 0, TS.radius);
@@ -2320,7 +2436,11 @@ TubeSegmentation runCircleFittingAndRidgeTraversal(OpenCL ocl, Image3D dataset, 
     Image3D volume; 
     if(parameters.count("no-segmentation") == 0) {
         volume = Image3D(ocl.context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, ImageFormat(CL_R, CL_SIGNED_INT8), size.x, size.y, size.z, 0, 0, TS.centerline);
-        volume = runInverseGradientSegmentation(ocl, volume, vectorField, size, parameters);
+    	if(parameters.count("sphere-segmentation") == 0) {
+			volume = runInverseGradientSegmentation(ocl, volume, vectorField, size, parameters);
+    	} else {
+			volume = runSphereSegmentation(ocl,volume, radius, size, parameters);
+    	}
         TS.segmentation = new char[totalSize];
         ocl.queue.enqueueReadImage(volume, CL_TRUE, offset, region, 0, 0, TS.segmentation);
     }
@@ -2410,8 +2530,7 @@ void getLimits(paramList parameters, void * data, const int totalSize, float * m
     }
 }
 
-
-
+boost::iostreams::mapped_file_source * file;
 Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList parameters, SIPL::int3 * size) {
     cl_ulong start, end;
     Event startEvent, endEvent;
@@ -2480,7 +2599,7 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
     Image3D dataset;
     int type = 0;
     void * data;
-    boost::iostreams::mapped_file_source * file = new boost::iostreams::mapped_file_source[1];
+    file = new boost::iostreams::mapped_file_source[1];
     cl::size_t<3> offset;
     offset[0] = 0;
     offset[1] = 0;
@@ -2513,7 +2632,7 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         dataset = Image3D(
                 ocl.context, 
                 CL_MEM_READ_ONLY,
-                imageFormat,
+                ImageFormat(CL_R, CL_UNSIGNED_INT16),
                 size->x, size->y, size->z
         );
         data = (void *)file->data();
@@ -2559,11 +2678,11 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         ocl.queue.enqueueWriteImage(dataset, CL_FALSE, offset, region2, 0, 0, data);
         getLimits<float>(parameters, data, totalSize, &minimum, &maximum);
     } else {
-        std::string msg = "unsupported filetype " + typeName;
+        std::cout << "ERROR: unsupported data type " + typeName << std::endl;
         exit(-1);
     }
 
-    dataset.setDestructorCallback((void (__stdcall *)(cl_mem,void *))unmapRawfile, (void *)(file));
+
 
     std::cout << "Dataset of size " << size->x << " " << size->y << " " << size->z << " loaded" << std::endl;
     if(parameters.count("timing") > 0) {
@@ -2575,9 +2694,23 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         ocl.queue.enqueueMarker(&startEvent);
     }
     // Perform cropping if required
-    if(parameters.count("cropping") == 1) {
+    std::string cropping = getParamstr(parameters, "cropping", "no");
+    if(cropping == "lung" || cropping == "threshold") {
         std::cout << "performing cropping" << std::endl;
-        Kernel cropDatasetKernel(ocl.program, "cropDataset");
+        Kernel cropDatasetKernel;
+        int minScanLines;
+        std::string cropping_start_z;
+        if(cropping == "lung") {
+			cropDatasetKernel = Kernel(ocl.program, "cropDatasetLung");
+			minScanLines = getParami(parameters, "min-scan-lines", 200);
+			cropping_start_z = "middle";
+        } else if(cropping == "threshold") {
+        	cropDatasetKernel = Kernel(ocl.program, "cropDatasetThreshold");
+			minScanLines = getParami(parameters, "min-scan-lines", 10);
+			cropDatasetKernel.setArg(3, getParamf(parameters, "cropping-threshold", 0.0f));
+			cropDatasetKernel.setArg(4, type);
+			cropping_start_z = getParamstr(parameters, "cropping-start-z", "end");
+        }
 
         Buffer scanLinesInsideX = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(short)*size->x);
         Buffer scanLinesInsideY = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(short)*size->y);
@@ -2614,9 +2747,18 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         ocl.queue.enqueueReadBuffer(scanLinesInsideY, CL_FALSE, 0, sizeof(short)*size->y, scanLinesY);
         ocl.queue.enqueueReadBuffer(scanLinesInsideZ, CL_FALSE, 0, sizeof(short)*size->z, scanLinesZ);
 
-        int minScanLines = 200;
+
         int x1 = 0,x2 = size->x,y1 = 0,y2 = size->y,z1 = 0,z2 = size->z;
         ocl.queue.finish();
+        int startSlice, a;
+		if(cropping_start_z == "middle") {
+			startSlice = size->z / 2;
+			a = -1;
+		} else {
+			startSlice = 0;
+			a = 1;
+		}
+
 #pragma omp parallel sections
 {
 #pragma omp section
@@ -2656,10 +2798,11 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
             }
         }
 }
+
 #pragma omp section
 {
-        for(int sliceNr = (size->z)/2; sliceNr < size->z; sliceNr++) {
-            if(scanLinesZ[sliceNr] < minScanLines) {
+		for(int sliceNr = startSlice; sliceNr < size->z; sliceNr++) {
+            if(a*scanLinesZ[sliceNr] > a*minScanLines) {
                 z2 = sliceNr;
                 break;
             }
@@ -2667,14 +2810,20 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
 }
 #pragma omp section
 {
-        for(int sliceNr = (size->z)/2; sliceNr > 0; sliceNr--) {
-            if(scanLinesZ[sliceNr] < minScanLines) {
+        for(int sliceNr = size->z - startSlice - 1; sliceNr > 0; sliceNr--) {
+            if(a*scanLinesZ[sliceNr] > a*minScanLines) {
                 z1 = sliceNr;
                 break;
             }
         }
 }
 }
+		if(cropping_start_z == "end") {
+			int tmp = z1;
+			z1 = z2;
+			z2 = tmp;
+		}
+
         delete[] scanLinesX;
         delete[] scanLinesY;
         delete[] scanLinesZ;
@@ -2682,9 +2831,13 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         int SIZE_X = x2-x1;
         int SIZE_Y = y2-y1;
         int SIZE_Z = z2-z1;
+        if(SIZE_X == 0 || SIZE_Y == 0 || SIZE_Z == 0) {
+        	std::cout << "ERROR: Invalid cropping to new size " << SIZE_X << ", " << SIZE_Y << ", " << SIZE_Z << std::endl;
+        	exit(-1);
+        }
 	    // Make them dividable by 4
 	    bool lower = false;
-	    while(SIZE_X % 4 != 0) {
+	    while(SIZE_X % 4 != 0 && SIZE_X < size->x) {
             if(lower && x1 > 0) {
                 x1--;
             } else if(x2 < size->x) {
@@ -2693,7 +2846,11 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
             lower = !lower;
             SIZE_X = x2-x1;
 	    }
-	    while(SIZE_Y % 4 != 0) {
+	    if(SIZE_X % 4 != 0) {
+			while(SIZE_X % 4 != 0)
+				SIZE_X--;
+	    }
+	    while(SIZE_Y % 4 != 0 && SIZE_Y < size->y) {
             if(lower && y1 > 0) {
                 y1--;
             } else if(y2 < size->y) {
@@ -2702,7 +2859,11 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
             lower = !lower;
             SIZE_Y = y2-y1;
 	    }
-	    while(SIZE_Z % 4 != 0) {
+	    if(SIZE_Y % 4 != 0) {
+			while(SIZE_Y % 4 != 0)
+				SIZE_Y--;
+	    }
+	    while(SIZE_Z % 4 != 0 && SIZE_Z < size->z) {
             if(lower && z1 > 0) {
                 z1--;
             } else if(z2 < size->z) {
@@ -2711,13 +2872,17 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
             lower = !lower;
             SIZE_Z = z2-z1;
 	    }
+	    if(SIZE_Z % 4 != 0) {
+			while(SIZE_Z % 4 != 0)
+				SIZE_Z--;
+	    }
         size->x = SIZE_X;
         size->y = SIZE_Y;
         size->z = SIZE_Z;
  
 
         std::cout << "Dataset cropped to " << SIZE_X << ", " << SIZE_Y << ", " << SIZE_Z << std::endl;
-        Image3D imageHUvolume = Image3D(ocl.context, CL_MEM_READ_ONLY, ImageFormat(CL_R, CL_SIGNED_INT16), SIZE_X, SIZE_Y, SIZE_Z);
+        Image3D imageHUvolume = Image3D(ocl.context, CL_MEM_READ_ONLY, imageFormat, SIZE_X, SIZE_Y, SIZE_Z);
 
         cl::size_t<3> offset;
         offset[0] = 0;
@@ -2743,28 +2908,35 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         }
     } else {// End cropping
         // If cropping is not done, shrink volume so that each dimension is dividable by 4
-        while(size->x % 4 != 0)
-            size->x--;
-        while(size->y % 4 != 0)
-            size->y--;
-        while(size->z % 4 != 0)
-            size->z--;
+    	bool notDividable = false;
+    	if(size->x % 4 != 0 || size->y % 4 != 0 || size->z % 4 != 0)
+    		notDividable = true;
 
-        cl::size_t<3> offset;
-        offset[0] = 0;
-        offset[1] = 0;
-        offset[2] = 0;
-        cl::size_t<3> region;
-        region[0] = size->x;
-        region[1] = size->y;
-        region[2] = size->z;
-        Image3D imageHUvolume = Image3D(ocl.context, CL_MEM_READ_ONLY, imageFormat, size->x, size->y, size->z);
+    	if(notDividable) {
+			while(size->x % 4 != 0)
+				size->x--;
+			while(size->y % 4 != 0)
+				size->y--;
+			while(size->z % 4 != 0)
+				size->z--;
 
-        ocl.queue.enqueueCopyImage(dataset, imageHUvolume, offset, offset, region);
-        dataset = imageHUvolume;
+			cl::size_t<3> offset;
+			offset[0] = 0;
+			offset[1] = 0;
+			offset[2] = 0;
+			cl::size_t<3> region;
+			region[0] = size->x;
+			region[1] = size->y;
+			region[2] = size->z;
+			Image3D imageHUvolume = Image3D(ocl.context, CL_MEM_READ_ONLY, imageFormat, size->x, size->y, size->z);
 
-        std::cout << "NOTE: reduced size to " << size->x << ", " << size->y << ", " << size->z << std::endl;
+			ocl.queue.enqueueCopyImage(dataset, imageHUvolume, offset, offset, region);
+			dataset = imageHUvolume;
+
+			std::cout << "NOTE: reduced size to " << size->x << ", " << size->y << ", " << size->z << std::endl;
+    	}
     }
+
     // Run toFloat kernel
 
     Kernel toFloatKernel = Kernel(ocl.program, "toFloat");
@@ -2833,6 +3005,8 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         std::cout << "RUNTIME of to float conversion: " << (end-start)*1.0e-6 << " ms" << std::endl;
         ocl.queue.enqueueMarker(&startEvent);
     }
+
+    dataset.setDestructorCallback((void (__stdcall *)(cl_mem,void *))unmapRawfile, (void *)(file));
     // Return dataset
     return convertedDataset;
 }
