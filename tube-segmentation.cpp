@@ -2063,6 +2063,25 @@ if(parameters.count("timing") > 0) {
 if(parameters.count("timing") > 0) {
     ocl.queue.enqueueMarker(&startEvent);
 }
+
+	// Remove duplicate edges
+	Image2D edgeTuples2 = Image2D(
+			ocl.context,
+            CL_MEM_READ_WRITE,
+            ImageFormat(CL_R, CL_UNSIGNED_INT8),
+            sum, sum
+    );
+	Kernel removeDuplicatesKernel(ocl.program, "removeDuplicateEdges");
+	removeDuplicatesKernel.setArg(0, edgeTuples);
+	removeDuplicatesKernel.setArg(1, edgeTuples2);
+	ocl.queue.enqueueNDRangeKernel(
+			removeDuplicatesKernel,
+			NullRange,
+			NDRange(sum,sum),
+			NullRange
+	);
+	edgeTuples = edgeTuples2;
+
     // Run HP on edgeTuples
     HistogramPyramid2D hp2(ocl);
     hp2.create(edgeTuples, sum, sum);
@@ -2260,6 +2279,37 @@ if(parameters.count("timing") > 0) {
                 NullRange
         );
     }
+
+    if(parameters.count("centerline-vtk-file") > 0) {
+    	// Transfer edges (size: sum2) and vertices (size: sum) buffers to host
+    	int * verticesArray = new int[sum*3];
+    	int * edgesArray = new int[sum2*3];
+
+    	ocl.queue.enqueueReadBuffer(vertices, CL_FALSE, 0, sum*3*sizeof(int), verticesArray);
+    	ocl.queue.enqueueReadBuffer(edges, CL_FALSE, 0, sum2*2*sizeof(int), edgesArray);
+
+    	ocl.queue.finish();
+
+
+    	// Write to file
+    	std::ofstream file;
+    	file.open(parameters["centerline-vtk-file"].c_str());
+    	file << "# vtk DataFile Version 3.0\n";
+    	file << "DATASET POLYDATA\nPOINTS " << sum << " int\n";
+    	for(int i = 0; i < sum; i++) {
+    		file << verticesArray[i*3] << " " << verticesArray[i*3+1] << " " << verticesArray[i*3+2] << "\n";
+    	}
+
+    	file << "\nLINES 2 " << sum2 << "\n";
+    	for(int i = 0; i < sum2; i++) {
+    		file << "2 " << edgesArray[i*2] << " " << edgesArray[i*2+1] << "\n";
+    	}
+
+    	file.close();
+    	delete[] verticesArray;
+    	delete[] edgesArray;
+    }
+
 if(parameters.count("timing") > 0) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
