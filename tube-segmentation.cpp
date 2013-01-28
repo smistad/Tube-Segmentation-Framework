@@ -2300,7 +2300,7 @@ if(parameters.count("timing") > 0) {
     		file << verticesArray[i*3] << " " << verticesArray[i*3+1] << " " << verticesArray[i*3+2] << "\n";
     	}
 
-    	file << "\nLINES 2 " << sum2 << "\n";
+    	file << "\nLINES " << sum2 << " " << sum2*3 << "\n";
     	for(int i = 0; i < sum2; i++) {
     		file << "2 " << edgesArray[i*2] << " " << edgesArray[i*2+1] << "\n";
     	}
