@@ -1,0 +1,31 @@
+# name type default (valid values)/range
+mode str white black white
+display bool false
+gvf-iterations num 250 0 2000 50
+radius-min num 0.5
+radius-max num 15.0
+radius-step num 1.0
+fmax num 0.2
+gvf-mu num 0.05
+small-blur num 0.0
+large-blur num 1.0
+tdf-high num 0.5
+min-distance num 5
+m-low num 0.05
+tdf-low num 0.5
+max-below-tdf-low num 0
+min-mean-tdf num 0.5
+min-tree-length num 5
+timing bool false
+cube-size num 4
+max-distance num 25.0
+centerpoints-only bool false
+tdf-only bool false
+no-segmentation bool false
+centerline-vtk-file str off
+sphere-segmentation bool false
+minimum str off
+maximum str off
+cropping str no no lung threshold
+num-scan-lines num 
+cropping-threshold num 0 
