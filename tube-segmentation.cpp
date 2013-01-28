@@ -2294,7 +2294,7 @@ if(parameters.count("timing") > 0) {
     	// Write to file
     	std::ofstream file;
     	file.open(parameters["centerline-vtk-file"].c_str());
-    	file << "# vtk DataFile Version 3.0\n";
+    	file << "# vtk DataFile Version 3.0\nvtk output\nASCII\n";
     	file << "DATASET POLYDATA\nPOINTS " << sum << " int\n";
     	for(int i = 0; i < sum; i++) {
     		file << verticesArray[i*3] << " " << verticesArray[i*3+1] << " " << verticesArray[i*3+2] << "\n";
