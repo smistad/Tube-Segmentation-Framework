@@ -15,20 +15,11 @@ using boost::unordered_map;
 using boost::tuple;
 #endif
 
-typedef struct asd {
-	unordered_map<BoolParameter> bools;
-	unordered_map<NumericParameter> numerics;
-	unordered_map<StringParameter> strings;
-} paramList;
 
-paramList initParameters();
-paramList getParameters(int argc, char ** argv);
-float getParam(paramList parameters, std::string parameterName);
-bool getParamBool(paramList parameters, std::string parameterName);
-std::string getParamStr(paramList parameters, std::string parameterName);
 
 class BoolParameter {
 public:
+	BoolParameter() {};
 	BoolParameter(bool defaultValue);
 	bool get();
 	void set(bool value);
@@ -38,6 +29,7 @@ private:
 
 class NumericParameter {
 public:
+	NumericParameter() {};
 	NumericParameter(float defaultValue, float min, float max, float step);
 	float get();
 	void set(float value);
@@ -51,6 +43,7 @@ private:
 
 class StringParameter {
 public:
+	StringParameter() {};
 	StringParameter(std::string defaultValue, std::vector<std::string> possibilities);
 	std::string get();
 	void set(std::string value);
@@ -59,5 +52,16 @@ private:
 	std::string value;
 	std::vector<std::string> possibilities;
 };
+typedef struct paramList {
+	unordered_map<std::string, BoolParameter> bools;
+	unordered_map<std::string, NumericParameter> numerics;
+	unordered_map<std::string, StringParameter> strings;
+} paramList;
+
+paramList initParameters();
+paramList getParameters(int argc, char ** argv);
+float getParam(paramList parameters, std::string parameterName);
+bool getParamBool(paramList parameters, std::string parameterName);
+std::string getParamStr(paramList parameters, std::string parameterName);
 
 #endif /* PARAMETERS_HPP_ */

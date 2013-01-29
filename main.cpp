@@ -109,10 +109,15 @@ int main(int argc, char ** argv) {
     */
 
     // Compile and create program
-    if(getParamBool(parameters, "buffers-only") && (int)devices[0].getInfo<CL_DEVICE_EXTENSIONS>().find("cl_khr_3d_image_writes") > -1) {
+    if(!getParamBool(parameters, "buffers-only") && (int)devices[0].getInfo<CL_DEVICE_EXTENSIONS>().find("cl_khr_3d_image_writes") > -1) {
         ocl.program = buildProgramFromSource(ocl.context, "kernels.cl");
-        parameters["3d_write"] = "true";
+        BoolParameter v = parameters.bools["3d_write"];
+        v.set(true);
+        parameters.bools["3d_write"] = v;
     } else {
+        BoolParameter v = parameters.bools["3d_write"];
+        v.set(false);
+        parameters.bools["3d_write"] = v;
         ocl.program = buildProgramFromSource(ocl.context, "kernels_no_3d_write.cl");
         std::cout << "Writing to 3D textures is not supported on the selected device." << std::endl;
     }
@@ -140,22 +145,24 @@ int main(int argc, char ** argv) {
     if(getParamBool(parameters, "display")) {
         // Visualize result
         SIPL::Volume<SIPL::float3> * result = new SIPL::Volume<SIPL::float3>(size.x, size.y, size.z);
+        bool tdfOnly = getParamBool(parameters, "tdf-only");
+        bool noSegmentation = getParamBool(parameters, "no-segmentation");
         for(int i = 0; i < result->getTotalSize(); i++) {
             SIPL::float3 v;
             v.x = TS.TDF[i];
             v.y = 0;
             v.z = 0;
-            if(!getParamBool(parameters, "tdf-only"))
+            if(!tdfOnly)
 				v.y = TS.centerline[i] ? 1.0:0.0;
-            if(!getParamBool(parameters, "no-segmentation") && !getParamBool(parameters, "tdf-only")) {
+            if(!noSegmentation && !tdfOnly)
                 v.z = TS.segmentation[i] ? 1.0:0.0;
             result->set(i,v);
         }
         result->showMIP(SIPL::Y);
     }
-    if(getParamBool(parameters, "display") || getParamStr(parameters, "storage-dir") != "" || getParamStr(parameters, "centerline-method") == "ridge") {
+    if(getParamBool(parameters, "display") || getParamStr(parameters, "storage-dir") != "off" || getParamStr(parameters, "centerline-method") == "ridge") {
         // Cleanup transferred data
-		if(getParamBool(parameters, "tdf-only"))
+		if(getParamBool(parameters, "tdf-only")) {
 			delete[] TS.TDF;
     	} else {
 			delete[] TS.centerline;

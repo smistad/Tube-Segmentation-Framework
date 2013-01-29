@@ -1,15 +1,34 @@
-#include <parameters.hpp>
+#include "parameters.hpp"
+#include <fstream>
+#include <cmath>
+#include <iostream>
 using namespace std;
 
+vector<string> split(string str, string delimiter) {
+	vector<string> list;
+
+	int start = 0;
+	int end = str.find(delimiter);
+	while(end != str.npos) {
+		list.push_back(str.substr(start, end));
+		start = end+1;
+		end = str.find(delimiter, start);
+	}
+	// add last
+	list.push_back(str.substr(start));
+
+	return list;
+}
+
 paramList initParameters() {
-	// TODO: get from a file
 	paramList parameters;
 
 	std::ifstream file;
 	file.open("parameters/parameters");
 	string line;
 	getline(file, line);
-	while(!file.eofbit()) {
+	getline(file, line); // throw away the first comment line
+	while(file.good()) {
 		int pos = 0;
 		pos = line.find(" ");
 		string name = line.substr(0, pos);
@@ -36,15 +55,10 @@ paramList initParameters() {
 			parameters.numerics[name] = v;
 		} else if(type == "str") {
 
-			vector<string> list;
-			int end = line.find(" ");
-			while(end < line.length()) {
-				end = line.find(" ", pos+1);
-				list.push_back(line.substr(pos,end));
-				pos = end+1;
-			}
+			vector<string> list = split(line.substr(pos+1), " ");
 
 			StringParameter v = StringParameter(defaultValue, list);
+			cout << name << ": " << defaultValue << endl;
 			parameters.strings[name] = v;
 		} else {
 			throw exception();
@@ -60,36 +74,51 @@ paramList setParameter(paramList parameters, string name, string value) {
 	if(parameters.bools.count(name) > 0) {
 		BoolParameter v = parameters.bools[name];
 		v.set(true);
+		parameters.bools[name] = v;
 	} else if(parameters.numerics.count(name) > 0) {
 		NumericParameter v = parameters.numerics[name];
 		if(!v.validate(atof(value.c_str())))
 			throw exception();
 		v.set(atof(value.c_str()));
+		parameters.numerics[name] = v;
 	} else if(parameters.strings.count(name) > 0) {
 		StringParameter v = parameters.strings[name];
 		if(!v.validate(value))
 			throw exception();
 		v.set(value);
-
+		parameters.strings[name] = v;
 	} else {
 		throw exception();
 	}
 
 	return parameters;
+
 }
 
 float getParam(paramList parameters, string parameterName) {
+	if(parameters.numerics.count(parameterName) == 0) {
+		cout << parameterName << " not found" << endl;
+ 		throw exception();
+	}
 	NumericParameter v = parameters.numerics[parameterName];
 	return v.get();
 }
 
 bool getParamBool(paramList parameters, string parameterName) {
+	if(parameters.bools.count(parameterName) == 0) {
+		cout << parameterName << " not found" << endl;
+		throw exception();
+	}
 	BoolParameter v = parameters.bools[parameterName];
 	return v.get();
 }
 
 string getParamStr(paramList parameters, string parameterName) {
-	StringParameter v = parameters.bools[parameterName];
+	if(parameters.strings.count(parameterName) == 0) {
+		cout << parameterName << " not found" << endl;
+		throw exception();
+	}
+	StringParameter v = parameters.strings[parameterName];
 	return v.get();
 }
 
@@ -107,7 +136,9 @@ paramList getParameters(int argc, char ** argv) {
             } else {
                 nextToken = "";
             }
-			paramList parameters = setParameter(parameters, token.substr(2), nextToken);
+            cout << token.substr(2) << " " << nextToken << endl;
+			parameters = setParameter(parameters, token.substr(2), nextToken);
+            cout << token << endl;
 			i++;
         }
     }
@@ -166,7 +197,7 @@ void StringParameter::set(string value) {
 bool StringParameter::validate(string value) {
 	vector<string>::iterator it;
 	bool found = false;
-	for(it = possibilities.begin(); it != possibilities.end(); it++) {
+	for(it=possibilities.begin();it!=possibilities.end();it++){
 		if(value == *it) {
 			found = true;
 			break;

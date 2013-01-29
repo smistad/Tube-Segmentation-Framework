@@ -2257,7 +2257,7 @@ if(getParamBool(parameters, "timing")) {
         );
     }
 
-    if(getParamStr(parameters, "centerine-vtk-file") != "off") {
+    if(getParamStr(parameters, "centerline-vtk-file") != "off") {
     	// Transfer edges (size: sum2) and vertices (size: sum) buffers to host
     	int * verticesArray = new int[sum*3];
     	int * edgesArray = new int[sum2*3];
@@ -2270,7 +2270,7 @@ if(getParamBool(parameters, "timing")) {
 
     	// Write to file
     	std::ofstream file;
-    	file.open(parameters["centerline-vtk-file"].c_str());
+    	file.open(getParamStr(parameters, "centerline-vtk-file").c_str());
     	file << "# vtk DataFile Version 3.0\nvtk output\nASCII\n";
     	file << "DATASET POLYDATA\nPOINTS " << sum << " int\n";
     	for(int i = 0; i < sum; i++) {
@@ -2381,7 +2381,7 @@ TubeSegmentation runCircleFittingAndNewCenterlineAlg(OpenCL ocl, cl::Image3D dat
         START_TIMER
         const std::string storageDirectory = getParamStr(parameters, "storage-dir");
         writeToRaw<char>(TS.centerline, storageDirectory + "centerline.raw", size.x, size.y, size.z);
-        if(parameters.count("no-segmentation") == 0)
+        if(!getParamBool(parameters, "no-segmentation"))
             writeToRaw<char>(TS.segmentation, storageDirectory + "segmentation.raw", size.x, size.y, size.z);
         STOP_TIMER("writing to disk")
     }
@@ -2475,7 +2475,7 @@ TubeSegmentation runCircleFittingAndRidgeTraversal(OpenCL ocl, Image3D dataset, 
         START_TIMER
         const std::string storageDirectory = getParamStr(parameters, "storage-dir");
         writeToRaw<char>(TS.centerline, storageDirectory + "centerline.raw", size.x, size.y, size.z);
-		if(!getParamBool(parameters, "no-segmentation")) {
+		if(!getParamBool(parameters, "no-segmentation"))
             writeToRaw<char>(TS.segmentation, storageDirectory + "segmentation.raw", size.x, size.y, size.z);
         STOP_TIMER("writing segmentation and centerline to disk")
     }
@@ -2692,7 +2692,7 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         ocl.queue.enqueueMarker(&startEvent);
     }
     // Perform cropping if required
-    std::string cropping = getParamStr(parameters, "cropping", "no");
+    std::string cropping = getParamStr(parameters, "cropping");
     if(cropping == "lung" || cropping == "threshold") {
         std::cout << "performing cropping" << std::endl;
         Kernel cropDatasetKernel;
@@ -2700,14 +2700,14 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         std::string cropping_start_z;
         if(cropping == "lung") {
 			cropDatasetKernel = Kernel(ocl.program, "cropDatasetLung");
-			minScanLines = getParam(parameters, "min-scan-lines", 200);
+			minScanLines = getParam(parameters, "min-scan-lines-lung");
 			cropping_start_z = "middle";
         } else if(cropping == "threshold") {
         	cropDatasetKernel = Kernel(ocl.program, "cropDatasetThreshold");
-			minScanLines = getParam(parameters, "min-scan-lines", 10);
-			cropDatasetKernel.setArg(3, getParam(parameters, "cropping-threshold", 0.0f));
+			minScanLines = getParam(parameters, "min-scan-lines-threshold");
+			cropDatasetKernel.setArg(3, getParam(parameters, "cropping-threshold"));
 			cropDatasetKernel.setArg(4, type);
-			cropping_start_z = getParamStr(parameters, "cropping-start-z", "end");
+			cropping_start_z = getParamStr(parameters, "cropping-start-z");
         }
 
         Buffer scanLinesInsideX = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(short)*size->x);
