@@ -59,6 +59,7 @@ typedef struct paramList {
 } paramList;
 
 paramList initParameters();
+paramList setParameter(paramList parameters, std::string name, std::string value);
 paramList getParameters(int argc, char ** argv);
 float getParam(paramList parameters, std::string parameterName);
 bool getParamBool(paramList parameters, std::string parameterName);

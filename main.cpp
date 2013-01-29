@@ -61,14 +61,14 @@ int main(int argc, char ** argv) {
     std::string filename = argv[1];
 
     // Check if parameters is set
-    /* TODO: fix this
-    if(parameters.count("parameters") > 0) {
+    if(getParamStr(parameters, "parameters") != "none") {
     	std::string parameterFilename;
-    	if(parameters.count("centerline-method") == 0 || parameters["centerline-method"] == "gpu") {
-    		parameterFilename = "parameters/centerline-gpu/" + parameters["parameters"];
-    	} else if(parameters["centerline-method"] == "ridge") {
-    		parameterFilename = "parameters/centerline-ridge/" + parameters["parameters"];
+    	if(getParamStr(parameters, "centerline-method") == "gpu") {
+    		parameterFilename = "parameters/centerline-gpu/" + getParamStr(parameters, "parameters");
+    	} else if(getParamStr(parameters, "centerline-method") == "ridge") {
+    		parameterFilename = "parameters/centerline-ridge/" + getParamStr(parameters, "parameters");
     	}
+    	std::cout << parameterFilename << std::endl;
     	if(parameterFilename.size() > 0) {
     		// Load file and parse parameters
     		std::ifstream file(parameterFilename.c_str());
@@ -88,18 +88,17 @@ int main(int argc, char ** argv) {
     				// parameter with value
 					std::string name = line.substr(0, spacePos);
 					std::string value = line.substr(spacePos+1);
-					// Add parameter if it doesn't exist (command line parameters always override
-					if(parameters.count(name) == 0)
-						parameters[name] = value;
+					parameters = setParameter(parameters, name, value);
     			} else {
     				// parameter with no value
-    				parameters[line] = "on";
+    				parameters = setParameter(parameters, line, "true");
     			}
     		}
     		file.close();
     	}
     }
 
+    /*
     // Write out parameter list
     std::cout << "The following parameters are set: " << std::endl;
     unordered_map<std::string, std::string>::iterator it;

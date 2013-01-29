@@ -6,11 +6,10 @@ using namespace std;
 
 vector<string> split(string str, string delimiter) {
 	vector<string> list;
-
 	int start = 0;
 	int end = str.find(delimiter);
 	while(end != str.npos) {
-		list.push_back(str.substr(start, end));
+		list.push_back(str.substr(start, end-start));
 		start = end+1;
 		end = str.find(delimiter, start);
 	}
@@ -54,11 +53,12 @@ paramList initParameters() {
 			NumericParameter v = NumericParameter(atof(defaultValue.c_str()), min, max, step);
 			parameters.numerics[name] = v;
 		} else if(type == "str") {
-
-			vector<string> list = split(line.substr(pos+1), " ");
+			vector<string> list ;
+			if(line.size() > pos) {
+				list = split(line.substr(pos+1), " ");
+			}
 
 			StringParameter v = StringParameter(defaultValue, list);
-			cout << name << ": " << defaultValue << endl;
 			parameters.strings[name] = v;
 		} else {
 			throw exception();
@@ -77,14 +77,18 @@ paramList setParameter(paramList parameters, string name, string value) {
 		parameters.bools[name] = v;
 	} else if(parameters.numerics.count(name) > 0) {
 		NumericParameter v = parameters.numerics[name];
-		if(!v.validate(atof(value.c_str())))
+		if(!v.validate(atof(value.c_str()))) {
+			cout << "invalid value for " << name << endl;
 			throw exception();
+		}
 		v.set(atof(value.c_str()));
 		parameters.numerics[name] = v;
 	} else if(parameters.strings.count(name) > 0) {
 		StringParameter v = parameters.strings[name];
-		if(!v.validate(value))
+		if(!v.validate(value)) {
+			cout << "invalid value for " << name << endl;
 			throw exception();
+		}
 		v.set(value);
 		parameters.strings[name] = v;
 	} else {
@@ -133,13 +137,15 @@ paramList getParameters(int argc, char ** argv) {
             string nextToken;
             if(i+1 < argc) {
                 nextToken = argv[i+1];
+                if(nextToken.substr(0,2) == "--") {
+                	nextToken = "";
+                } else {
+					i++;
+                }
             } else {
                 nextToken = "";
             }
-            cout << token.substr(2) << " " << nextToken << endl;
 			parameters = setParameter(parameters, token.substr(2), nextToken);
-            cout << token << endl;
-			i++;
         }
     }
 
@@ -195,14 +201,18 @@ void StringParameter::set(string value) {
 }
 
 bool StringParameter::validate(string value) {
-	vector<string>::iterator it;
-	bool found = false;
-	for(it=possibilities.begin();it!=possibilities.end();it++){
-		if(value == *it) {
-			found = true;
-			break;
+	if(possibilities.size() > 0) {
+		vector<string>::iterator it;
+		bool found = false;
+		for(it=possibilities.begin();it!=possibilities.end();it++){
+			if(value == *it) {
+				found = true;
+				break;
+			}
 		}
+		return found;
+	} else {
+		return true;
 	}
-	return found;
 }
 
