@@ -19,5 +19,5 @@ endif()
 
 find_package(Boost COMPONENTS iostreams REQUIRED)
 
-add_executable(tubeSegmentation main.cpp tube-segmentation.cpp histogram-pyramids.cpp)
+add_executable(tubeSegmentation main.cpp tube-segmentation.cpp histogram-pyramids.cpp parameters.cpp)
 target_link_libraries(tubeSegmentation OCL-Utilities SIPL ${Boost_LIBRARIES})
