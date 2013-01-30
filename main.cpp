@@ -1,26 +1,5 @@
 #include "tube-segmentation.hpp"
-#include <fstream>
 #include "SIPL/Core.hpp"
-
-
-#include <vector>
-
-//#define TIMING
-
-#ifdef TIMING
-#include <chrono>
-#define INIT_TIMER auto timerStart = std::chrono::high_resolution_clock::now();
-#define START_TIMER  timerStart = std::chrono::high_resolution_clock::now();
-#define STOP_TIMER(name)  std::cout << "RUNTIME of " << name << ": " << \
-        std::chrono::duration_cast<std::chrono::milliseconds>( \
-                            std::chrono::high_resolution_clock::now()-timerStart \
-                    ).count() << " ms " << std::endl; 
-#else
-#define INIT_TIMER
-#define START_TIMER
-#define STOP_TIMER(name)
-#endif
-
 
 int main(int argc, char ** argv) {
 
