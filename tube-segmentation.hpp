@@ -67,6 +67,6 @@ TSFOutput * runCircleFittingAndRidgeTraversal(OpenCL *, cl::Image3D dataset, SIP
 
 TSFOutput * runCircleFittingAndNewCenterlineAlg(OpenCL *, cl::Image3D dataset, SIPL::int3 * size, paramList);
 
-TSFOutput * run(std::string filename, paramList parameters, int argc, char ** argv);
+TSFOutput * run(std::string filename, paramList parameters);
 
 #endif
