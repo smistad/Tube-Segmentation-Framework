@@ -34,11 +34,11 @@ int main(int argc, char ** argv) {
     	std::cout << e.what() << std::endl;
     }
 
-    SIPL::int3 size = output->getSize();
+    SIPL::int3 * size = output->getSize();
 
     if(getParamBool(parameters, "display")) {
         // Visualize result
-        SIPL::Volume<SIPL::float3> * result = new SIPL::Volume<SIPL::float3>(size.x, size.y, size.z);
+        SIPL::Volume<SIPL::float3> * result = new SIPL::Volume<SIPL::float3>(size->x, size->y, size->z);
         float * TDF;
         char * centerline;
         char * segmentation;
