@@ -65,7 +65,7 @@ link_directories(${Boost_LIBRARY_DIRS})
 #
 # tubeSegmentationLib library
 ###########
-add_library(tubeSegmentationLib tube-segmentation.cpp histogram-pyramids.cpp)
+add_library(tubeSegmentationLib tube-segmentation.cpp histogram-pyramids.cpp parameters.cpp)
 target_link_libraries(tubeSegmentationLib OCL-Utilities SIPL ${Boost_LIBRARIES} ${OPENCL_LIBRARIES})
 
 #
