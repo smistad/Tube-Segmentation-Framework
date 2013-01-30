@@ -43,7 +43,7 @@ using boost::unordered_set;
 #define MAX(a,b) a > b ? a : b
 
 
-TSFOutput run(std::string filename, paramList parameters, int argc, char ** argv) {
+TSFOutput * run(std::string filename, paramList parameters, int argc, char ** argv) {
 
     INIT_TIMER
     OpenCL ocl;
@@ -73,7 +73,7 @@ TSFOutput run(std::string filename, paramList parameters, int argc, char ** argv
     		// Load file and parse parameters
     		std::ifstream file(parameterFilename.c_str());
     		if(!file.is_open()) {
-    			throw SIPL::IOException(parameterFilename, __LINE__, __FILE__)
+    			throw SIPL::IOException(parameterFilename.c_str(), __LINE__, __FILE__);
     		}
 
     		std::string line;
@@ -122,22 +122,24 @@ TSFOutput run(std::string filename, paramList parameters, int argc, char ** argv
 
     START_TIMER
     SIPL::int3 size;
-    TubeSegmentation TS;
+    TSFOutput * output;
     try {
         // Read dataset and transfer to device
         cl::Image3D dataset = readDatasetAndTransfer(ocl, filename, parameters, &size);
 
         // Run specified method on dataset
         if(getParamStr(parameters, "centerline-method") == "ridge") {
-            TS = runCircleFittingAndRidgeTraversal(ocl, dataset, size, parameters);
+            output = runCircleFittingAndRidgeTraversal(ocl, dataset, size, parameters);
         } else {
-            TS = runCircleFittingAndNewCenterlineAlg(ocl, dataset, size, parameters);
+            output = runCircleFittingAndNewCenterlineAlg(ocl, dataset, size, parameters);
         }
     } catch(cl::Error e) {
-        throw SIPL::SIPLException("OpenCL error: " << getCLErrorString(e.err()));
+    	std::string str = "OpenCL error: " + std::string(getCLErrorString(e.err()));
+        throw SIPL::SIPLException(str.c_str());
     }
     ocl.queue.finish();
     STOP_TIMER("total")
+    return output;
 }
 
 
@@ -2021,7 +2023,7 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
 
     }
     if(sum < 8 || sum >= 16384) {
-    	throw SIPL::SIPLException("Too many or too few vertices detected", __LINE__, __FILE);
+    	throw SIPL::SIPLException("Too many or too few vertices detected", __LINE__, __FILE__);
     }
 
 if(getParamBool(parameters, "timing")) {
@@ -2392,10 +2394,18 @@ if(getParamBool(parameters, "timing")) {
     return centerlines;
 }
 
-TubeSegmentation runCircleFittingAndNewCenterlineAlg(OpenCL ocl, cl::Image3D dataset, SIPL::int3 size, paramList parameters) {
+void writeDataToDisk(TSFOutput * output, std::string storageDirectory) {
+	SIPL::int3 size = output->getSize();
+	if(output->hasCenterlineVoxels())
+		writeToRaw<char>(output->getCenterlineVoxels(), storageDirectory + "centerline.raw", size.x, size.y, size.z);
+
+	if(output->hasSegmentation())
+		writeToRaw<char>(output->getSegmentation(), storageDirectory + "segmentation.raw", size.x, size.y, size.z);
+}
+
+TSFOutput * runCircleFittingAndNewCenterlineAlg(OpenCL ocl, cl::Image3D dataset, SIPL::int3 size, paramList parameters) {
     INIT_TIMER
     Image3D vectorField, TDF, radius;
-    TubeSegmentation TS;
     const int totalSize = size.x*size.y*size.z;
 	const bool no3Dwrite = !getParamBool(parameters, "3d_write");
 
@@ -2408,19 +2418,13 @@ TubeSegmentation runCircleFittingAndNewCenterlineAlg(OpenCL ocl, cl::Image3D dat
     region[1] = size.y;
     region[2] = size.z;
 
+    TSFOutput * output = new TSFOutput(ocl, size);
     runCircleFittingMethod(ocl, dataset, size, parameters, vectorField, TDF, radius);
-    if(getParamBool(parameters, "tdf-only")) {
-		if(getParamBool(parameters, "display")) {
-			TS.TDF = new float[totalSize];
-			ocl.queue.enqueueReadImage(TDF, CL_TRUE, offset, region, 0, 0, TS.TDF);
-    	}
-    	return TS;
-    }
+    output->setTDF(TDF);
+    std::cout << "asdsasdasdsad " << output->getSize().x << std::endl;
+
     Image3D centerline = runNewCenterlineAlg(ocl, size, parameters, vectorField, TDF, radius, dataset);
-	if(getParamBool(parameters, "display") || getParamStr(parameters, "storage-dir") != "off") {
-        TS.centerline = new char[totalSize];
-        ocl.queue.enqueueReadImage(centerline, CL_FALSE, offset, region, 0, 0, TS.centerline);
-    }
+    output->setCenterlineVoxels(centerline);
 
     Image3D segmentation; 
     if(!getParamBool(parameters, "no-segmentation")) {
@@ -2429,69 +2433,26 @@ TubeSegmentation runCircleFittingAndNewCenterlineAlg(OpenCL ocl, cl::Image3D dat
     	} else {
 			segmentation = runSphereSegmentation(ocl,centerline, radius, size, parameters);
     	}
-    }
-
-
-    // Transfer result back to host
-	if(getParamBool(parameters, "display") || getParamStr(parameters, "storage-dir") != "off") {
-        START_TIMER
-        TS.TDF = new float[totalSize];
-        ocl.queue.enqueueReadImage(TDF, CL_TRUE, offset, region, 0, 0, TS.TDF);
-		if(!getParamBool(parameters, "no-segmentation")) {
-            TS.segmentation = new char[totalSize];
-            ocl.queue.enqueueReadImage(segmentation, CL_TRUE, offset, region, 0, 0, TS.segmentation);
-        }
-        //TS.radius = new float[totalSize];
-        //ocl.queue.enqueueReadImage(radius, CL_TRUE, offset, region, 0, 0, TS.radius);
-        /*
-        TS.Fx = new float[totalSize];
-        TS.Fy = new float[totalSize];
-        TS.Fz = new float[totalSize];
-        if(no3Dwrite) {
-            float * Fs = new float[totalSize*4];
-            ocl.queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
-#pragma omp parallel for
-            for(int i = 0; i < totalSize; i++) {
-                TS.Fx[i] = Fs[i*4];
-                TS.Fy[i] = Fs[i*4+1];
-                TS.Fz[i] = Fs[i*4+2];
-            }
-            delete[] Fs;
-        } else {
-            short * Fs = new short[totalSize*4];
-            ocl.queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
-#pragma omp parallel for
-            for(int i = 0; i < totalSize; i++) {
-                TS.Fx[i] = MAX(-1.0f, Fs[i*4] / 32767.0f);
-                TS.Fy[i] = MAX(-1.0f, Fs[i*4+1] / 32767.0f);;
-                TS.Fz[i] = MAX(-1.0f, Fs[i*4+2] / 32767.0f);
-            }
-            delete[] Fs;
-        }
-        */
-        STOP_TIMER("data transfer to host")
+    	output->setSegmentation(segmentation);
     }
 
 	if(getParamStr(parameters, "storage-dir") != "off") {
-        START_TIMER
-        const std::string storageDirectory = getParamStr(parameters, "storage-dir");
-        writeToRaw<char>(TS.centerline, storageDirectory + "centerline.raw", size.x, size.y, size.z);
-        if(!getParamBool(parameters, "no-segmentation"))
-            writeToRaw<char>(TS.segmentation, storageDirectory + "segmentation.raw", size.x, size.y, size.z);
-        STOP_TIMER("writing to disk")
+		writeDataToDisk(output, getParamStr(parameters, "storage-dir"));
     }
 
-    return TS;
+    return output;
 }
 
-TubeSegmentation runCircleFittingAndRidgeTraversal(OpenCL ocl, Image3D dataset, SIPL::int3 size, paramList parameters) {
+TSFOutput * runCircleFittingAndRidgeTraversal(OpenCL ocl, Image3D dataset, SIPL::int3 size, paramList parameters) {
     
     INIT_TIMER
     cl::Event startEvent, endEvent;
     cl_ulong start, end;
     Image3D vectorField, TDF, radius;
     TubeSegmentation TS;
+    TSFOutput * output = new TSFOutput(ocl, size);
     runCircleFittingMethod(ocl, dataset, size, parameters, vectorField, TDF, radius);
+    output->setTDF(TDF);
     const int totalSize = size.x*size.y*size.z;
 	const bool no3Dwrite = !getParamBool(parameters, "3d_write");
 
@@ -2503,15 +2464,6 @@ TubeSegmentation runCircleFittingAndRidgeTraversal(OpenCL ocl, Image3D dataset, 
     region[0] = size.x;
     region[1] = size.y;
     region[2] = size.z;
-
-    TS.TDF = new float[totalSize];
-    if(getParamBool(parameters, "tdf-only")) {
-		if(getParamBool(parameters, "display")) {
-			ocl.queue.enqueueReadImage(TDF, CL_TRUE, offset, region, 0, 0, TS.TDF);
-    	}
-    	return TS;
-    }
-
 
     START_TIMER
     // Transfer buffer back to host
@@ -2546,6 +2498,7 @@ TubeSegmentation runCircleFittingAndRidgeTraversal(OpenCL ocl, Image3D dataset, 
     ocl.queue.enqueueReadImage(radius, CL_TRUE, offset, region, 0, 0, TS.radius);
     std::stack<CenterlinePoint> centerlineStack;
     TS.centerline = runRidgeTraversal(TS, size, parameters, centerlineStack);
+    // TODO:: add centerline to TSFOutput
 
     if(getParamBool(parameters, "timing")) {
         ocl.queue.finish();
@@ -2561,21 +2514,15 @@ TubeSegmentation runCircleFittingAndRidgeTraversal(OpenCL ocl, Image3D dataset, 
     	} else {
 			volume = runSphereSegmentation(ocl,volume, radius, size, parameters);
     	}
-        TS.segmentation = new char[totalSize];
-        ocl.queue.enqueueReadImage(volume, CL_TRUE, offset, region, 0, 0, TS.segmentation);
+		output->setSegmentation(volume);
     }
 
 
     if(getParamStr(parameters, "storage-dir") != "off") {
-        START_TIMER
-        const std::string storageDirectory = getParamStr(parameters, "storage-dir");
-        writeToRaw<char>(TS.centerline, storageDirectory + "centerline.raw", size.x, size.y, size.z);
-		if(!getParamBool(parameters, "no-segmentation"))
-            writeToRaw<char>(TS.segmentation, storageDirectory + "segmentation.raw", size.x, size.y, size.z);
-        STOP_TIMER("writing segmentation and centerline to disk")
+        writeDataToDisk(output, getParamStr(parameters, "storage-dir"));
     }
 
-    return TS;
+    return output;
 }
 
 
@@ -2637,7 +2584,7 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
     std::fstream mhdFile;
     mhdFile.open(filename.c_str(), std::fstream::in);
     if(!mhdFile) {
-    	throw SIPL::IOException(filename, __LINE__, __FILE__);
+    	throw SIPL::IOException(filename.c_str(), __LINE__, __FILE__);
     }
     std::string typeName = "";
     std::string rawFilename = "";
@@ -2770,7 +2717,8 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         ocl.queue.enqueueWriteImage(dataset, CL_FALSE, offset, region2, 0, 0, data);
         getLimits<float>(parameters, data, totalSize, &minimum, &maximum);
     } else {
-    	throw SIPL::SIPLException("unsupported data type " + typeName, __LINE__, __FILE__);
+    	std::string str = "unsupported data type " + typeName;
+    	throw SIPL::SIPLException(str.c_str(), __LINE__, __FILE__);
     }
 
 
@@ -2921,7 +2869,9 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         int SIZE_Y = y2-y1;
         int SIZE_Z = z2-z1;
         if(SIZE_X == 0 || SIZE_Y == 0 || SIZE_Z == 0) {
-        	throw SIPL::SIPLException("Invalid cropping to new size " << SIZE_X << ", " << SIZE_Y << ", " << SIZE_Z, __LINE__, __FILE__);
+        	char * str;
+        	sprintf(str, "Invalid cropping to new size %d, %d, %d", SIZE_X, SIZE_Y, SIZE_Z);
+        	throw SIPL::SIPLException(str, __LINE__, __FILE__);
         }
 	    // Make them dividable by 4
 	    bool lower = false;
@@ -3099,8 +3049,9 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
     return convertedDataset;
 }
 
-TSFOutput::TSFOutput(OpenCL ocl) {
+TSFOutput::TSFOutput(OpenCL ocl, SIPL::int3 size) {
 	this->ocl = ocl;
+	this->size = size;
 	hostHasCenterlineVoxels = false;
 	hostHasSegmentation = false;
 	hostHasTDF = false;
@@ -3118,9 +3069,9 @@ TSFOutput::~TSFOutput() {
 		delete[] centerlineVoxels;
 }
 
-void TSFOutput::setTDF(Buffer buffer) {
+void TSFOutput::setTDF(Image3D image) {
 	deviceHasTDF = true;
-	oclTDF = buffer;
+	oclTDF = image;
 }
 
 void TSFOutput::setSegmentation(Image3D image) {
@@ -3141,8 +3092,15 @@ float * TSFOutput::getTDF() {
 	if(deviceHasTDF) {
 		if(!hostHasTDF) {
 			// Transfer data from device to host
-			ocl.queue.enqueueReadBuffer(oclTDF, CL_TRUE, 0, size.x*size.y*size.z*sizeof(float), TDF);
-			hostHasTDF = true;
+			cl::size_t<3> origin;
+			origin[0] = 0;
+			origin[1] = 0;
+			origin[2] = 0;
+			cl::size_t<3> region;
+			region[0] = size.x;
+			region[1] = size.y;
+			region[2] = size.z;
+			ocl.queue.enqueueReadImage(oclTDF,CL_TRUE, origin, region, 0, 0, TDF);			hostHasTDF = true;
 		}
 		return TDF;
 	} else {

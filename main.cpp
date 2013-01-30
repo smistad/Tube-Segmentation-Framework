@@ -27,14 +27,14 @@ int main(int argc, char ** argv) {
     // Parse parameters from program arguments
     paramList parameters = getParameters(argc, argv);
     std::string filename = argv[1];
-    TSFOutput output;
+    TSFOutput * output;
     try {
 		output = run(filename, parameters, argc, argv);
     } catch(SIPL::SIPLException e) {
     	std::cout << e.what() << std::endl;
     }
 
-    SIPL::int3 size = output.getSize();
+    SIPL::int3 size = output->getSize();
 
     if(getParamBool(parameters, "display")) {
         // Visualize result
@@ -42,24 +42,26 @@ int main(int argc, char ** argv) {
         float * TDF;
         char * centerline;
         char * segmentation;
-        if(output.hasTDF())
-        	TDF = output.getTDF();
-        if(output.hasCenterlineVoxels())
-        	centerline = output.getCenterlineVoxels();
-        if(output.hasSegmentation())
-        	segmentation = output.getSegmentation();
+        if(output->hasTDF())
+        	TDF = output->getTDF();
+        if(output->hasCenterlineVoxels())
+        	centerline = output->getCenterlineVoxels();
+        if(output->hasSegmentation())
+        	segmentation = output->getSegmentation();
         for(int i = 0; i < result->getTotalSize(); i++) {
             SIPL::float3 v;
-            if(output.hasTDF())
+            if(output->hasTDF())
             	v.x = TDF[i];
-            if(output.hasCenterlineVoxels())
+            if(output->hasCenterlineVoxels())
 				v.y = centerline[i] ? 1.0:0.0;
-            if(output.hasSegmentation())
+            if(output->hasSegmentation())
                 v.z = segmentation[i] ? 1.0:0.0;
             result->set(i,v);
         }
         result->showMIP(SIPL::Y);
     }
+    // free data
+    output->~TSFOutput();
     /*
     if(getParamBool(parameters, "display") || getParamStr(parameters, "storage-dir") != "off" || getParamStr(parameters, "centerline-method") == "ridge") {
         // Cleanup transferred data
