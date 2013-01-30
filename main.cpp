@@ -28,15 +28,18 @@ int main(int argc, char ** argv) {
     paramList parameters = getParameters(argc, argv);
     std::string filename = argv[1];
     TSFOutput * output;
-    bool error = false;
     try {
 		output = run(filename, parameters, argc, argv);
     } catch(SIPL::SIPLException e) {
     	std::cout << e.what() << std::endl;
-    	bool error = true;
+
+		// free data
+    	if(output != NULL)
+			output->~TSFOutput();
+    	return -1;
     }
 
-    if(getParamBool(parameters, "display") && !error) {
+    if(getParamBool(parameters, "display")) {
         // Visualize result
 		SIPL::int3 * size = output->getSize();
         SIPL::Volume<SIPL::float3> * result = new SIPL::Volume<SIPL::float3>(size->x, size->y, size->z);
