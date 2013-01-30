@@ -1,0 +1,38 @@
+# name type default (valid values)/range
+mode str white black white
+display bool false
+centerline-method str gpu gpu ridge
+gvf-iterations num 250 0 2000 50
+radius-min num 0.5 0.5 50.0 0.5
+radius-max num 15.0 2.0 50.0 1.0
+radius-step num 1.0 0.0 5.0 0.5
+fmax num 0.2 0.05 0.9 0.05
+gvf-mu num 0.05 0.0 0.05 0.01
+small-blur num 0.0 0.0 5.0 0.5
+large-blur num 1.0 0.0 15.0 0.5
+tdf-high num 0.5 0.1 1.0 0.1
+min-distance num 5 0 100 1
+m-low num 0.05 0.0 0.2 0.01
+tdf-low num 0.5 0.0 1.0 0.1
+max-below-tdf-low num 0 0 5 1
+min-mean-tdf num 0.5 0.1 1.0 0.01
+min-tree-length num 5 0 1000 5
+timing bool false
+cube-size num 4 0 10 1
+max-distance num 25.0 0.0 50.0 1.0
+centerpoints-only bool false
+tdf-only bool false
+no-segmentation bool false
+centerline-vtk-file str off
+sphere-segmentation bool false
+minimum str off
+maximum str off
+cropping str no no lung threshold
+nim-scan-lines-threshold num 10 0 1024 2
+min-scan-lines-lung num 200 0 1024 2 
+cropping-threshold num 0 0 3000 10
+cropping-start-z str end end middle
+buffers-only bool false
+storage-dir str off
+32bit-vectors bool false
+parameters str none none airway us-accuracy vascusynth mr-angio

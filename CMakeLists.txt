@@ -71,7 +71,7 @@ target_link_libraries(tubeSegmentationLib OCL-Utilities SIPL ${Boost_LIBRARIES} 
 #
 # tubeSegmentation executable
 ###########
-add_executable(tubeSegmentation main.cpp tube-segmentation.cpp histogram-pyramids.cpp)
+add_executable(tubeSegmentation main.cpp tube-segmentation.cpp histogram-pyramids.cpp parameters.cpp)
 target_link_libraries(tubeSegmentation SIPL OCL-Utilities ${Boost_LIBRARIES} ${OPENCL_LIBRARIES})
 
  #------------------------------------------------------------------------------
@@ -90,15 +90,3 @@ target_link_libraries(tubeSegmentation SIPL OCL-Utilities ${Boost_LIBRARIES} ${O
      "${PROJECT_SOURCE_DIR}/CMake/Tube-Segmentation-FrameworkConfig.cmake.in"
      "${PROJECT_BINARY_DIR}/Tube-Segmentation-FrameworkConfig.cmake"
  )
-
- #------------------------------------------------------------------------------
- # Configure file for settings, filepaths, parameters ...
- #------------------------------------------------------------------------------
- 
- set(PARAMETERS_DIR ${PROJECT_SOURCE_DIR}/parameters)
- set(KERNELS_DIR ${PROJECT_SOURCE_DIR})
- 
- configure_file(
-  "${PROJECT_SOURCE_DIR}/CMake/tsf-config.h.in"
-  "${PROJECT_BINARY_DIR}/tsf-config.h"
-  )

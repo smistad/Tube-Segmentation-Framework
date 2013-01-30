@@ -61,13 +61,14 @@ int main(int argc, char ** argv) {
     std::string filename = argv[1];
 
     // Check if parameters is set
-    if(parameters.count("parameters") > 0) {
+    if(getParamStr(parameters, "parameters") != "none") {
     	std::string parameterFilename;
-    	if(parameters.count("centerline-method") == 0 || parameters["centerline-method"] == "gpu") {
-    		parameterFilename = "parameters/centerline-gpu/" + parameters["parameters"];
-    	} else if(parameters["centerline-method"] == "ridge") {
-    		parameterFilename = "parameters/centerline-ridge/" + parameters["parameters"];
+    	if(getParamStr(parameters, "centerline-method") == "gpu") {
+    		parameterFilename = "parameters/centerline-gpu/" + getParamStr(parameters, "parameters");
+    	} else if(getParamStr(parameters, "centerline-method") == "ridge") {
+    		parameterFilename = "parameters/centerline-ridge/" + getParamStr(parameters, "parameters");
     	}
+    	std::cout << parameterFilename << std::endl;
     	if(parameterFilename.size() > 0) {
     		// Load file and parse parameters
     		std::ifstream file(parameterFilename.c_str());
@@ -87,33 +88,38 @@ int main(int argc, char ** argv) {
     				// parameter with value
 					std::string name = line.substr(0, spacePos);
 					std::string value = line.substr(spacePos+1);
-					// Add parameter if it doesn't exist (command line parameters always override
-					if(parameters.count(name) == 0)
-						parameters[name] = value;
+					parameters = setParameter(parameters, name, value);
     			} else {
     				// parameter with no value
-    				parameters[line] = "on";
+    				parameters = setParameter(parameters, line, "true");
     			}
     		}
     		file.close();
     	}
     }
 
+    /*
     // Write out parameter list
     std::cout << "The following parameters are set: " << std::endl;
     unordered_map<std::string, std::string>::iterator it;
     for(it = parameters.begin(); it != parameters.end(); it++) {
     	std::cout << it->first << " " << it->second << std::endl;
     }
+    */
 
     // Compile and create program
-    std::string kernelFile;
-    if(parameters.count("buffers-only") == 0 && (int)devices[0].getInfo<CL_DEVICE_EXTENSIONS>().find("cl_khr_3d_image_writes") > -1) {
-    	kernelFile = std::string(KERNELS_DIR) + "/kernels.cl";
-        ocl.program = buildProgramFromSource(ocl.context, kernelFile);
-        parameters["3d_write"] = "true";
+	std::string kernelFile;
+    if(!getParamBool(parameters, "buffers-only") && (int)devices[0].getInfo<CL_DEVICE_EXTENSIONS>().find("cl_khr_3d_image_writes") > -1) {
+		kernelFile = std::string(KERNELS_DIR) + "/kernels.cl";        
+		ocl.program = buildProgramFromSource(ocl.context, kernelFile);
+        BoolParameter v = parameters.bools["3d_write"];
+        v.set(true);
+        parameters.bools["3d_write"] = v;
     } else {
-    	kernelFile = std::string(KERNELS_DIR) + "/kernels_no_3d_write.cl";
+		kernelFile = std::string(KERNELS_DIR) + "/kernels_no_3d_write.cl";
+        BoolParameter v = parameters.bools["3d_write"];
+        v.set(false);
+        parameters.bools["3d_write"] = v;
         ocl.program = buildProgramFromSource(ocl.context, kernelFile);
         std::cout << "Writing to 3D textures is not supported on the selected device." << std::endl;
     }
@@ -126,7 +132,7 @@ int main(int argc, char ** argv) {
         cl::Image3D dataset = readDatasetAndTransfer(ocl, filename, parameters, &size);
 
         // Run specified method on dataset
-        if(parameters.count("centerline-method") && parameters["centerline-method"] == "ridge") {
+        if(getParamStr(parameters, "centerline-method") == "ridge") {
             TS = runCircleFittingAndRidgeTraversal(ocl, dataset, size, parameters);
         } else {
             TS = runCircleFittingAndNewCenterlineAlg(ocl, dataset, size, parameters);
@@ -138,32 +144,34 @@ int main(int argc, char ** argv) {
     ocl.queue.finish();
     STOP_TIMER("total")
 
-    if(parameters.count("display") > 0) {
+    if(getParamBool(parameters, "display")) {
         // Visualize result
         SIPL::Volume<SIPL::float3> * result = new SIPL::Volume<SIPL::float3>(size.x, size.y, size.z);
+        bool tdfOnly = getParamBool(parameters, "tdf-only");
+        bool noSegmentation = getParamBool(parameters, "no-segmentation");
         for(int i = 0; i < result->getTotalSize(); i++) {
             SIPL::float3 v;
             v.x = TS.TDF[i];
             v.y = 0;
             v.z = 0;
-            if(parameters.count("tdf-only") == 0)
+            if(!tdfOnly)
 				v.y = TS.centerline[i] ? 1.0:0.0;
-            if(parameters.count("no-segmentation") == 0 && parameters.count("tdf-only") == 0)
+            if(!noSegmentation && !tdfOnly)
                 v.z = TS.segmentation[i] ? 1.0:0.0;
             result->set(i,v);
         }
         result->showMIP(SIPL::Y);
     }
-    if(parameters.count("display") > 0 || parameters.count("storage-dir") > 0 || parameters["centerline-method"] == "ridge") {
+    if(getParamBool(parameters, "display") || getParamStr(parameters, "storage-dir") != "off" || getParamStr(parameters, "centerline-method") == "ridge") {
         // Cleanup transferred data
-    	if(parameters.count("tdf-only") > 0) {
+		if(getParamBool(parameters, "tdf-only")) {
 			delete[] TS.TDF;
     	} else {
 			delete[] TS.centerline;
 			delete[] TS.TDF;
-			if(parameters.count("no-segmentation") == 0)
+			if(!getParamBool(parameters, "no-segmentation"))
 				delete[] TS.segmentation;
-			if(parameters["centerline-method"] == "ridge")
+			if(getParamStr(parameters, "centerline-method") == "ridge")
 				delete[] TS.radius;
     	}
     }

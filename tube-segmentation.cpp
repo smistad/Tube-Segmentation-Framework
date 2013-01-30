@@ -67,29 +67,6 @@ void __stdcall freeData(cl_mem memobj, void * user_data) {
     delete[] data;
 }
 
-float getParamf(paramList parameters, std::string parameterName, float defaultValue) {
-    if(parameters.count(parameterName) == 1) {
-        return atof(parameters[parameterName].c_str());
-    } else {
-        return defaultValue;
-    }
-}
-
-int getParami(paramList parameters, std::string parameterName, int defaultValue) {
-    if(parameters.count(parameterName) == 1) {
-        return atoi(parameters[parameterName].c_str());
-    } else {
-        return defaultValue;
-    }
-}
-
-std::string getParamstr(paramList parameters, std::string parameterName, std::string defaultValue) {
-    if(parameters.count(parameterName) == 1) {
-        return parameters[parameterName];
-    } else {
-        return defaultValue;
-    }
-}
 
 typedef struct CenterlinePoint {
     int3 pos;
@@ -533,13 +510,13 @@ void doEigen(TubeSegmentation &T, int3 pos, int3 size, float3 * lambda, float3 *
 
 char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList parameters, std::stack<CenterlinePoint> centerlineStack) {
 
-    float Thigh = getParamf(parameters, "tdf-high", 0.5); // 0.6
-    int Dmin = getParami(parameters, "min-distance", 5);
-    float Mlow = getParamf(parameters, "m-low", 0.05f); // 0.2
-    float Tlow = getParamf(parameters, "tdf-low", 0.5f); // 0.4
-    int maxBelowTlow = getParami(parameters, "max-below-tdf-low", 0); // 2
-    float minMeanTube = getParamf(parameters, "min-mean-tdf", 0.5); //0.6
-    int TreeMin = getParami(parameters, "min-tree-length", 5); // 200
+    float Thigh = getParam(parameters, "tdf-high"); // 0.6
+    int Dmin = getParam(parameters, "min-distance");
+    float Mlow = getParam(parameters, "m-low"); // 0.2
+    float Tlow = getParam(parameters, "tdf-low"); // 0.4
+    int maxBelowTlow = getParam(parameters, "max-below-tdf-low"); // 2
+    float minMeanTube = getParam(parameters, "min-mean-tdf"); //0.6
+    int TreeMin = getParam(parameters, "min-tree-length"); // 200
     const int totalSize = size.x*size.y*size.z;
 
     int * centerlines = new int[totalSize]();
@@ -894,17 +871,17 @@ float * createBlurMask(float sigma, int * maskSizePointer) {
 
 void runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 size, paramList parameters, Image3D &vectorField, Image3D &TDF, Image3D &radiusImage) {
     // Set up parameters
-    const int GVFIterations = getParami(parameters, "gvf-iterations", 250);
-    const float radiusMin = getParamf(parameters, "radius-min", 0.5);
-    const float radiusMax = getParamf(parameters, "radius-max", 15.0);
-    const float radiusStep = getParamf(parameters, "radius-step", 1.0);
-    const float Fmax = getParamf(parameters, "fmax", 0.2);
+    const int GVFIterations = getParam(parameters, "gvf-iterations");
+    const float radiusMin = getParam(parameters, "radius-min");
+    const float radiusMax = getParam(parameters, "radius-max");
+    const float radiusStep = getParam(parameters, "radius-step");
+    const float Fmax = getParam(parameters, "fmax");
     const int totalSize = size.x*size.y*size.z;
-    const bool no3Dwrite = parameters.count("3d_write") == 0;
-    const float MU = getParamf(parameters, "gvf-mu", 0.05);
-    const int vectorSign = getParamstr(parameters, "mode", "black") == "black" ? -1 : 1;
-    const float smallBlurSigma = getParamf(parameters, "small-blur", 0);
-	const float largeBlurSigma = getParamf(parameters,"large-blur", 1.0);
+    const bool no3Dwrite = !getParamBool(parameters, "3d_write");
+    const float MU = getParam(parameters, "gvf-mu");
+    const int vectorSign = getParamStr(parameters, "mode") == "black" ? -1 : 1;
+    const float smallBlurSigma = getParam(parameters, "small-blur");
+	const float largeBlurSigma = getParam(parameters,"large-blur");
 
 
     cl::size_t<3> offset;
@@ -980,7 +957,7 @@ void runCircleFittingMethod(OpenCL ocl, Image3D dataset, SIPL::int3 size, paramL
         blurredVolume = dataset;
     }
 
-if(parameters.count("timing") > 0) {
+if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
 }
     if(no3Dwrite) {
@@ -1011,7 +988,7 @@ if(parameters.count("timing") > 0) {
         );
 
     } else {
-        if(parameters.count("32bit-vectors") > 0) {
+        if(getParamBool(parameters, "32bit-vectors")) {
             std::cout << "NOTE: Using 32 bit vectors" << std::endl;
             vectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
         } else {
@@ -1034,14 +1011,14 @@ if(parameters.count("timing") > 0) {
 
     }
        
-if(parameters.count("timing") > 0) {
+if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
     startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
     endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
     std::cout << "RUNTIME of Create vector field: " << (end-start)*1.0e-6 << " ms" << std::endl;
 }
-if(parameters.count("timing") > 0) {
+if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
 }
     // Run circle fitting TDF kernel
@@ -1086,7 +1063,7 @@ if(parameters.count("timing") > 0) {
     }
     } // end if radiusMin < 2.5
 
-if(parameters.count("timing") > 0) {
+if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
     startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
@@ -1095,7 +1072,7 @@ if(parameters.count("timing") > 0) {
 }
     /* Large Airways */
     
-if(parameters.count("timing") > 0) {
+if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
 }
     if(largeBlurSigma > 0) {
@@ -1149,14 +1126,14 @@ if(parameters.count("timing") > 0) {
     }
 
 
-if(parameters.count("timing") > 0) {
+if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
     startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
     endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
     std::cout << "RUNTIME blurring: " << (end-start)*1.0e-6 << " ms" << std::endl;
 }
-if(parameters.count("timing") > 0) {
+if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
 }
    if(no3Dwrite) {
@@ -1187,7 +1164,7 @@ if(parameters.count("timing") > 0) {
         );
 
     } else {
-        if(parameters.count("32bit-vectors") > 0) {
+        if(getParamBool(parameters, "32bit-vectors")) {
             vectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
         } else {
             vectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
@@ -1209,14 +1186,14 @@ if(parameters.count("timing") > 0) {
 
     } 
     
-if(parameters.count("timing") > 0) {
+if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
     startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
     endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
     std::cout << "RUNTIME Create vector field: " << (end-start)*1.0e-6 << " ms" << std::endl;
 }
-if(parameters.count("timing") > 0) {
+if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
 }
 
@@ -1298,7 +1275,7 @@ if(parameters.count("timing") > 0) {
     } else {
         Image3D vectorField1;
         Image3D initVectorField; 
-        if(parameters.count("32bit-vectors") > 0) { 
+        if(getParamBool(parameters, "32bit-vectors")) {
             vectorField1 = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
             initVectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RG, CL_FLOAT), size.x, size.y, size.z);
         } else {
@@ -1347,7 +1324,7 @@ if(parameters.count("timing") > 0) {
                 NDRange(4,4,4)
         );
     }
-if(parameters.count("timing") > 0) {
+if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
     startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
@@ -1355,7 +1332,7 @@ if(parameters.count("timing") > 0) {
     std::cout << "RUNTIME of GVF: " << (end-start)*1.0e-6 << " ms" << std::endl;
 }
 
-if(parameters.count("timing") > 0) {
+if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
 }
     // Run circle fitting TDF kernel on GVF result
@@ -1374,14 +1351,14 @@ if(parameters.count("timing") > 0) {
             NDRange(size.x,size.y,size.z),
             NDRange(4,4,4)
     );
-if(parameters.count("timing") > 0) {
+if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
     startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
     endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
     std::cout << "RUNTIME of TDF large: " << (end-start)*1.0e-6 << " ms" << std::endl;
 }
-if(parameters.count("timing") > 0) {
+if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
 }
 	if(radiusMin < 2.5f) {
@@ -1416,7 +1393,7 @@ if(parameters.count("timing") > 0) {
         region
     );
 
-if(parameters.count("timing") > 0) {
+if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
     startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
@@ -1427,7 +1404,7 @@ if(parameters.count("timing") > 0) {
 }
 
 Image3D runSphereSegmentation(OpenCL ocl, Image3D centerline, Image3D radius, SIPL::int3 size, paramList parameters) {
-	const bool no3Dwrite = parameters.count("3d_write") == 0;
+	const bool no3Dwrite = !getParamBool(parameters, "3d_write");
 	if(no3Dwrite) {
 		cl::size_t<3> offset;
 		offset[0] = 0;
@@ -1514,10 +1491,10 @@ Image3D runSphereSegmentation(OpenCL ocl, Image3D centerline, Image3D radius, SI
 
 Image3D runInverseGradientSegmentation(OpenCL ocl, Image3D volume, Image3D vectorField, SIPL::int3 size, paramList parameters) {
     const int totalSize = size.x*size.y*size.z;
-    const bool no3Dwrite = parameters.count("3d_write") == 0;
+	const bool no3Dwrite = !getParamBool(parameters, "3d_write");
     cl::Event startEvent, endEvent;
     cl_ulong start, end;
-    if(parameters.count("timing") > 0) {
+    if(getParamBool(parameters, "timing")) {
         ocl.queue.enqueueMarker(&startEvent);
     }
 
@@ -1715,7 +1692,7 @@ Image3D runInverseGradientSegmentation(OpenCL ocl, Image3D volume, Image3D vecto
             NullRange
         );
     }
-if(parameters.count("timing") > 0) {
+if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
     startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
@@ -1728,12 +1705,12 @@ if(parameters.count("timing") > 0) {
 
 Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, Image3D vectorField, Image3D TDF, Image3D radius, Image3D intensity) {
     const int totalSize = size.x*size.y*size.z;
-    const bool no3Dwrite = parameters.count("3d_write") == 0;
-    const int cubeSize = getParami(parameters, "cube-size", 4);
-    const int minTreeLength = getParami(parameters, "min-tree-length", 20);
-    const float Thigh = getParamf(parameters, "tdf-high", 0.5f);
-    const float Tmean = getParamf(parameters, "min-mean-tdf", 0.5f);
-    const float maxDistance = getParamf(parameters, "max-distance", 25.0f);
+	const bool no3Dwrite = !getParamBool(parameters, "3d_write");
+    const int cubeSize = getParam(parameters, "cube-size");
+    const int minTreeLength = getParam(parameters, "min-tree-length");
+    const float Thigh = getParam(parameters, "tdf-high");
+    const float Tmean = getParam(parameters, "min-mean-tdf");
+    const float maxDistance = getParam(parameters, "max-distance");
 
     cl::size_t<3> offset;
     offset[0] = 0;
@@ -1751,7 +1728,7 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
 
     cl::Event startEvent, endEvent;
     cl_ulong start, end;
-    if(parameters.count("timing") > 0) {
+    if(getParamBool(parameters, "timing")) {
         ocl.queue.enqueueMarker(&startEvent);
     }
     Image3D centerpointsImage2 = Image3D(
@@ -1831,7 +1808,7 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
             region
         );
 
-		if(parameters.count("centerpoints-only") > 0) {
+		if(getParamBool(parameters, "centerpoints-only")) {
 			return centerpointsImage2;
 		}
         ddKernel.setArg(0, vectorField);
@@ -1918,7 +1895,7 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
             NullRange
         );
 
-		if(parameters.count("centerpoints-only") > 0) {
+		if(getParamBool(parameters, "centerpoints-only")) {
 			return centerpointsImage2;
 		}
         ddKernel.setArg(0, vectorField);
@@ -1948,7 +1925,7 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
     	exit(-1);
     }
 
-if(parameters.count("timing") > 0) {
+if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
     startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
@@ -1956,7 +1933,7 @@ if(parameters.count("timing") > 0) {
     std::cout << "RUNTIME centerpoint extraction: " << (end-start)*1.0e-6 << " ms" << std::endl;
 } 
 
-if(parameters.count("timing") > 0) {
+if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
 }
     // Run linking kernel
@@ -2052,7 +2029,7 @@ if(parameters.count("timing") > 0) {
             NDRange(globalSize),
             NDRange(64)
     );
-if(parameters.count("timing") > 0) {
+if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
     startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
@@ -2060,9 +2037,28 @@ if(parameters.count("timing") > 0) {
     std::cout << "RUNTIME linking: " << (end-start)*1.0e-6 << " ms" << std::endl;
 } 
 
-if(parameters.count("timing") > 0) {
+if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
 }
+
+	// Remove duplicate edges
+	Image2D edgeTuples2 = Image2D(
+			ocl.context,
+            CL_MEM_READ_WRITE,
+            ImageFormat(CL_R, CL_UNSIGNED_INT8),
+            sum, sum
+    );
+	Kernel removeDuplicatesKernel(ocl.program, "removeDuplicateEdges");
+	removeDuplicatesKernel.setArg(0, edgeTuples);
+	removeDuplicatesKernel.setArg(1, edgeTuples2);
+	ocl.queue.enqueueNDRangeKernel(
+			removeDuplicatesKernel,
+			NullRange,
+			NDRange(sum,sum),
+			NullRange
+	);
+	edgeTuples = edgeTuples2;
+
     // Run HP on edgeTuples
     HistogramPyramid2D hp2(ocl);
     hp2.create(edgeTuples, sum, sum);
@@ -2081,7 +2077,7 @@ if(parameters.count("timing") > 0) {
 
     // Run create positions kernel on edges
     Buffer edges = hp2.createPositionBuffer();
-if(parameters.count("timing") > 0) {
+if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
     startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
@@ -2089,7 +2085,7 @@ if(parameters.count("timing") > 0) {
     std::cout << "RUNTIME HP creation and traversal: " << (end-start)*1.0e-6 << " ms" << std::endl;
 } 
 
-if(parameters.count("timing") > 0) {
+if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
 }
 
@@ -2150,7 +2146,7 @@ if(parameters.count("timing") > 0) {
         ++i;
     } while(M == 1);
     std::cout << "did graph component labeling in " << i << " iterations " << std::endl;
-if(parameters.count("timing") > 0) {
+if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
     startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
@@ -2159,7 +2155,7 @@ if(parameters.count("timing") > 0) {
 } 
 
 
-if(parameters.count("timing") > 0) {
+if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
 }
     // Remove small trees
@@ -2260,7 +2256,38 @@ if(parameters.count("timing") > 0) {
                 NullRange
         );
     }
-if(parameters.count("timing") > 0) {
+
+    if(getParamStr(parameters, "centerline-vtk-file") != "off") {
+    	// Transfer edges (size: sum2) and vertices (size: sum) buffers to host
+    	int * verticesArray = new int[sum*3];
+    	int * edgesArray = new int[sum2*3];
+
+    	ocl.queue.enqueueReadBuffer(vertices, CL_FALSE, 0, sum*3*sizeof(int), verticesArray);
+    	ocl.queue.enqueueReadBuffer(edges, CL_FALSE, 0, sum2*2*sizeof(int), edgesArray);
+
+    	ocl.queue.finish();
+
+
+    	// Write to file
+    	std::ofstream file;
+    	file.open(getParamStr(parameters, "centerline-vtk-file").c_str());
+    	file << "# vtk DataFile Version 3.0\nvtk output\nASCII\n";
+    	file << "DATASET POLYDATA\nPOINTS " << sum << " int\n";
+    	for(int i = 0; i < sum; i++) {
+    		file << verticesArray[i*3] << " " << verticesArray[i*3+1] << " " << verticesArray[i*3+2] << "\n";
+    	}
+
+    	file << "\nLINES " << sum2 << " " << sum2*3 << "\n";
+    	for(int i = 0; i < sum2; i++) {
+    		file << "2 " << edgesArray[i*2] << " " << edgesArray[i*2+1] << "\n";
+    	}
+
+    	file.close();
+    	delete[] verticesArray;
+    	delete[] edgesArray;
+    }
+
+if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
     startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
@@ -2275,7 +2302,7 @@ TubeSegmentation runCircleFittingAndNewCenterlineAlg(OpenCL ocl, cl::Image3D dat
     Image3D vectorField, TDF, radius;
     TubeSegmentation TS;
     const int totalSize = size.x*size.y*size.z;
-    const bool no3Dwrite = parameters.count("3d_write") == 0;
+	const bool no3Dwrite = !getParamBool(parameters, "3d_write");
 
     cl::size_t<3> offset;
     offset[0] = 0;
@@ -2287,22 +2314,22 @@ TubeSegmentation runCircleFittingAndNewCenterlineAlg(OpenCL ocl, cl::Image3D dat
     region[2] = size.z;
 
     runCircleFittingMethod(ocl, dataset, size, parameters, vectorField, TDF, radius);
-    if(parameters.count("tdf-only") > 0) {
-    	if(parameters.count("display") > 0) {
+    if(getParamBool(parameters, "tdf-only")) {
+		if(getParamBool(parameters, "display")) {
 			TS.TDF = new float[totalSize];
 			ocl.queue.enqueueReadImage(TDF, CL_TRUE, offset, region, 0, 0, TS.TDF);
     	}
     	return TS;
     }
     Image3D centerline = runNewCenterlineAlg(ocl, size, parameters, vectorField, TDF, radius, dataset);
-    if(parameters.count("display") > 0 || parameters.count("storage-dir") > 0) {
+	if(getParamBool(parameters, "display") || getParamStr(parameters, "storage-dir") != "off") {
         TS.centerline = new char[totalSize];
         ocl.queue.enqueueReadImage(centerline, CL_FALSE, offset, region, 0, 0, TS.centerline);
     }
 
     Image3D segmentation; 
-    if(parameters.count("no-segmentation") == 0) {
-    	if(parameters.count("sphere-segmentation") == 0) {
+    if(!getParamBool(parameters, "no-segmentation")) {
+    	if(!getParamBool(parameters, "sphere-segmentation")) {
 			segmentation = runInverseGradientSegmentation(ocl, centerline, vectorField, size, parameters);
     	} else {
 			segmentation = runSphereSegmentation(ocl,centerline, radius, size, parameters);
@@ -2311,11 +2338,11 @@ TubeSegmentation runCircleFittingAndNewCenterlineAlg(OpenCL ocl, cl::Image3D dat
 
 
     // Transfer result back to host
-    if(parameters.count("display") > 0 || parameters.count("storage-dir") > 0) {
+	if(getParamBool(parameters, "display") || getParamStr(parameters, "storage-dir") != "off") {
         START_TIMER
         TS.TDF = new float[totalSize];
         ocl.queue.enqueueReadImage(TDF, CL_TRUE, offset, region, 0, 0, TS.TDF);
-        if(parameters.count("no-segmentation") == 0) {
+		if(!getParamBool(parameters, "no-segmentation")) {
             TS.segmentation = new char[totalSize];
             ocl.queue.enqueueReadImage(segmentation, CL_TRUE, offset, region, 0, 0, TS.segmentation);
         }
@@ -2350,11 +2377,11 @@ TubeSegmentation runCircleFittingAndNewCenterlineAlg(OpenCL ocl, cl::Image3D dat
         STOP_TIMER("data transfer to host")
     }
 
-    if(parameters.count("storage-dir") > 0) {
+	if(getParamStr(parameters, "storage-dir") != "off") {
         START_TIMER
-        const std::string storageDirectory = getParamstr(parameters, "storage-dir", "");
+        const std::string storageDirectory = getParamStr(parameters, "storage-dir");
         writeToRaw<char>(TS.centerline, storageDirectory + "centerline.raw", size.x, size.y, size.z);
-        if(parameters.count("no-segmentation") == 0)
+        if(!getParamBool(parameters, "no-segmentation"))
             writeToRaw<char>(TS.segmentation, storageDirectory + "segmentation.raw", size.x, size.y, size.z);
         STOP_TIMER("writing to disk")
     }
@@ -2371,7 +2398,7 @@ TubeSegmentation runCircleFittingAndRidgeTraversal(OpenCL ocl, Image3D dataset, 
     TubeSegmentation TS;
     runCircleFittingMethod(ocl, dataset, size, parameters, vectorField, TDF, radius);
     const int totalSize = size.x*size.y*size.z;
-    const bool no3Dwrite = parameters.count("3d_write") == 0;
+	const bool no3Dwrite = !getParamBool(parameters, "3d_write");
 
     cl::size_t<3> offset;
     offset[0] = 0;
@@ -2383,8 +2410,8 @@ TubeSegmentation runCircleFittingAndRidgeTraversal(OpenCL ocl, Image3D dataset, 
     region[2] = size.z;
 
     TS.TDF = new float[totalSize];
-    if(parameters.count("tdf-only") > 0) {
-    	if(parameters.count("display") > 0) {
+    if(getParamBool(parameters, "tdf-only")) {
+		if(getParamBool(parameters, "display")) {
 			ocl.queue.enqueueReadImage(TDF, CL_TRUE, offset, region, 0, 0, TS.TDF);
     	}
     	return TS;
@@ -2397,7 +2424,7 @@ TubeSegmentation runCircleFittingAndRidgeTraversal(OpenCL ocl, Image3D dataset, 
     TS.Fx = new float[totalSize];
     TS.Fy = new float[totalSize];
     TS.Fz = new float[totalSize];
-    if(no3Dwrite || parameters.count("32bit-vectors") > 0) {
+    if(no3Dwrite || getParamBool(parameters, "32bit-vectors")) {
     	// 32 bit vector fields
         float * Fs = new float[totalSize*4];
         ocl.queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
@@ -2427,16 +2454,16 @@ TubeSegmentation runCircleFittingAndRidgeTraversal(OpenCL ocl, Image3D dataset, 
     std::stack<CenterlinePoint> centerlineStack;
     TS.centerline = runRidgeTraversal(TS, size, parameters, centerlineStack);
 
-    if(parameters.count("timing") > 0) {
+    if(getParamBool(parameters, "timing")) {
         ocl.queue.finish();
         STOP_TIMER("Centerline extraction + transfer of data back and forth")
         ocl.queue.enqueueMarker(&startEvent);
     }
 
     Image3D volume; 
-    if(parameters.count("no-segmentation") == 0) {
+    if(!getParamBool(parameters, "no-segmentation")) {
         volume = Image3D(ocl.context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, ImageFormat(CL_R, CL_SIGNED_INT8), size.x, size.y, size.z, 0, 0, TS.centerline);
-    	if(parameters.count("sphere-segmentation") == 0) {
+		if(!getParamBool(parameters, "sphere-segmentation")) {
 			volume = runInverseGradientSegmentation(ocl, volume, vectorField, size, parameters);
     	} else {
 			volume = runSphereSegmentation(ocl,volume, radius, size, parameters);
@@ -2446,11 +2473,11 @@ TubeSegmentation runCircleFittingAndRidgeTraversal(OpenCL ocl, Image3D dataset, 
     }
 
 
-    if(parameters.count("storage-dir") > 0) {
+    if(getParamStr(parameters, "storage-dir") != "off") {
         START_TIMER
-        const std::string storageDirectory = getParamstr(parameters, "storage-dir", "");
+        const std::string storageDirectory = getParamStr(parameters, "storage-dir");
         writeToRaw<char>(TS.centerline, storageDirectory + "centerline.raw", size.x, size.y, size.z);
-        if(parameters.count("no-segmentation") == 0)
+		if(!getParamBool(parameters, "no-segmentation"))
             writeToRaw<char>(TS.segmentation, storageDirectory + "segmentation.raw", size.x, size.y, size.z);
         STOP_TIMER("writing segmentation and centerline to disk")
     }
@@ -2458,32 +2485,6 @@ TubeSegmentation runCircleFittingAndRidgeTraversal(OpenCL ocl, Image3D dataset, 
     return TS;
 }
 
-paramList getParameters(int argc, char ** argv) {
-    paramList parameters;
-    // Go through each parameter, first parameter is filename
-    for(int i = 2; i < argc; i++) {
-        std::string token = argv[i];
-        if(token.substr(0,2) == "--") {
-            // Check to see if the parameter has a value
-            std::string nextToken;
-            if(i+1 < argc) {
-                nextToken = argv[i+1];
-            } else {
-                nextToken = "--";
-            }
-            if(nextToken.substr(0,2) == "--") {
-                // next token is not a value
-                parameters[token.substr(2)] = "dummy-value";
-            } else {
-                // next token is a value, store the value
-                parameters[token.substr(2)] = nextToken;
-                i++;
-            }
-        }
-    }
-
-    return parameters;
-}
 
 void __stdcall unmapRawfile(cl_mem memobj, void * user_data) {
     boost::iostreams::mapped_file_source * file = (boost::iostreams::mapped_file_source *)user_data;
@@ -2513,16 +2514,16 @@ float getMinimum(void * data, const int totalSize) {
 
 template <typename T>
 void getLimits(paramList parameters, void * data, const int totalSize, float * minimum, float * maximum) {
-    if(parameters.count("minimum") == 1) {
-        *minimum = atof(parameters["minimum"].c_str());
+    if(getParamStr(parameters, "minimum") != "off") {
+        *minimum = atof(getParamStr(parameters, "minimum").c_str());
     } else {
         std::cout << "NOTE: minimum parameter not set, finding minimum automatically." << std::endl;
         *minimum = getMinimum<T>(data, totalSize);
         std::cout << "NOTE: minimum found to be " << *minimum << std::endl;
     }
             
-    if(parameters.count("maximum") == 1) {
-        *maximum = atof(parameters["maximum"].c_str());
+    if(getParamStr(parameters, "maximum") != "off") {
+        *maximum = atof(getParamStr(parameters, "maximum").c_str());
     } else {
         std::cout << "NOTE: maximum parameter not set, finding maximum automatically." << std::endl;
         *maximum = getMaximum<T>(data, totalSize);
@@ -2534,7 +2535,7 @@ boost::iostreams::mapped_file_source * file;
 Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList parameters, SIPL::int3 * size) {
     cl_ulong start, end;
     Event startEvent, endEvent;
-    if(parameters.count("timing") > 0) {
+    if(getParamBool(parameters, "timing")) {
         ocl.queue.enqueueMarker(&startEvent);
     }
     INIT_TIMER
@@ -2685,7 +2686,7 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
 
 
     std::cout << "Dataset of size " << size->x << " " << size->y << " " << size->z << " loaded" << std::endl;
-    if(parameters.count("timing") > 0) {
+    if(getParamBool(parameters, "timing")) {
         ocl.queue.enqueueMarker(&endEvent);
         ocl.queue.finish();
         startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
@@ -2694,7 +2695,7 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         ocl.queue.enqueueMarker(&startEvent);
     }
     // Perform cropping if required
-    std::string cropping = getParamstr(parameters, "cropping", "no");
+    std::string cropping = getParamStr(parameters, "cropping");
     if(cropping == "lung" || cropping == "threshold") {
         std::cout << "performing cropping" << std::endl;
         Kernel cropDatasetKernel;
@@ -2702,14 +2703,14 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         std::string cropping_start_z;
         if(cropping == "lung") {
 			cropDatasetKernel = Kernel(ocl.program, "cropDatasetLung");
-			minScanLines = getParami(parameters, "min-scan-lines", 200);
+			minScanLines = getParam(parameters, "min-scan-lines-lung");
 			cropping_start_z = "middle";
         } else if(cropping == "threshold") {
         	cropDatasetKernel = Kernel(ocl.program, "cropDatasetThreshold");
-			minScanLines = getParami(parameters, "min-scan-lines", 10);
-			cropDatasetKernel.setArg(3, getParamf(parameters, "cropping-threshold", 0.0f));
+			minScanLines = getParam(parameters, "min-scan-lines-threshold");
+			cropDatasetKernel.setArg(3, getParam(parameters, "cropping-threshold"));
 			cropDatasetKernel.setArg(4, type);
-			cropping_start_z = getParamstr(parameters, "cropping-start-z", "end");
+			cropping_start_z = getParamStr(parameters, "cropping-start-z");
         }
 
         Buffer scanLinesInsideX = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(short)*size->x);
@@ -2898,7 +2899,7 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         srcOffset[2] = z1;
         ocl.queue.enqueueCopyImage(dataset, imageHUvolume, srcOffset, offset, region);
         dataset = imageHUvolume;
-        if(parameters.count("timing") > 0) {
+        if(getParamBool(parameters, "timing")) {
             ocl.queue.enqueueMarker(&endEvent);
             ocl.queue.finish();
             startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
@@ -2947,7 +2948,7 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         size->x, size->y, size->z
     );
 
-    const bool no3Dwrite = parameters.count("3d_write") == 0;
+	const bool no3Dwrite = !getParamBool(parameters, "3d_write");
     if(no3Dwrite) {
         Buffer convertedDatasetBuffer = Buffer(
                 ocl.context, 
@@ -2997,7 +2998,7 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
             NullRange
         );
     }
-    if(parameters.count("timing") > 0) {
+    if(getParamBool(parameters, "timing")) {
         ocl.queue.enqueueMarker(&endEvent);
         ocl.queue.finish();
         startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);

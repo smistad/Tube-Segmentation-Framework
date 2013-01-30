@@ -372,7 +372,7 @@ __kernel void linkCenterpoints(
         continue;
     for(int j = 0; j < i; j++) {
         float2 cl2  = read_imagef(compacted_lengths, sampler, (int2)(id,j)).xy;
-        if(cl2.y == cl.y) 
+        if(cl2.y == cl.y)
             continue;
 
         // reached the end?
@@ -564,6 +564,27 @@ __kernel void removeSmallTrees(
             write_imagei(centerlines, convert_int3(round(xa+(xb-xa)*alpha)).xyzz, 1);
         }
     }
+}
+
+__kernel void removeDuplicateEdges(
+		__read_only image2d_t edgeTuples,
+		__write_only image2d_t edgeTuples2
+	) {
+	const int2 pos = {get_global_id(0), get_global_id(1)};
+	if(read_imageui(edgeTuples, sampler, pos).x == 0) {
+		write_imageui(edgeTuples2,pos, 0);
+	} else if(pos.x > pos.y) {
+		// Check if opposite is an edge
+		if(read_imageui(edgeTuples, sampler, (int2)(pos.y,pos.x)).x == 1) {
+			// opposite exists => remove this one
+			write_imageui(edgeTuples2,pos, 0);
+		} else {
+			// opposite doesn't exist => save this one
+			write_imageui(edgeTuples2,pos, 1);
+		}
+	} else {
+		write_imageui(edgeTuples2,pos, 1);
+	}
 }
 
 __kernel void combine(

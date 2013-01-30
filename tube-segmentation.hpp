@@ -15,6 +15,7 @@ using std::unordered_map;
 using boost::unordered_map;
 #endif
 #include "commons.hpp"
+#include "parameters.hpp"
 
 typedef struct TubeSegmentation {
     float *Fx, *Fy, *Fz; // The GVF vector field
@@ -24,11 +25,8 @@ typedef struct TubeSegmentation {
     char *segmentation;
 } TubeSegmentation;
 
-typedef unordered_map<std::string, std::string> paramList;
 
 cl::Image3D readDatasetAndTransfer(OpenCL, std::string, paramList, SIPL::int3 *);
-
-paramList getParameters(int argc, char ** argv);
 
 TubeSegmentation runCircleFittingAndRidgeTraversal(OpenCL, cl::Image3D dataset, SIPL::int3 size, paramList);
 
