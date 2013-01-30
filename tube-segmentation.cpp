@@ -3133,6 +3133,10 @@ void TSFOutput::setCenterlineVoxels(Image3D image) {
 	oclCenterlineVoxels = image;
 }
 
+void TSFOutput::setSize(SIPL::int3 size) {
+	this->size = size;
+}
+
 float * TSFOutput::getTDF() {
 	if(deviceHasTDF) {
 		if(!hostHasTDF) {
@@ -3188,3 +3192,6 @@ char * TSFOutput::getCenterlineVoxels() {
 	}
 }
 
+SIPL::int3 TSFOutput::getSize() {
+	return size;
+}
