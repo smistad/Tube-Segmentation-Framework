@@ -2500,10 +2500,11 @@ TSFOutput * runCircleFittingAndRidgeTraversal(OpenCL * ocl, Image3D dataset, SIP
     TS.radius = new float[totalSize];
     TS.TDF = new float[totalSize];
     ocl->queue.enqueueReadImage(*TDF, CL_TRUE, offset, region, 0, 0, TS.TDF);
+    output->setTDF(TS.TDF);
     ocl->queue.enqueueReadImage(radius, CL_TRUE, offset, region, 0, 0, TS.radius);
     std::stack<CenterlinePoint> centerlineStack;
     TS.centerline = runRidgeTraversal(TS, *size, parameters, centerlineStack);
-    // TODO:: add centerline to TSFOutput
+    output->setCenterlineVoxels(TS.centerline);
 
     if(getParamBool(parameters, "timing")) {
         ocl->queue.finish();
@@ -3087,9 +3088,19 @@ void TSFOutput::setTDF(Image3D * image) {
 	oclTDF = image;
 }
 
+void TSFOutput::setTDF(float * data) {
+	hostHasTDF = true;
+	TDF = data;
+}
+
 void TSFOutput::setSegmentation(Image3D * image) {
 	deviceHasSegmentation = true;
 	oclSegmentation = image;
+}
+
+void TSFOutput::setSegmentation(char * data) {
+	hostHasSegmentation = true;
+	segmentation = data;
 }
 
 void TSFOutput::setCenterlineVoxels(Image3D * image) {
@@ -3097,25 +3108,30 @@ void TSFOutput::setCenterlineVoxels(Image3D * image) {
 	oclCenterlineVoxels = image;
 }
 
+void TSFOutput::setCenterlineVoxels(char * data) {
+	hostHasCenterlineVoxels = true;
+	centerlineVoxels = data;
+}
+
 void TSFOutput::setSize(SIPL::int3 * size) {
 	this->size = size;
 }
 
 float * TSFOutput::getTDF() {
-	if(deviceHasTDF) {
-		if(!hostHasTDF) {
-			// Transfer data from device to host
-			cl::size_t<3> origin;
-			origin[0] = 0;
-			origin[1] = 0;
-			origin[2] = 0;
-			cl::size_t<3> region;
-			region[0] = size->x;
-			region[1] = size->y;
-			region[2] = size->z;
-			TDF = new float[size->x*size->y*size->z];
-			ocl->queue.enqueueReadImage(*oclTDF,CL_TRUE, origin, region, 0, 0, TDF);			hostHasTDF = true;
-		}
+	if(hostHasTDF) {
+		return TDF;
+	} else if(deviceHasTDF) {
+		// Transfer data from device to host
+		cl::size_t<3> origin;
+		origin[0] = 0;
+		origin[1] = 0;
+		origin[2] = 0;
+		cl::size_t<3> region;
+		region[0] = size->x;
+		region[1] = size->y;
+		region[2] = size->z;
+		TDF = new float[size->x*size->y*size->z];
+		ocl->queue.enqueueReadImage(*oclTDF,CL_TRUE, origin, region, 0, 0, TDF);		hostHasTDF = true;
 		return TDF;
 	} else {
 		throw SIPL::SIPLException("Trying to fetch non existing data from TSFOutput", __LINE__, __FILE__);
@@ -3123,21 +3139,21 @@ float * TSFOutput::getTDF() {
 }
 
 char * TSFOutput::getSegmentation() {
-	if(deviceHasSegmentation) {
-		if(!hostHasSegmentation) {
-			// Transfer data from device to host
-			cl::size_t<3> origin;
-			origin[0] = 0;
-			origin[1] = 0;
-			origin[2] = 0;
-			cl::size_t<3> region;
-			region[0] = size->x;
-			region[1] = size->y;
-			region[2] = size->z;
-			segmentation = new char[size->x*size->y*size->z];
-			ocl->queue.enqueueReadImage(*oclSegmentation,CL_TRUE, origin, region, 0, 0, segmentation);
-			hostHasSegmentation = true;
-		}
+	if(hostHasSegmentation) {
+		return segmentation;
+	} else if(deviceHasSegmentation) {
+		// Transfer data from device to host
+		cl::size_t<3> origin;
+		origin[0] = 0;
+		origin[1] = 0;
+		origin[2] = 0;
+		cl::size_t<3> region;
+		region[0] = size->x;
+		region[1] = size->y;
+		region[2] = size->z;
+		segmentation = new char[size->x*size->y*size->z];
+		ocl->queue.enqueueReadImage(*oclSegmentation,CL_TRUE, origin, region, 0, 0, segmentation);
+		hostHasSegmentation = true;
 		return segmentation;
 	} else {
 		throw SIPL::SIPLException("Trying to fetch non existing data from TSFOutput", __LINE__, __FILE__);
@@ -3145,21 +3161,21 @@ char * TSFOutput::getSegmentation() {
 }
 
 char * TSFOutput::getCenterlineVoxels() {
-	if(deviceHasCenterlineVoxels) {
-		if(!hostHasCenterlineVoxels) {
-			// Transfer data from device to host
-			cl::size_t<3> origin;
-			origin[0] = 0;
-			origin[1] = 0;
-			origin[2] = 0;
-			cl::size_t<3> region;
-			region[0] = size->x;
-			region[1] = size->y;
-			region[2] = size->z;
-			centerlineVoxels = new char[size->x*size->y*size->z];
-			ocl->queue.enqueueReadImage(*oclCenterlineVoxels,CL_TRUE, origin, region, 0, 0, centerlineVoxels);
-			hostHasCenterlineVoxels = true;
-		}
+	if(hostHasCenterlineVoxels) {
+		return centerlineVoxels;
+	} else if(deviceHasCenterlineVoxels) {
+		// Transfer data from device to host
+		cl::size_t<3> origin;
+		origin[0] = 0;
+		origin[1] = 0;
+		origin[2] = 0;
+		cl::size_t<3> region;
+		region[0] = size->x;
+		region[1] = size->y;
+		region[2] = size->z;
+		centerlineVoxels = new char[size->x*size->y*size->z];
+		ocl->queue.enqueueReadImage(*oclCenterlineVoxels,CL_TRUE, origin, region, 0, 0, centerlineVoxels);
+		hostHasCenterlineVoxels = true;
 		return centerlineVoxels;
 	} else {
 		throw SIPL::SIPLException("Trying to fetch non existing data from TSFOutput", __LINE__, __FILE__);

@@ -29,12 +29,15 @@ typedef struct TubeSegmentation {
 class TSFOutput {
 public:
 	TSFOutput(OpenCL * ocl, SIPL::int3 * size);
-	bool hasSegmentation() { return deviceHasSegmentation; };
-	bool hasCenterlineVoxels() { return deviceHasCenterlineVoxels; };
-	bool hasTDF() { return deviceHasTDF; };
+	bool hasSegmentation() { return deviceHasSegmentation || hostHasSegmentation; };
+	bool hasCenterlineVoxels() { return deviceHasCenterlineVoxels || hostHasCenterlineVoxels; };
+	bool hasTDF() { return deviceHasTDF || hostHasTDF; };
 	void setTDF(cl::Image3D *);
 	void setSegmentation(cl::Image3D *);
 	void setCenterlineVoxels(cl::Image3D *);
+	void setTDF(float *);
+	void setSegmentation(char *);
+	void setCenterlineVoxels(char *);
 	void setSize(SIPL::int3 *);
 	char * getSegmentation();
 	char * getCenterlineVoxels();
