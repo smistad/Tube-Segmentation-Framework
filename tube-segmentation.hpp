@@ -31,18 +31,29 @@ public:
 	TSFOutput();
 	bool hasSegmentation();
 	bool hasCenterlineVoxels();
-	bool hasCenterlines();
 	bool hasTDF();
+	void setTDF(cl::Image3D);
+	void setSegmentation(cl::Image3D);
+	void setCenterlineVoxels(cl::Image3D);
 	char * getSegmentation();
 	char * getCenterlineVoxels();
 	float * getTDF();
 	SIPL::int3 getSize();
 	~TSFOutput();
 private:
-	cl::Image3D centerlines;
-	cl::Image3D segmentation;
-	cl::Image3D TDF;
+	cl::Image3D oclCenterlineVoxels;
+	cl::Image3D oclSegmentation;
+	cl::Image3D oclTDF;
 	SIPL::int3 size;
+	bool hostHasSegmentation;
+	bool hostHasCenterlineVoxels;
+	bool hostHasTDF;
+	bool deviceHasTDF;
+	bool deviceHasCenterlineVoxels;
+	bool deviceHasSegmentation;
+	char * segmentation;
+	char * centerlineVoxels;
+	float * TDF;
 };
 
 cl::Image3D readDatasetAndTransfer(OpenCL, std::string, paramList, SIPL::int3 *);

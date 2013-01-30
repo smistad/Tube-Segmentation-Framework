@@ -73,8 +73,7 @@ TSFOutput run(std::string filename, paramList parameters, int argc, char ** argv
     		// Load file and parse parameters
     		std::ifstream file(parameterFilename.c_str());
     		if(!file.is_open()) {
-    			std::cout << "ERROR: could not open parameter file " << parameterFilename << std::endl;
-    			exit(-1);
+    			throw SIPL::IOException(parameterFilename, __LINE__, __FILE__)
     		}
 
     		std::string line;
@@ -118,7 +117,7 @@ TSFOutput run(std::string filename, paramList parameters, int argc, char ** argv
         v.set(false);
         parameters.bools["3d_write"] = v;
         ocl.program = buildProgramFromSource(ocl.context, "kernels_no_3d_write.cl");
-        std::cout << "Writing to 3D textures is not supported on the selected device." << std::endl;
+        std::cout << "NOTE: Writing to 3D textures is not supported on the selected device." << std::endl;
     }
 
     START_TIMER
@@ -135,8 +134,7 @@ TSFOutput run(std::string filename, paramList parameters, int argc, char ** argv
             TS = runCircleFittingAndNewCenterlineAlg(ocl, dataset, size, parameters);
         }
     } catch(cl::Error e) {
-        std::cout << "OpenCL error: " << getCLErrorString(e.err()) << std::endl;
-        return 0;
+        throw SIPL::SIPLException("OpenCL error: " << getCLErrorString(e.err()));
     }
     ocl.queue.finish();
     STOP_TIMER("total")
@@ -666,8 +664,7 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList paramet
 
     std::cout << "Processing " << queue.size() << " valid start points" << std::endl;
     if(queue.size() == 0) {
-    	std::cout << "ERROR: no valid start points found!" << std::endl;
-    	exit(-1);
+    	throw SIPL::SIPLException("no valid start points found", __LINE__, __FILE__);
     }
     STOP_TIMER("finding start points")
     START_TIMER
@@ -2024,8 +2021,7 @@ Image3D runNewCenterlineAlg(OpenCL ocl, SIPL::int3 size, paramList parameters, I
 
     }
     if(sum < 8 || sum >= 16384) {
-    	std::cout << "ERROR: Too many or too few vertices detected." << std::endl;
-    	exit(-1);
+    	throw SIPL::SIPLException("Too many or too few vertices detected", __LINE__, __FILE);
     }
 
 if(getParamBool(parameters, "timing")) {
@@ -2168,14 +2164,11 @@ if(getParamBool(parameters, "timing")) {
 
 	std::cout << "number of edges detected " << hp2.getSum() << std::endl;
     if(hp2.getSum() == 0) {
-        std::cout << "ERROR: No edges were found" << std::endl;
-        exit(-1);
+        throw SIPL::SIPLException("No edges were found", __LINE__, __FILE__);
     } else if(hp2.getSum() > 10000000) {
-    	std::cout << "ERROR: More than 10 million edges found. Must be wrong!" << std::endl;
-    	exit(-1);
+    	throw SIPL::SIPLException("More than 10 million edges found. Must be wrong!", __LINE__, __FILE__);
     } else if(hp2.getSum() < 0){
-    	std::cout << "ERROR: A negative number of edges was found!" << std::endl;
-    	exit(-1);
+    	throw SIPL::SIPLException("A negative number of edges was found!", __LINE__, __FILE__);
     }
 
     // Run create positions kernel on edges
@@ -2191,7 +2184,6 @@ if(getParamBool(parameters, "timing")) {
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
 }
-
 
     // Do graph component labeling
     Buffer C = Buffer(
@@ -2645,8 +2637,7 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
     std::fstream mhdFile;
     mhdFile.open(filename.c_str(), std::fstream::in);
     if(!mhdFile) {
-        std::cout << "Could not find mhd file " << filename << std::endl;
-        exit(-1);
+    	throw SIPL::IOException(filename, __LINE__, __FILE__);
     }
     std::string typeName = "";
     std::string rawFilename = "";
@@ -2693,8 +2684,7 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         typeName = typeName.substr(0,pos);
 
     if(!typeFound || !sizeFound || !rawFilenameFound) {
-        std::cout << "Error reading mhd file. Type, filename or size not found" << std::endl;
-        exit(-1);
+        throw SIPL::SIPLException("Error reading mhd file. Type, filename or size not found", __LINE__, __FILE__);
     }
 
     // Read dataset by memory mapping the file and transfer to device
@@ -2780,8 +2770,7 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         ocl.queue.enqueueWriteImage(dataset, CL_FALSE, offset, region2, 0, 0, data);
         getLimits<float>(parameters, data, totalSize, &minimum, &maximum);
     } else {
-        std::cout << "ERROR: unsupported data type " + typeName << std::endl;
-        exit(-1);
+    	throw SIPL::SIPLException("unsupported data type " + typeName, __LINE__, __FILE__);
     }
 
 
@@ -2932,8 +2921,7 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         int SIZE_Y = y2-y1;
         int SIZE_Z = z2-z1;
         if(SIZE_X == 0 || SIZE_Y == 0 || SIZE_Z == 0) {
-        	std::cout << "ERROR: Invalid cropping to new size " << SIZE_X << ", " << SIZE_Y << ", " << SIZE_Z << std::endl;
-        	exit(-1);
+        	throw SIPL::SIPLException("Invalid cropping to new size " << SIZE_X << ", " << SIZE_Y << ", " << SIZE_Z, __LINE__, __FILE__);
         }
 	    // Make them dividable by 4
 	    bool lower = false;
@@ -3110,3 +3098,47 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
     // Return dataset
     return convertedDataset;
 }
+
+TSFOutput::TSFOutput() {
+	hostHasCenterlineVoxels = false;
+	hostHasSegmentation = false;
+	hostHasTDF = false;
+}
+
+TSFOutput::~TSFOutput() {
+	if(hostHasTDF)
+		delete[] TDF;
+	if(hostHasSegmentation)
+		delete[] segmentation;
+	if(hostHasCenterlineVoxels)
+		delete[] centerlineVoxels;
+}
+
+void TSFOutput::setTDF(Image3D image) {
+	deviceHasTDF = true;
+	oclTDF = image;
+}
+
+void TSFOutput::setSegmentation(Image3D image) {
+	deviceHasSegmentation = true;
+	oclSegmentation = image;
+}
+
+void TSFOutput::setCenterlineVoxels(Image3D image) {
+	deviceHasCenterlineVoxels = true;
+	oclCenterlineVoxels = image;
+}
+
+float * TSFOutput::getTDF() {
+	if(deviceHasTDF) {
+		if(!hostHasTDF) {
+			// Transfer data from device to host
+		}
+		return TDF;
+	} else {
+		throw SIPL::SIPLException("Trying to fetch not existing data from TSFOutput", __LINE__, __FILE__);
+	}
+}
+
+
+
