@@ -15,6 +15,22 @@ using boost::unordered_set;
 #endif
 #include "histogram-pyramids.hpp"
 
+//#define TIMING
+
+#ifdef TIMING
+#include <chrono>
+#define INIT_TIMER auto timerStart = std::chrono::high_resolution_clock::now();
+#define START_TIMER  timerStart = std::chrono::high_resolution_clock::now();
+#define STOP_TIMER(name)  std::cout << "RUNTIME of " << name << ": " << \
+        std::chrono::duration_cast<std::chrono::milliseconds>( \
+                            std::chrono::high_resolution_clock::now()-timerStart \
+                    ).count() << " ms " << std::endl;
+#else
+#define INIT_TIMER
+#define START_TIMER
+#define STOP_TIMER(name)
+#endif
+
 
 // Undefine windows crap
 #ifdef WIN32
@@ -25,6 +41,108 @@ using boost::unordered_set;
 #endif
 
 #define MAX(a,b) a > b ? a : b
+
+
+TSFOutput run(std::string filename, paramList parameters, int argc, char ** argv) {
+
+    INIT_TIMER
+    OpenCL ocl;
+	ocl.context = createCLContextFromArguments(argc, argv);
+
+    // Select first device
+    cl::vector<cl::Device> devices = ocl.context.getInfo<CL_CONTEXT_DEVICES>();
+    std::cout << "Using device: " << devices[0].getInfo<CL_DEVICE_NAME>() << std::endl;
+    ocl.queue = cl::CommandQueue(ocl.context, devices[0], CL_QUEUE_PROFILING_ENABLE);
+
+    // Query the size of available memory
+    unsigned int memorySize = devices[0].getInfo<CL_DEVICE_GLOBAL_MEM_SIZE>();
+    std::cout << "Available memory on selected device " << (double)memorySize/(1024*1024) << " MB "<< std::endl;
+
+
+
+    // Check if parameters is set
+    if(getParamStr(parameters, "parameters") != "none") {
+    	std::string parameterFilename;
+    	if(getParamStr(parameters, "centerline-method") == "gpu") {
+    		parameterFilename = "parameters/centerline-gpu/" + getParamStr(parameters, "parameters");
+    	} else if(getParamStr(parameters, "centerline-method") == "ridge") {
+    		parameterFilename = "parameters/centerline-ridge/" + getParamStr(parameters, "parameters");
+    	}
+    	std::cout << parameterFilename << std::endl;
+    	if(parameterFilename.size() > 0) {
+    		// Load file and parse parameters
+    		std::ifstream file(parameterFilename.c_str());
+    		if(!file.is_open()) {
+    			std::cout << "ERROR: could not open parameter file " << parameterFilename << std::endl;
+    			exit(-1);
+    		}
+
+    		std::string line;
+    		while(!file.eof()) {
+				getline(file, line);
+				if(line.size() == 0)
+					continue;
+    			// split string on the first space
+    			int spacePos = line.find(" ");
+    			if(spacePos != std::string::npos) {
+    				// parameter with value
+					std::string name = line.substr(0, spacePos);
+					std::string value = line.substr(spacePos+1);
+					parameters = setParameter(parameters, name, value);
+    			} else {
+    				// parameter with no value
+    				parameters = setParameter(parameters, line, "true");
+    			}
+    		}
+    		file.close();
+    	}
+    }
+
+    /*
+    // Write out parameter list
+    std::cout << "The following parameters are set: " << std::endl;
+    unordered_map<std::string, std::string>::iterator it;
+    for(it = parameters.begin(); it != parameters.end(); it++) {
+    	std::cout << it->first << " " << it->second << std::endl;
+    }
+    */
+
+    // Compile and create program
+    if(!getParamBool(parameters, "buffers-only") && (int)devices[0].getInfo<CL_DEVICE_EXTENSIONS>().find("cl_khr_3d_image_writes") > -1) {
+        ocl.program = buildProgramFromSource(ocl.context, "kernels.cl");
+        BoolParameter v = parameters.bools["3d_write"];
+        v.set(true);
+        parameters.bools["3d_write"] = v;
+    } else {
+        BoolParameter v = parameters.bools["3d_write"];
+        v.set(false);
+        parameters.bools["3d_write"] = v;
+        ocl.program = buildProgramFromSource(ocl.context, "kernels_no_3d_write.cl");
+        std::cout << "Writing to 3D textures is not supported on the selected device." << std::endl;
+    }
+
+    START_TIMER
+    SIPL::int3 size;
+    TubeSegmentation TS;
+    try {
+        // Read dataset and transfer to device
+        cl::Image3D dataset = readDatasetAndTransfer(ocl, filename, parameters, &size);
+
+        // Run specified method on dataset
+        if(getParamStr(parameters, "centerline-method") == "ridge") {
+            TS = runCircleFittingAndRidgeTraversal(ocl, dataset, size, parameters);
+        } else {
+            TS = runCircleFittingAndNewCenterlineAlg(ocl, dataset, size, parameters);
+        }
+    } catch(cl::Error e) {
+        std::cout << "OpenCL error: " << getCLErrorString(e.err()) << std::endl;
+        return 0;
+    }
+    ocl.queue.finish();
+    STOP_TIMER("total")
+}
+
+
 
 template <typename T>
 void writeToRaw(T * voxels, std::string filename, int SIZE_X, int SIZE_Y, int SIZE_Z) {
@@ -40,21 +158,6 @@ T * readFromRaw(std::string filename, int SIZE_X, int SIZE_Y, int SIZE_Z) {
     fclose(file);
     return data;
 }
-//#define TIMING
-
-#ifdef TIMING
-#include <chrono>
-#define INIT_TIMER auto timerStart = std::chrono::high_resolution_clock::now();
-#define START_TIMER  timerStart = std::chrono::high_resolution_clock::now();
-#define STOP_TIMER(name)  std::cout << "RUNTIME of " << name << ": " << \
-        std::chrono::duration_cast<std::chrono::milliseconds>( \
-                            std::chrono::high_resolution_clock::now()-timerStart \
-                    ).count() << " ms " << std::endl; 
-#else
-#define INIT_TIMER
-#define START_TIMER
-#define STOP_TIMER(name)
-#endif
 
 using SIPL::float3;
 using SIPL::int3;
