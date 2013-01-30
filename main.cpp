@@ -28,16 +28,17 @@ int main(int argc, char ** argv) {
     paramList parameters = getParameters(argc, argv);
     std::string filename = argv[1];
     TSFOutput * output;
+    bool error = false;
     try {
 		output = run(filename, parameters, argc, argv);
     } catch(SIPL::SIPLException e) {
     	std::cout << e.what() << std::endl;
+    	bool error = true;
     }
 
-    SIPL::int3 * size = output->getSize();
-
-    if(getParamBool(parameters, "display")) {
+    if(getParamBool(parameters, "display") && !error) {
         // Visualize result
+		SIPL::int3 * size = output->getSize();
         SIPL::Volume<SIPL::float3> * result = new SIPL::Volume<SIPL::float3>(size->x, size->y, size->z);
         float * TDF;
         char * centerline;
@@ -60,22 +61,9 @@ int main(int argc, char ** argv) {
         }
         result->showMIP(SIPL::Y);
     }
+
     // free data
     output->~TSFOutput();
-    /*
-    if(getParamBool(parameters, "display") || getParamStr(parameters, "storage-dir") != "off" || getParamStr(parameters, "centerline-method") == "ridge") {
-        // Cleanup transferred data
-		if(getParamBool(parameters, "tdf-only")) {
-			delete[] TS.TDF;
-    	} else {
-			delete[] TS.centerline;
-			delete[] TS.TDF;
-			if(!getParamBool(parameters, "no-segmentation"))
-				delete[] TS.segmentation;
-			if(getParamStr(parameters, "centerline-method") == "ridge")
-				delete[] TS.radius;
-    	}
-    }
-    */
+
     return 0;
 }
