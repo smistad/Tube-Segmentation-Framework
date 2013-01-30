@@ -216,3 +216,33 @@ bool StringParameter::validate(string value) {
 	}
 }
 
+float NumericParameter::getMax() const {
+	return max;
+}
+
+void NumericParameter::setMax(float max) {
+	this->max = max;
+}
+
+float NumericParameter::getMin() const {
+	return min;
+}
+
+void NumericParameter::setMin(float min) {
+	this->min = min;
+}
+
+float NumericParameter::getStep() const {
+	return step;
+}
+
+void NumericParameter::setStep(float step) {
+	this->step = step;
+}
+
+std::vector<std::string> StringParameter::getPossibilities() const {
+	return possibilities;
+}
+
+
+
