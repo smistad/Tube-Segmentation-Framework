@@ -2498,6 +2498,7 @@ TSFOutput * runCircleFittingAndRidgeTraversal(OpenCL * ocl, Image3D dataset, SIP
         delete[] Fs;
     }
     TS.radius = new float[totalSize];
+    TS.TDF = new float[totalSize];
     ocl->queue.enqueueReadImage(*TDF, CL_TRUE, offset, region, 0, 0, TS.TDF);
     ocl->queue.enqueueReadImage(radius, CL_TRUE, offset, region, 0, 0, TS.radius);
     std::stack<CenterlinePoint> centerlineStack;
