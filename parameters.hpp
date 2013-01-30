@@ -34,6 +34,12 @@ public:
 	float get();
 	void set(float value);
 	bool validate(float value);
+	float getMax() const;
+	void setMax(float max);
+	float getMin() const;
+	void setMin(float min);
+	float getStep() const;
+	void setStep(float step);
 private:
 	float value;
 	float min;
@@ -48,6 +54,7 @@ public:
 	std::string get();
 	void set(std::string value);
 	bool validate(std::string value);
+	std::vector<std::string> getPossibilities() const;
 private:
 	std::string value;
 	std::vector<std::string> possibilities;
