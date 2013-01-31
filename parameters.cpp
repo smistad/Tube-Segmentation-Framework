@@ -21,6 +21,46 @@ vector<string> split(string str, string delimiter) {
 	return list;
 }
 
+paramList loadParameterPreset(paramList parameters) {
+	// Check if parameters is set
+    if(getParamStr(parameters, "parameters") != "none") {
+    	std::string parameterFilename;
+    	if(getParamStr(parameters, "centerline-method") == "gpu") {
+    		parameterFilename = "parameters/centerline-gpu/" + getParamStr(parameters, "parameters");
+    	} else if(getParamStr(parameters, "centerline-method") == "ridge") {
+    		parameterFilename = "parameters/centerline-ridge/" + getParamStr(parameters, "parameters");
+    	}
+    	std::cout << parameterFilename << std::endl;
+    	if(parameterFilename.size() > 0) {
+    		// Load file and parse parameters
+    		std::ifstream file(parameterFilename.c_str());
+    		if(!file.is_open()) {
+    			throw SIPL::IOException(parameterFilename.c_str(), __LINE__, __FILE__);
+    		}
+
+    		std::string line;
+    		while(!file.eof()) {
+				getline(file, line);
+				if(line.size() == 0)
+					continue;
+    			// split string on the first space
+    			int spacePos = line.find(" ");
+    			if(spacePos != std::string::npos) {
+    				// parameter with value
+					std::string name = line.substr(0, spacePos);
+					std::string value = line.substr(spacePos+1);
+					parameters = setParameter(parameters, name, value);
+    			} else {
+    				// parameter with no value
+    				parameters = setParameter(parameters, line, "true");
+    			}
+    		}
+    		file.close();
+    	}
+    }
+    return parameters;
+}
+
 paramList initParameters() {
 	paramList parameters;
 

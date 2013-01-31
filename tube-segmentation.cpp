@@ -65,54 +65,6 @@ TSFOutput * run(std::string filename, paramList parameters) {
     unsigned int memorySize = devices[0].getInfo<CL_DEVICE_GLOBAL_MEM_SIZE>();
     std::cout << "Available memory on selected device " << (double)memorySize/(1024*1024) << " MB "<< std::endl;
 
-
-
-    // Check if parameters is set
-    if(getParamStr(parameters, "parameters") != "none") {
-    	std::string parameterFilename;
-    	if(getParamStr(parameters, "centerline-method") == "gpu") {
-    		parameterFilename = std::string(PARAMETERS_DIR)+"/centerline-gpu/" + getParamStr(parameters, "parameters");
-    	} else if(getParamStr(parameters, "centerline-method") == "ridge") {
-    		parameterFilename = std::string(PARAMETERS_DIR)+"/centerline-ridge/" + getParamStr(parameters, "parameters");
-    	}
-    	std::cout << parameterFilename << std::endl;
-    	if(parameterFilename.size() > 0) {
-    		// Load file and parse parameters
-    		std::ifstream file(parameterFilename.c_str());
-    		if(!file.is_open()) {
-    			throw SIPL::IOException(parameterFilename.c_str(), __LINE__, __FILE__);
-    		}
-
-    		std::string line;
-    		while(!file.eof()) {
-				getline(file, line);
-				if(line.size() == 0)
-					continue;
-    			// split string on the first space
-    			int spacePos = line.find(" ");
-    			if(spacePos != std::string::npos) {
-    				// parameter with value
-					std::string name = line.substr(0, spacePos);
-					std::string value = line.substr(spacePos+1);
-					parameters = setParameter(parameters, name, value);
-    			} else {
-    				// parameter with no value
-    				parameters = setParameter(parameters, line, "true");
-    			}
-    		}
-    		file.close();
-    	}
-    }
-
-    /*
-    // Write out parameter list
-    std::cout << "The following parameters are set: " << std::endl;
-    unordered_map<std::string, std::string>::iterator it;
-    for(it = parameters.begin(); it != parameters.end(); it++) {
-    	std::cout << it->first << " " << it->second << std::endl;
-    }
-    */
-
     // Compile and create program
     if(!getParamBool(parameters, "buffers-only") && (int)devices[0].getInfo<CL_DEVICE_EXTENSIONS>().find("cl_khr_3d_image_writes") > -1) {
     	std::string filename = std::string(KERNELS_DIR)+"/kernels.cl";
@@ -2480,7 +2432,6 @@ TSFOutput * runCircleFittingAndRidgeTraversal(OpenCL * ocl, Image3D dataset, SIP
 
     START_TIMER
     // Transfer buffer back to host
-
     TS.Fx = new float[totalSize];
     TS.Fy = new float[totalSize];
     TS.Fz = new float[totalSize];
@@ -2507,7 +2458,6 @@ TSFOutput * runCircleFittingAndRidgeTraversal(OpenCL * ocl, Image3D dataset, SIP
         }
         delete[] Fs;
     }
-  
     TS.radius = new float[totalSize];
     TS.TDF = new float[totalSize];
     ocl->queue.enqueueReadImage(*TDF, CL_TRUE, offset, region, 0, 0, TS.TDF);
@@ -2739,7 +2689,6 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
     }
 
 
-
     std::cout << "Dataset of size " << size->x << " " << size->y << " " << size->z << " loaded" << std::endl;
     if(getParamBool(parameters, "timing")) {
         ocl.queue.enqueueMarker(&endEvent);
@@ -2802,7 +2751,6 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         ocl.queue.enqueueReadBuffer(scanLinesInsideX, CL_FALSE, 0, sizeof(short)*size->x, scanLinesX);
         ocl.queue.enqueueReadBuffer(scanLinesInsideY, CL_FALSE, 0, sizeof(short)*size->y, scanLinesY);
         ocl.queue.enqueueReadBuffer(scanLinesInsideZ, CL_FALSE, 0, sizeof(short)*size->z, scanLinesZ);
-
 
         int x1 = 0,x2 = size->x,y1 = 0,y2 = size->y,z1 = 0,z2 = size->z;
         ocl.queue.finish();
