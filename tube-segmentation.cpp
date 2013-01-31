@@ -14,6 +14,7 @@ using std::unordered_set;
 using boost::unordered_set;
 #endif
 #include "histogram-pyramids.hpp"
+#include "tsf-config.h"
 
 //#define TIMING
 
@@ -70,9 +71,9 @@ TSFOutput * run(std::string filename, paramList parameters) {
     if(getParamStr(parameters, "parameters") != "none") {
     	std::string parameterFilename;
     	if(getParamStr(parameters, "centerline-method") == "gpu") {
-    		parameterFilename = "parameters/centerline-gpu/" + getParamStr(parameters, "parameters");
+    		parameterFilename = std::string(PARAMETERS_DIR)+"/centerline-gpu/" + getParamStr(parameters, "parameters");
     	} else if(getParamStr(parameters, "centerline-method") == "ridge") {
-    		parameterFilename = "parameters/centerline-ridge/" + getParamStr(parameters, "parameters");
+    		parameterFilename = std::string(PARAMETERS_DIR)+"/centerline-ridge/" + getParamStr(parameters, "parameters");
     	}
     	std::cout << parameterFilename << std::endl;
     	if(parameterFilename.size() > 0) {
@@ -114,7 +115,8 @@ TSFOutput * run(std::string filename, paramList parameters) {
 
     // Compile and create program
     if(!getParamBool(parameters, "buffers-only") && (int)devices[0].getInfo<CL_DEVICE_EXTENSIONS>().find("cl_khr_3d_image_writes") > -1) {
-        ocl->program = buildProgramFromSource(ocl->context, "kernels.cl");
+    	std::string filename = std::string(KERNELS_DIR)+"/kernels.cl";
+        ocl->program = buildProgramFromSource(ocl->context, filename.c_str());
         BoolParameter v = parameters.bools["3d_write"];
         v.set(true);
         parameters.bools["3d_write"] = v;
@@ -122,7 +124,8 @@ TSFOutput * run(std::string filename, paramList parameters) {
         BoolParameter v = parameters.bools["3d_write"];
         v.set(false);
         parameters.bools["3d_write"] = v;
-        ocl->program = buildProgramFromSource(ocl->context, "kernels_no_3d_write.cl");
+        std::string filename = std::string(KERNELS_DIR)+"/kernels_no_3d_write.cl";
+        ocl->program = buildProgramFromSource(ocl->context, filename.c_str());
         std::cout << "NOTE: Writing to 3D textures is not supported on the selected device." << std::endl;
     }
 

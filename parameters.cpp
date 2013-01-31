@@ -2,6 +2,8 @@
 #include <fstream>
 #include <cmath>
 #include <iostream>
+#include "SIPL/Exceptions.hpp"
+#include "tsf-config.h"
 using namespace std;
 
 vector<string> split(string str, string delimiter) {
@@ -23,7 +25,8 @@ paramList initParameters() {
 	paramList parameters;
 
 	std::ifstream file;
-	file.open("parameters/parameters");
+	std::string filename = std::string(PARAMETERS_DIR)+"/parameters";
+	file.open(filename.c_str());
 	string line;
 	getline(file, line);
 	getline(file, line); // throw away the first comment line
@@ -61,7 +64,8 @@ paramList initParameters() {
 			StringParameter v = StringParameter(defaultValue, list);
 			parameters.strings[name] = v;
 		} else {
-			throw exception();
+	    	std::string str = "Could not parse parameter of type: " + std::string(type);
+	        throw SIPL::SIPLException(str.c_str());
 		}
 
 		getline(file, line);
@@ -77,22 +81,24 @@ paramList setParameter(paramList parameters, string name, string value) {
 		parameters.bools[name] = v;
 	} else if(parameters.numerics.count(name) > 0) {
 		NumericParameter v = parameters.numerics[name];
+		std::replace(value.begin(), value.end(), '.', ',');
 		if(!v.validate(atof(value.c_str()))) {
-			cout << "invalid value for " << name << endl;
-			throw exception();
+	    	std::string str = "invalid value for: " + name;
+	        throw SIPL::SIPLException(str.c_str());
 		}
 		v.set(atof(value.c_str()));
 		parameters.numerics[name] = v;
 	} else if(parameters.strings.count(name) > 0) {
 		StringParameter v = parameters.strings[name];
 		if(!v.validate(value)) {
-			cout << "invalid value for " << name << endl;
-			throw exception();
+	    	std::string str = "invalid value for: " + name;
+	        throw SIPL::SIPLException(str.c_str());
 		}
 		v.set(value);
 		parameters.strings[name] = v;
 	} else {
-		throw exception();
+    	std::string str = "Can not set value for parameter with name: " + name;
+        throw SIPL::SIPLException(str.c_str());
 	}
 
 	return parameters;
@@ -101,8 +107,8 @@ paramList setParameter(paramList parameters, string name, string value) {
 
 float getParam(paramList parameters, string parameterName) {
 	if(parameters.numerics.count(parameterName) == 0) {
-		cout << parameterName << " not found" << endl;
- 		throw exception();
+    	std::string str = "numeric parameter not found: " + parameterName;
+        throw SIPL::SIPLException(str.c_str());
 	}
 	NumericParameter v = parameters.numerics[parameterName];
 	return v.get();
@@ -110,8 +116,8 @@ float getParam(paramList parameters, string parameterName) {
 
 bool getParamBool(paramList parameters, string parameterName) {
 	if(parameters.bools.count(parameterName) == 0) {
-		cout << parameterName << " not found" << endl;
-		throw exception();
+    	std::string str = "bool parameter not found: " + parameterName;
+        throw SIPL::SIPLException(str.c_str());
 	}
 	BoolParameter v = parameters.bools[parameterName];
 	return v.get();
@@ -119,8 +125,8 @@ bool getParamBool(paramList parameters, string parameterName) {
 
 string getParamStr(paramList parameters, string parameterName) {
 	if(parameters.strings.count(parameterName) == 0) {
-		cout << parameterName << " not found" << endl;
-		throw exception();
+    	std::string str = "string parameter not found: " + parameterName;
+        throw SIPL::SIPLException(str.c_str());
 	}
 	StringParameter v = parameters.strings[parameterName];
 	return v.get();
@@ -182,7 +188,7 @@ void NumericParameter::set(float value) {
 }
 
 bool NumericParameter::validate(float value) {
-	return value >= min && value <= max && floor((value-min)/step) == (value-min)/step;
+	return (value >= min) && (value <= max) && (floor((value-min)/step) == (value-min)/step);
 }
 
 StringParameter::StringParameter(string defaultValue, vector<string> possibilities) {
