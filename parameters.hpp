@@ -20,17 +20,19 @@ using boost::tuple;
 class BoolParameter {
 public:
 	BoolParameter() {};
-	BoolParameter(bool defaultValue);
+	BoolParameter(bool defaultValue, std::string description);
 	bool get();
 	void set(bool value);
+	std::string getDescription() const;
 private:
 	bool value;
+	std::string description;
 };
 
 class NumericParameter {
 public:
 	NumericParameter() {};
-	NumericParameter(float defaultValue, float min, float max, float step);
+	NumericParameter(float defaultValue, float min, float max, float step, std::string description);
 	float get();
 	void set(float value);
 	bool validate(float value);
@@ -40,24 +42,28 @@ public:
 	void setMin(float min);
 	float getStep() const;
 	void setStep(float step);
+	std::string getDescription() const;
 private:
 	float value;
 	float min;
 	float max;
 	float step;
+	std::string description;
 };
 
 class StringParameter {
 public:
 	StringParameter() {};
-	StringParameter(std::string defaultValue, std::vector<std::string> possibilities);
+	StringParameter(std::string defaultValue, std::vector<std::string> possibilities, std::string description);
 	std::string get();
 	void set(std::string value);
 	bool validate(std::string value);
 	std::vector<std::string> getPossibilities() const;
+	std::string getDescription() const;
 private:
 	std::string value;
 	std::vector<std::string> possibilities;
+	std::string description;
 };
 typedef struct paramList {
 	unordered_map<std::string, BoolParameter> bools;

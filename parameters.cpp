@@ -42,7 +42,8 @@ paramList initParameters() {
 		string defaultValue = line.substr(0,pos);
 
 		if(type == "bool") {
-			BoolParameter v = BoolParameter(defaultValue == "true");
+			string description = line.substr(pos+2, line.length()-(pos+2)-1);
+			BoolParameter v = BoolParameter(defaultValue == "true", description);
 			parameters.bools[name] = v;
 		} else if(type == "num") {
 			line = line.substr(pos+1);
@@ -53,15 +54,20 @@ paramList initParameters() {
 			float max = atof(line.substr(0,pos).c_str());
 			line = line.substr(pos+1);
 			float step = atof(line.c_str());
-			NumericParameter v = NumericParameter(atof(defaultValue.c_str()), min, max, step);
+
+			int descriptionStart = line.find("\"");
+			string description = line.substr(descriptionStart+1, line.length()-(descriptionStart+1)-1);
+			NumericParameter v = NumericParameter(atof(defaultValue.c_str()), min, max, step, description);
 			parameters.numerics[name] = v;
 		} else if(type == "str") {
 			vector<string> list ;
-			if(line.size() > pos) {
-				list = split(line.substr(pos+1), " ");
+			int descriptionStart = line.find("\"");
+			if(descriptionStart-pos > 1) {
+				list = split(line.substr(pos+1, descriptionStart-(pos+1)), " ");
 			}
 
-			StringParameter v = StringParameter(defaultValue, list);
+			string description = line.substr(descriptionStart+1, line.length()-(descriptionStart+1)-1);
+			StringParameter v = StringParameter(defaultValue, list, description);
 			parameters.strings[name] = v;
 		} else {
 	    	std::string str = "Could not parse parameter of type: " + std::string(type);
@@ -158,8 +164,9 @@ paramList getParameters(int argc, char ** argv) {
 	return parameters;
 }
 
-BoolParameter::BoolParameter(bool defaultValue) {
+BoolParameter::BoolParameter(bool defaultValue, string description) {
 	this->value = defaultValue;
+	this->description = description;
 }
 
 bool BoolParameter::get() {
@@ -170,11 +177,12 @@ void BoolParameter::set(bool value) {
 	this->value = value;
 }
 
-NumericParameter::NumericParameter(float defaultValue, float min, float max, float step) {
+NumericParameter::NumericParameter(float defaultValue, float min, float max, float step, string description) {
 	this->value = defaultValue;
 	this->min = min;
 	this->max = max;
 	this->step = step;
+	this->description = description;
 }
 
 float NumericParameter::get() {
@@ -191,9 +199,10 @@ bool NumericParameter::validate(float value) {
 	return (value >= min) && (value <= max) && (floor((value-min)/step) == (value-min)/step);
 }
 
-StringParameter::StringParameter(string defaultValue, vector<string> possibilities) {
+StringParameter::StringParameter(string defaultValue, vector<string> possibilities, string description) {
 	this->value = defaultValue;
 	this->possibilities = possibilities;
+	this->description = description;
 }
 
 string StringParameter::get() {
@@ -249,6 +258,21 @@ void NumericParameter::setStep(float step) {
 std::vector<std::string> StringParameter::getPossibilities() const {
 	return possibilities;
 }
+
+std::string BoolParameter::getDescription() const {
+	return description;
+}
+
+std::string NumericParameter::getDescription() const {
+	return description;
+}
+
+std::string StringParameter::getDescription() const {
+	return description;
+}
+
+
+
 
 
 
