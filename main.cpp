@@ -3,8 +3,9 @@
 
 int main(int argc, char ** argv) {
 
-    // Parse parameters from program arguments
+    // Load default parameters and parse parameters from program arguments
     paramList parameters = getParameters(argc, argv);
+    // If a parameter preset is given load these values
     parameters = loadParameterPreset(parameters);
     std::string filename = argv[1];
     TSFOutput * output;
