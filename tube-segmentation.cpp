@@ -43,11 +43,17 @@ using boost::unordered_set;
 #define MAX(a,b) a > b ? a : b
 
 
-TSFOutput * run(std::string filename, paramList parameters, int argc, char ** argv) {
+TSFOutput * run(std::string filename, paramList parameters) {
 
     INIT_TIMER
     OpenCL * ocl = new OpenCL;
-	ocl->context = createCLContextFromArguments(argc, argv);
+    cl_device_type type;
+    if(parameters.strings["device"].get() == "gpu") {
+    	type = CL_DEVICE_TYPE_GPU;
+    } else {
+    	type = CL_DEVICE_TYPE_CPU;
+    }
+	ocl->context = createCLContext(type);
 
     // Select first device
     cl::vector<cl::Device> devices = ocl->context.getInfo<CL_CONTEXT_DEVICES>();

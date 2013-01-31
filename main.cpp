@@ -8,13 +8,10 @@ int main(int argc, char ** argv) {
     std::string filename = argv[1];
     TSFOutput * output;
     try {
-		output = run(filename, parameters, argc, argv);
+		output = run(filename, parameters);
     } catch(SIPL::SIPLException e) {
     	std::cout << e.what() << std::endl;
 
-		// free data
-    	if(output != NULL)
-			output->~TSFOutput();
     	return -1;
     }
 
