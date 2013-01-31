@@ -71,6 +71,7 @@ typedef struct paramList {
 	unordered_map<std::string, StringParameter> strings;
 } paramList;
 
+paramList loadParameterPreset(paramList parameters);
 paramList initParameters();
 paramList setParameter(paramList parameters, std::string name, std::string value);
 paramList getParameters(int argc, char ** argv);
