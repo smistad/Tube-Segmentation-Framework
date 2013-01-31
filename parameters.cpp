@@ -177,7 +177,32 @@ paramList getParameters(int argc, char ** argv) {
 	paramList parameters = initParameters();
 
     // Go through each parameter, first parameter is filename
+    // Try to see if the parameters parameter is set
     for(int i = 2; i < argc; i++) {
+        string token = argv[i];
+        if(token.substr(0,2) == "--") {
+            // Check to see if the parameter has a value
+            string nextToken;
+            if(i+1 < argc) {
+                nextToken = argv[i+1];
+                if(nextToken.substr(0,2) == "--") {
+                	nextToken = "";
+                } else {
+					i++;
+                }
+            } else {
+            	nextToken = "";
+            }
+            if(token.substr(2) == "parameters")
+				parameters = setParameter(parameters, token.substr(2), nextToken);
+        }
+    }
+
+    // If a parameter preset is given load these values
+    parameters = loadParameterPreset(parameters);
+
+    // Go through each parameter, first parameter is filename
+	for(int i = 2; i < argc; i++) {
         string token = argv[i];
         if(token.substr(0,2) == "--") {
             // Check to see if the parameter has a value
