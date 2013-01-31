@@ -19,5 +19,14 @@ endif()
 
 find_package(Boost COMPONENTS iostreams REQUIRED)
 
+find_package(GTest)
+if(GTEST_FOUND)
+	message("Google test framework found. Enabling testing ...")
+	add_library(tubeSegmentationLib STATIC main.cpp tube-segmentation.cpp histogram-pyramids.cpp parameters.cpp)
+	target_link_libraries(tubeSegmentationLib OCL-Utilities SIPL ${Boost_LIBRARIES})
+	enable_testing()
+	add_subdirectory(tests)
+endif()
+
 add_executable(tubeSegmentation main.cpp tube-segmentation.cpp histogram-pyramids.cpp parameters.cpp)
 target_link_libraries(tubeSegmentation OCL-Utilities SIPL ${Boost_LIBRARIES})
