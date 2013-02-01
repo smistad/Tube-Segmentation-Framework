@@ -140,7 +140,6 @@ paramList setParameter(paramList parameters, string name, string value) {
 		parameters.bools[name] = v;
 	} else if(parameters.numerics.count(name) > 0) {
 		NumericParameter v = parameters.numerics[name];
-		std::replace(value.begin(), value.end(), '.', ',');
 		if(!v.validate(stringToFloat(value))) {
 	    	std::string str = "invalid value for: " + name;
 	        throw SIPL::SIPLException(str.c_str());
@@ -274,6 +273,7 @@ void NumericParameter::set(float value) {
 }
 
 bool NumericParameter::validate(float value) {
+	std::cout << value << " " << min << " " << step << endl;
 	return (value >= min) && (value <= max) && (floor((value-min)/step) == (value-min)/step);
 }
 
