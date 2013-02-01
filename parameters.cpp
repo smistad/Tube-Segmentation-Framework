@@ -64,7 +64,10 @@ paramList initParameters() {
 	paramList parameters;
 
 	std::ifstream file;
-	file.open("parameters/parameters");
+	std::string filename = "parameters/parameters";
+	file.open(filename.c_str());
+	if(!file.is_open())
+		throw SIPL::IOException(filename.c_str(), __LINE__, __FILE__);
 	string line;
 	getline(file, line);
 	getline(file, line); // throw away the first comment line
