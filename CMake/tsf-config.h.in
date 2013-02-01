@@ -1,0 +1,5 @@
+// directory containing parameter files
+#define PARAMETERS_DIR "@PARAMETERS_DIR@"
+
+// directory containing kernel files
+#define KERNELS_DIR "@KERNELS_DIR@"

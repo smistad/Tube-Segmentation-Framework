@@ -1,6 +1,6 @@
 [submodule "OpenCLUtilities"]
 	path = OpenCLUtilities
-	url = git://github.com/smistad/OpenCLUtilities.git
+	url = https://github.com/SINTEFMedisinskTeknologi/OpenCLUtilities.git
 [submodule "SIPL"]
 	path = SIPL
-	url = git://github.com/smistad/SIPL.git
+	url = https://github.com/SINTEFMedisinskTeknologi/SIPL.git
