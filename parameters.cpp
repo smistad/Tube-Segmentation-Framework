@@ -4,7 +4,18 @@
 #include <iostream>
 #include "SIPL/Exceptions.hpp"
 #include "tsf-config.h"
+#include <locale>
+#include <sstream>
 using namespace std;
+
+float stringToFloat(string str) {
+	float value = 0.0f;
+	istringstream istr(str);
+
+	istr.imbue(locale("C"));
+	istr >> value;
+	return value;
+}
 
 vector<string> split(string str, string delimiter) {
 	vector<string> list;
@@ -91,16 +102,16 @@ paramList initParameters() {
 		} else if(type == "num") {
 			line = line.substr(pos+1);
 			pos = line.find(" ");
-			float min = atof(line.substr(0,pos).c_str());
+			float min = stringToFloat(line.substr(0,pos));
 			line = line.substr(pos+1);
 			pos = line.find(" ");
-			float max = atof(line.substr(0,pos).c_str());
+			float max = stringToFloat(line.substr(0,pos));
 			line = line.substr(pos+1);
-			float step = atof(line.c_str());
+			float step = stringToFloat(line);
 
 			int descriptionStart = line.find("\"");
 			string description = line.substr(descriptionStart+1, line.length()-(descriptionStart+1)-1);
-			NumericParameter v = NumericParameter(atof(defaultValue.c_str()), min, max, step, description);
+			NumericParameter v = NumericParameter(stringToFloat(defaultValue), min, max, step, description);
 			parameters.numerics[name] = v;
 		} else if(type == "str") {
 			vector<string> list ;
@@ -130,12 +141,11 @@ paramList setParameter(paramList parameters, string name, string value) {
 		parameters.bools[name] = v;
 	} else if(parameters.numerics.count(name) > 0) {
 		NumericParameter v = parameters.numerics[name];
-		std::replace(value.begin(), value.end(), '.', ',');
-		if(!v.validate(atof(value.c_str()))) {
+		if(!v.validate(stringToFloat(value))) {
 	    	std::string str = "invalid value for: " + name;
 	        throw SIPL::SIPLException(str.c_str());
 		}
-		v.set(atof(value.c_str()));
+		v.set(stringToFloat(value));
 		parameters.numerics[name] = v;
 	} else if(parameters.strings.count(name) > 0) {
 		StringParameter v = parameters.strings[name];
@@ -264,6 +274,7 @@ void NumericParameter::set(float value) {
 }
 
 bool NumericParameter::validate(float value) {
+	std::cout << value << " " << min << " " << step << endl;
 	return (value >= min) && (value <= max) && (floor((value-min)/step) == (value-min)/step);
 }
 
