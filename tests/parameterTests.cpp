@@ -10,7 +10,9 @@ TEST(ParameterTest, GetDefaultParameters) {
 	EXPECT_EQ("gpu", getParamStr(parameters, "device"));
 	EXPECT_EQ(0.05f, getParam(parameters, "gvf-mu"));
 
+	EXPECT_EQ("Display results", parameters.bools["display"].getDescription());
 	EXPECT_EQ("Which type of processor to use", parameters.strings["device"].getDescription());
+	EXPECT_EQ("Mu regularization constant of GVF", parameters.numerics["gvf-mu"].getDescription());
 }
 
 TEST(ParameterTest, SetParameters) {
