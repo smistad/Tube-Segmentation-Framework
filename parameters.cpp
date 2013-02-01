@@ -37,11 +37,10 @@ paramList loadParameterPreset(paramList parameters) {
     if(getParamStr(parameters, "parameters") != "none") {
     	std::string parameterFilename;
     	if(getParamStr(parameters, "centerline-method") == "gpu") {
-    		parameterFilename = "parameters/centerline-gpu/" + getParamStr(parameters, "parameters");
+    		parameterFilename = std::string(PARAMETERS_DIR)+"/centerline-gpu/" + getParamStr(parameters, "parameters");
     	} else if(getParamStr(parameters, "centerline-method") == "ridge") {
-    		parameterFilename = "parameters/centerline-ridge/" + getParamStr(parameters, "parameters");
+    		parameterFilename = std::string(PARAMETERS_DIR)+"/centerline-ridge/" + getParamStr(parameters, "parameters");
     	}
-    	std::cout << parameterFilename << std::endl;
     	if(parameterFilename.size() > 0) {
     		// Load file and parse parameters
     		std::ifstream file(parameterFilename.c_str());
