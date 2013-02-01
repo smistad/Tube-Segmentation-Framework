@@ -9,6 +9,8 @@ TEST(ParameterTest, GetDefaultParameters) {
 	EXPECT_FALSE(getParamBool(parameters, "display"));
 	EXPECT_EQ("gpu", getParamStr(parameters, "device"));
 	EXPECT_EQ(0.05f, getParam(parameters, "gvf-mu"));
+
+	EXPECT_EQ("Which type of processor to use", parameters.strings["device"].getDescription());
 }
 
 TEST(ParameterTest, SetParameters) {
@@ -30,4 +32,28 @@ TEST(ParameterTest, NumericParameterValidation) {
 	EXPECT_THROW(p.set(0.05), SIPL::SIPLException);
 	EXPECT_THROW(p.set(1.2), SIPL::SIPLException);
 	EXPECT_NO_THROW(p.set(0.4));
+}
+
+TEST(ParameterTest, StringParameterValidation) {
+	StringParameter p;
+	std::vector<std::string> possibilities;
+	possibilities.push_back("test");
+	possibilities.push_back("moretest");
+	possibilities.push_back("evenmoretest");
+
+	ASSERT_NO_THROW(p = StringParameter("test", possibilities, "asd"));
+
+	EXPECT_THROW(p.set("abc"), SIPL::SIPLException);
+}
+
+TEST(ParameterTest, Description) {
+	BoolParameter p(true, "test description");
+	EXPECT_EQ("test description", p.getDescription());
+
+	NumericParameter p2(0.1, 0.1, 0.2, 0.1, "test description");
+	EXPECT_EQ("test description", p2.getDescription());
+
+	std::vector<std::string> possibilities;
+	StringParameter p3("asd", possibilities, "test description");
+	EXPECT_EQ("test description", p3.getDescription());
 }
