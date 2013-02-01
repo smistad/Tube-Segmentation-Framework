@@ -50,7 +50,6 @@ endif()
 ###########
 find_package(Boost COMPONENTS iostreams REQUIRED)
 
-
 #------------------------------------------------------------------------------
 # Where to look for includes and libraries
 #------------------------------------------------------------------------------
@@ -73,6 +72,17 @@ target_link_libraries(tubeSegmentationLib OCL-Utilities SIPL ${Boost_LIBRARIES} 
 ###########
 add_executable(tubeSegmentation main.cpp tube-segmentation.cpp histogram-pyramids.cpp parameters.cpp)
 target_link_libraries(tubeSegmentation SIPL OCL-Utilities ${Boost_LIBRARIES} ${OPENCL_LIBRARIES})
+
+#------------------------------------------------------------------------------
+# Testing
+#------------------------------------------------------------------------------
+find_package(GTest)
+if(GTEST_FOUND)
+	message("Google test framework found. Enabling testing ...")
+	target_link_libraries(tubeSegmentationLib OCL-Utilities SIPL ${Boost_LIBRARIES})
+	enable_testing()
+	add_subdirectory(tests)
+endif()
 
 #------------------------------------------------------------------------------
 # Configure file for find_package module 

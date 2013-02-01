@@ -6,7 +6,7 @@ m-low 0.2
 max-below-tdf-low 2
 small-blur 0.0
 large-blur 1.0
-cropping
+cropping lung
 minimum -1024
 maximum -100
 min-tree-length 200

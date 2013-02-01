@@ -2,6 +2,6 @@ mode black
 min-mean-tdf 0.5
 small-blur 0.0
 large-blur 1.0
-cropping
+cropping lung
 minimum -1024
 maximum -100
