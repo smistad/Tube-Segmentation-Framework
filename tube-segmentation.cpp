@@ -44,7 +44,7 @@ using boost::unordered_set;
 #define MAX(a,b) a > b ? a : b
 
 
-TSFOutput * run(std::string filename, paramList parameters) {
+TSFOutput * run(std::string filename, paramList &parameters) {
 
     INIT_TIMER
     OpenCL * ocl = new OpenCL;
@@ -572,7 +572,7 @@ void doEigen(TubeSegmentation &T, int3 pos, int3 size, float3 * lambda, float3 *
 }
 
 
-char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList parameters, std::stack<CenterlinePoint> centerlineStack) {
+char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList &parameters, std::stack<CenterlinePoint> centerlineStack) {
 
     float Thigh = getParam(parameters, "tdf-high"); // 0.6
     int Dmin = getParam(parameters, "min-distance");
@@ -932,7 +932,7 @@ float * createBlurMask(float sigma, int * maskSizePointer) {
     return mask;
 }
 
-void runCircleFittingMethod(OpenCL ocl, Image3D &dataset, SIPL::int3 size, paramList parameters, Image3D &vectorField, Image3D &TDF, Image3D &radiusImage) {
+void runCircleFittingMethod(OpenCL &ocl, Image3D &dataset, SIPL::int3 size, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radiusImage) {
     // Set up parameters
     const int GVFIterations = getParam(parameters, "gvf-iterations");
     const float radiusMin = getParam(parameters, "radius-min");
@@ -1768,7 +1768,7 @@ if(getParamBool(parameters, "timing")) {
     return volume;
 }
 
-Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList parameters, Image3D &vectorField, Image3D &TDF, Image3D &radius, Image3D &intensity) {
+Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radius, Image3D &intensity) {
     const int totalSize = size.x*size.y*size.z;
 	const bool no3Dwrite = !getParamBool(parameters, "3d_write");
     const int cubeSize = getParam(parameters, "cube-size");
@@ -2366,7 +2366,7 @@ void writeDataToDisk(TSFOutput * output, std::string storageDirectory) {
 		writeToRaw<char>(output->getSegmentation(), storageDirectory + "segmentation.raw", size->x, size->y, size->z);
 }
 
-TSFOutput * runCircleFittingAndNewCenterlineAlg(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * size, paramList parameters) {
+TSFOutput * runCircleFittingAndNewCenterlineAlg(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * size, paramList &parameters) {
     INIT_TIMER
     Image3D vectorField, radius;
     Image3D * TDF = new Image3D;
@@ -2407,7 +2407,7 @@ TSFOutput * runCircleFittingAndNewCenterlineAlg(OpenCL * ocl, cl::Image3D &datas
     return output;
 }
 
-TSFOutput * runCircleFittingAndRidgeTraversal(OpenCL * ocl, Image3D &dataset, SIPL::int3 * size, paramList parameters) {
+TSFOutput * runCircleFittingAndRidgeTraversal(OpenCL * ocl, Image3D &dataset, SIPL::int3 * size, paramList &parameters) {
     
     INIT_TIMER
     cl::Event startEvent, endEvent;
@@ -2539,7 +2539,7 @@ void getLimits(paramList parameters, void * data, const int totalSize, float * m
 }
 
 boost::iostreams::mapped_file_source * file;
-Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList parameters, SIPL::int3 * size) {
+Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &parameters, SIPL::int3 * size) {
     cl_ulong start, end;
     Event startEvent, endEvent;
     if(getParamBool(parameters, "timing")) {
