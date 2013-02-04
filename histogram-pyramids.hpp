@@ -16,30 +16,30 @@ class HistogramPyramid {
 
 class HistogramPyramid2D : public HistogramPyramid {
     public:
-        HistogramPyramid2D(OpenCL);
-        void create(cl::Image2D, int, int);
+        HistogramPyramid2D(OpenCL & ocl);
+        void create(cl::Image2D &image, int, int);
         cl::Buffer createPositionBuffer();
-        void traverse(cl::Kernel, int);
+        void traverse(cl::Kernel &kernel, int);
     private:
         std::vector<cl::Image2D> HPlevels;
 };
 
 class HistogramPyramid3D : public HistogramPyramid {
     public:
-        HistogramPyramid3D(OpenCL);
-        void create(cl::Image3D, int, int, int);
+        HistogramPyramid3D(OpenCL &ocl);
+        void create(cl::Image3D &image, int, int, int);
         cl::Buffer createPositionBuffer();
-        void traverse(cl::Kernel, int);
+        void traverse(cl::Kernel &kernel, int);
     private:
         std::vector<cl::Image3D> HPlevels;
 };
 
 class HistogramPyramid3DBuffer : public HistogramPyramid {
     public:
-        HistogramPyramid3DBuffer(OpenCL);
-        void create(cl::Buffer, int, int, int);
+        HistogramPyramid3DBuffer(OpenCL &ocl);
+        void create(cl::Buffer &buffer, int, int, int);
         cl::Buffer createPositionBuffer();
-        void traverse(cl::Kernel, int);
+        void traverse(cl::Kernel &kernel, int);
     private:
         std::vector<cl::Buffer> HPlevels;
 };
