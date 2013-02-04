@@ -63,9 +63,9 @@ private:
 
 cl::Image3D readDatasetAndTransfer(OpenCL, std::string, paramList, SIPL::int3 *);
 
-TSFOutput * runCircleFittingAndRidgeTraversal(OpenCL *, cl::Image3D dataset, SIPL::int3 * size, paramList);
+TSFOutput * runCircleFittingAndRidgeTraversal(OpenCL *, cl::Image3D &dataset, SIPL::int3 * size, paramList);
 
-TSFOutput * runCircleFittingAndNewCenterlineAlg(OpenCL *, cl::Image3D dataset, SIPL::int3 * size, paramList);
+TSFOutput * runCircleFittingAndNewCenterlineAlg(OpenCL *, cl::Image3D &dataset, SIPL::int3 * size, paramList);
 
 TSFOutput * run(std::string filename, paramList parameters);
 
