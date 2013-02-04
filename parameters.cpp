@@ -141,18 +141,10 @@ paramList setParameter(paramList parameters, string name, string value) {
 		parameters.bools[name] = v;
 	} else if(parameters.numerics.count(name) > 0) {
 		NumericParameter v = parameters.numerics[name];
-		if(!v.validate(stringToFloat(value))) {
-	    	std::string str = "invalid value for: " + name;
-	        throw SIPL::SIPLException(str.c_str());
-		}
 		v.set(stringToFloat(value));
 		parameters.numerics[name] = v;
 	} else if(parameters.strings.count(name) > 0) {
 		StringParameter v = parameters.strings[name];
-		if(!v.validate(value)) {
-	    	std::string str = "invalid value for: " + name;
-	        throw SIPL::SIPLException(str.c_str());
-		}
 		v.set(value);
 		parameters.strings[name] = v;
 	} else {
@@ -256,10 +248,10 @@ void BoolParameter::set(bool value) {
 }
 
 NumericParameter::NumericParameter(float defaultValue, float min, float max, float step, string description) {
-	this->value = defaultValue;
 	this->min = min;
 	this->max = max;
 	this->step = step;
+	this->set(defaultValue);
 	this->description = description;
 }
 
@@ -270,17 +262,18 @@ float NumericParameter::get() {
 void NumericParameter::set(float value) {
 	if(this->validate(value)) {
 		this->value = value;
+	} else {
+		throw SIPL::SIPLException("Error in setting numerical parameter ", __LINE__, __FILE__);
 	}
 }
 
 bool NumericParameter::validate(float value) {
-	std::cout << value << " " << min << " " << step << endl;
-	return (value >= min) && (value <= max) && (floor((value-min)/step) == (value-min)/step);
+	return (value >= min) && (value <= max) && ((float)ceil((value-min)/step) - (float)(value-min)/step < 0.0001);
 }
 
 StringParameter::StringParameter(string defaultValue, vector<string> possibilities, string description) {
-	this->value = defaultValue;
 	this->possibilities = possibilities;
+	this->set(defaultValue);
 	this->description = description;
 }
 
@@ -291,6 +284,8 @@ string StringParameter::get() {
 void StringParameter::set(string value) {
 	if(this->validate(value)) {
 		this->value = value;
+	} else {
+		throw SIPL::SIPLException("Error in setting string parameter", __LINE__, __FILE__);
 	}
 }
 
