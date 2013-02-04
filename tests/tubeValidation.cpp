@@ -100,8 +100,10 @@ TubeValidation validateTube(TSFOutput * output, std::string segmentationPath, st
 		}
 	}
 
+	// voxels with detectedCenterlines == 2 are the ones that are detected, == 1 are those that are not detected
 
-	vector<int3> detectedPoints;
+
+	std::vector<int3> detectedPoints;
 
 	for(int x = 0; x < eCenterlines->getWidth(); x++) {
 	for(int y = 0; y < eCenterlines->getHeight(); y++) {
@@ -112,24 +114,26 @@ TubeValidation validateTube(TSFOutput * output, std::string segmentationPath, st
 			detectedPoints.push_back(current);
 	}}}
 
+	// Fill gaps
 	const int maxDistance = 5;
 	const int width = eCenterlines->getWidth();
 	const int height = eCenterlines->getHeight();
 	for(int i = 0; i < detectedPoints.size(); i++) {
 	for(int j = 0; j < i; j++) {
+		// For each pair of detected points see if there are any undetected points nearby
+		// Do a flood fill from detected point i and see if j is found. If j is found add all undetected points nearby
 		float distance = detectedPoints[i].distance(detectedPoints[j]);
 		if(distance < maxDistance) {
 			int3 direction = detectedPoints[j]-detectedPoints[i];
 
 			std::queue<int3> queue;
 			queue.push(detectedPoints[i]);
-			vector<int3> undetected;
+			std::vector<int3> undetected;
 			unordered_set<int> visited;
-			bool jFound = false;
+			bool jFound = true;
 			while(!queue.empty()) {
 				int3 current = queue.front();
 				queue.pop();
-				visited.insert(current.x+current.y*width+current.z*width*height);
 
 				if(current.distance(detectedPoints[i]) > maxDistance)
 					continue;
@@ -152,10 +156,11 @@ TubeValidation validateTube(TSFOutput * output, std::string segmentationPath, st
 				for(int b = -nSize; b < nSize+1; b++) {
 				for(int c = -nSize; c < nSize+1; c++) {
 					int3 n = current + int3(a,b,c);
-					int3 c = n-detectedPoints[i];
+					//int3 c = n-detectedPoints[i];
 					if(detectedCenterlines->inBounds(n) &&
 							visited.find(n.x+n.y*width+n.z*width*height) == visited.end()) {
 						queue.push(n);
+						visited.insert(current.x+current.y*width+current.z*width*height);
 					}
 				}}}
 			}
@@ -174,8 +179,12 @@ TubeValidation validateTube(TSFOutput * output, std::string segmentationPath, st
 	for(int i = 0; i < detectedCenterlines->getTotalSize(); i++) {
 		if(detectedCenterlines->get(i) == 1) {
 			undetected++;
+			float3 v = visualization->get(i);
+			v.z = 1.0f;
+			visualization->set(i, v);
 		} else if(detectedCenterlines->get(i) == 2) {
 			float3 v = visualization->get(i);
+			// is it newly detected?
 			if(v.x != 1.0) {
 				v.y = 1.0;
 			}
