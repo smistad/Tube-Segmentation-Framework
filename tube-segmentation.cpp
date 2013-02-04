@@ -43,8 +43,25 @@ using boost::unordered_set;
 
 #define MAX(a,b) a > b ? a : b
 
+void print(paramList parameters){
+	unordered_map<std::string, BoolParameter>::iterator bIt;
+	unordered_map<std::string, NumericParameter>::iterator nIt;
+	unordered_map<std::string, StringParameter>::iterator sIt;
+
+	for(bIt = parameters.bools.begin(); bIt != parameters.bools.end(); ++bIt){
+		std::cout << bIt->first << " = " << bIt->second.get() << std::endl;
+	}
+
+	for(nIt = parameters.numerics.begin(); nIt != parameters.numerics.end(); ++nIt){
+		std::cout << nIt->first << " = " << nIt->second.get() << std::endl;
+	}
+	for(sIt = parameters.strings.begin(); sIt != parameters.strings.end(); ++sIt){
+		std::cout << sIt->first << " = " << sIt->second.get() << std::endl;
+	}
+}
 
 TSFOutput * run(std::string filename, paramList parameters) {
+	//print(parameters);
 
     INIT_TIMER
     OpenCL * ocl = new OpenCL;
@@ -2638,7 +2655,7 @@ Image3D readDatasetAndTransfer(OpenCL ocl, std::string filename, paramList param
         dataset = Image3D(
                 ocl.context, 
                 CL_MEM_READ_ONLY,
-                ImageFormat(CL_R, CL_UNSIGNED_INT16),
+                imageFormat,
                 size->x, size->y, size->z
         );
         data = (void *)file->data();

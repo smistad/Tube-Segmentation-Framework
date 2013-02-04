@@ -137,7 +137,8 @@ paramList initParameters() {
 paramList setParameter(paramList parameters, string name, string value) {
 	if(parameters.bools.count(name) > 0) {
 		BoolParameter v = parameters.bools[name];
-		v.set(true);
+		bool boolValue = (value == "true") ? true : false;
+		v.set(boolValue);
 		parameters.bools[name] = v;
 	} else if(parameters.numerics.count(name) > 0) {
 		NumericParameter v = parameters.numerics[name];
