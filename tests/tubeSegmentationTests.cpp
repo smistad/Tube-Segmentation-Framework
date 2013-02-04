@@ -22,10 +22,6 @@ TubeValidation runSyntheticData(paramList parameters) {
 			std::string(TESTDATA_PATH) + std::string("synthetic/real_centerline.mhd")
 	);
 
-	EXPECT_GT(1.5, result.averageDistanceFromCenterline);
-	EXPECT_LT(60.0, result.percentageExtractedCenterlines);
-	EXPECT_LT(0.7, result.precision);
-	EXPECT_LT(0.7, result.recall);
 	delete output;
 	return result;
 }
@@ -34,30 +30,50 @@ TEST(TubeSegmentation, SystemTestWithSyntheticDataPCE) {
 	paramList parameters = initParameters();
 	parameters = setParameter(parameters, "parameters", "vascusynth");
 	parameters = loadParameterPreset(parameters);
+	TubeValidation result;
 
 	// Normal execution
-	runSyntheticData(parameters);
+	result = runSyntheticData(parameters);
+	EXPECT_GT(1.5, result.averageDistanceFromCenterline);
+	EXPECT_LT(60.0, result.percentageExtractedCenterlines);
+	EXPECT_LT(0.7, result.precision);
+	EXPECT_LT(0.7, result.recall);
 
 	// 32 bit 3D textures
 	parameters = setParameter(parameters, "buffers-only", "false");
 	parameters = setParameter(parameters, "32bit-vectors", "true");
-	runSyntheticData(parameters);
+	result = runSyntheticData(parameters);
+	EXPECT_GT(1.5, result.averageDistanceFromCenterline);
+	EXPECT_LT(60.0, result.percentageExtractedCenterlines);
+	EXPECT_LT(0.7, result.precision);
+	EXPECT_LT(0.7, result.recall);
 
 	// 32 bit buffers
 	parameters = setParameter(parameters, "buffers-only", "true");
 	parameters = setParameter(parameters, "32bit-vectors", "true");
-	runSyntheticData(parameters);
+	result = runSyntheticData(parameters);
+	EXPECT_GT(1.5, result.averageDistanceFromCenterline);
+	EXPECT_LT(60.0, result.percentageExtractedCenterlines);
+	EXPECT_LT(0.7, result.precision);
+	EXPECT_LT(0.7, result.recall);
 
 	// 16 bit 3D textures
 	parameters = setParameter(parameters, "buffers-only", "false");
 	parameters = setParameter(parameters, "32bit-vectors", "false");
-	runSyntheticData(parameters);
+	result = runSyntheticData(parameters);
+	EXPECT_GT(1.5, result.averageDistanceFromCenterline);
+	EXPECT_LT(60.0, result.percentageExtractedCenterlines);
+	EXPECT_LT(0.7, result.precision);
+	EXPECT_LT(0.7, result.recall);
 
 	// 16 bit buffers
 	parameters = setParameter(parameters, "buffers-only", "true");
 	parameters = setParameter(parameters, "32bit-vectors", "false");
-	runSyntheticData(parameters);
-
+	result = runSyntheticData(parameters);
+	EXPECT_GT(1.5, result.averageDistanceFromCenterline);
+	EXPECT_LT(60.0, result.percentageExtractedCenterlines);
+	EXPECT_LT(0.7, result.precision);
+	EXPECT_LT(0.7, result.recall);
 }
 
 TEST(TubeSegmentation, SystemTestWithSyntheticDataRidgeTraversal) {
@@ -65,5 +81,48 @@ TEST(TubeSegmentation, SystemTestWithSyntheticDataRidgeTraversal) {
 	parameters = setParameter(parameters, "parameters", "vascusynth");
 	parameters = setParameter(parameters, "centerline-method", "ridge");
 	parameters = loadParameterPreset(parameters);
-	runSyntheticData(parameters);
+
+	TubeValidation result;
+
+	result = runSyntheticData(parameters);
+	EXPECT_GT(1.5, result.averageDistanceFromCenterline);
+	EXPECT_LT(54.0, result.percentageExtractedCenterlines);
+	EXPECT_LT(0.7, result.precision);
+	EXPECT_LT(0.6, result.recall);
+
+	// 32 bit 3D textures
+	parameters = setParameter(parameters, "buffers-only", "false");
+	parameters = setParameter(parameters, "32bit-vectors", "true");
+	result = runSyntheticData(parameters);
+	EXPECT_GT(1.5, result.averageDistanceFromCenterline);
+	EXPECT_LT(54.0, result.percentageExtractedCenterlines);
+	EXPECT_LT(0.7, result.precision);
+	EXPECT_LT(0.6, result.recall);
+
+	// 32 bit buffers
+	parameters = setParameter(parameters, "buffers-only", "true");
+	parameters = setParameter(parameters, "32bit-vectors", "true");
+	result = runSyntheticData(parameters);
+	EXPECT_GT(1.5, result.averageDistanceFromCenterline);
+	EXPECT_LT(54.0, result.percentageExtractedCenterlines);
+	EXPECT_LT(0.7, result.precision);
+	EXPECT_LT(0.6, result.recall);
+
+	// 16 bit 3D textures
+	parameters = setParameter(parameters, "buffers-only", "false");
+	parameters = setParameter(parameters, "32bit-vectors", "false");
+	result = runSyntheticData(parameters);
+	EXPECT_GT(1.5, result.averageDistanceFromCenterline);
+	EXPECT_LT(54.0, result.percentageExtractedCenterlines);
+	EXPECT_LT(0.7, result.precision);
+	EXPECT_LT(0.6, result.recall);
+
+	// 16 bit buffers
+	parameters = setParameter(parameters, "buffers-only", "true");
+	parameters = setParameter(parameters, "32bit-vectors", "false");
+	result = runSyntheticData(parameters);
+	EXPECT_GT(1.5, result.averageDistanceFromCenterline);
+	EXPECT_LT(54.0, result.percentageExtractedCenterlines);
+	EXPECT_LT(0.7, result.precision);
+	EXPECT_LT(0.6, result.recall);
 }
