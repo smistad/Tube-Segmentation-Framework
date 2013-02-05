@@ -107,6 +107,7 @@ configure_file (
 
 set(PARAMETERS_DIR ${PROJECT_SOURCE_DIR}/parameters)
 set(KERNELS_DIR ${PROJECT_SOURCE_DIR})
+set(TESTDATA_DIR ${PROJECT_SOURCE_DIR}/tests/data)
 
 configure_file(
  "${PROJECT_SOURCE_DIR}/CMake/tsf-config.h.in"
