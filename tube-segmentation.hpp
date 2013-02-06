@@ -44,21 +44,25 @@ public:
 	float * getTDF();
 	SIPL::int3 * getSize();
 	~TSFOutput();
+	SIPL::int3 getShiftVector() const;
+	void setShiftVector(SIPL::int3 shiftVector);
+
 private:
-	cl::Image3D * oclCenterlineVoxels;
-	cl::Image3D * oclSegmentation;
-	cl::Image3D * oclTDF;
-	SIPL::int3 * size;
+	cl::Image3D* oclCenterlineVoxels;
+	cl::Image3D* oclSegmentation;
+	cl::Image3D* oclTDF;
+	SIPL::int3* size;
+	SIPL::int3 shiftVector;
 	bool hostHasSegmentation;
 	bool hostHasCenterlineVoxels;
 	bool hostHasTDF;
 	bool deviceHasTDF;
 	bool deviceHasCenterlineVoxels;
 	bool deviceHasSegmentation;
-	char * segmentation;
-	char * centerlineVoxels;
-	float * TDF;
-	OpenCL * ocl;
+	char* segmentation;
+	char* centerlineVoxels;
+	float* TDF;
+	OpenCL* ocl;
 };
 
 cl::Image3D readDatasetAndTransfer(OpenCL &ocl, std::string, paramList &parameters, SIPL::int3 *);

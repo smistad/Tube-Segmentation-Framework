@@ -61,3 +61,12 @@ TEST(TSFOutputTest, GetSize) {
 	EXPECT_EQ(1, output.getSize()->z);
 }
 
+TEST(TSFOutputTest, ShiftVector) {
+	SIPL::int3 shiftVector(3, 10, 2);
+	TSFOutput output(new OpenCL, new SIPL::int3);
+	output.setShiftVector(shiftVector);
+	EXPECT_EQ(3, output.getShiftVector().x);
+	EXPECT_EQ(10, output.getShiftVector().y);
+	EXPECT_EQ(2, output.getShiftVector().z);
+}
+
