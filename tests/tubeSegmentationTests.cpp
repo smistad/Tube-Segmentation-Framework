@@ -44,13 +44,14 @@ protected:
 
 
 TubeValidation runSyntheticData(paramList parameters) {
+	std::string datasetNr = "1";
 	TSFOutput * output;
-	(output = run(std::string(TESTDATA_DIR) + std::string("/synthetic/dataset_1/noisy.mhd"), parameters));
+	output = run(std::string(TESTDATA_DIR) + std::string("/synthetic/dataset_") + datasetNr + std::string("/noisy.mhd"), parameters);
 
 	TubeValidation result = validateTube(
 			output,
-			std::string(TESTDATA_DIR) + std::string("/synthetic/dataset_1/original.mhd"),
-			std::string(TESTDATA_DIR) + std::string("/synthetic/dataset_1/real_centerline.mhd")
+			std::string(TESTDATA_DIR) + std::string("/synthetic/dataset_") + datasetNr + std::string("/original.mhd"),
+			std::string(TESTDATA_DIR) + std::string("/synthetic/dataset_") + datasetNr + std::string("/real_centerline.mhd")
 	);
 
 	delete output;
@@ -64,7 +65,7 @@ TEST_F(TubeSegmentationPCE, SystemTestWithSyntheticDataNormal) {
 	parameters = setParameter(parameters, "buffers-only", "false");
 	parameters = setParameter(parameters, "32bit-vectors", "false");
 	EXPECT_GT(1.5, result.averageDistanceFromCenterline);
-	EXPECT_LT(79.0, result.percentageExtractedCenterlines);
+	EXPECT_LT(75.0, result.percentageExtractedCenterlines);
 	EXPECT_LT(0.7, result.precision);
 	EXPECT_LT(0.7, result.recall);
 }
@@ -75,7 +76,7 @@ TEST_F(TubeSegmentationPCE, SystemTestWithSyntheticData32bit) {
 	parameters = setParameter(parameters, "32bit-vectors", "true");
 	result = runSyntheticData(parameters);
 	EXPECT_GT(1.5, result.averageDistanceFromCenterline);
-	EXPECT_LT(79.0, result.percentageExtractedCenterlines);
+	EXPECT_LT(75.0, result.percentageExtractedCenterlines);
 	EXPECT_LT(0.7, result.precision);
 	EXPECT_LT(0.7, result.recall);
 }
@@ -86,7 +87,7 @@ TEST_F(TubeSegmentationPCE, SystemTestWithSyntheticData32bitBuffers) {
 	parameters = setParameter(parameters, "32bit-vectors", "true");
 	result = runSyntheticData(parameters);
 	EXPECT_GT(1.5, result.averageDistanceFromCenterline);
-	EXPECT_LT(79.0, result.percentageExtractedCenterlines);
+	EXPECT_LT(75.0, result.percentageExtractedCenterlines);
 	EXPECT_LT(0.7, result.precision);
 	EXPECT_LT(0.7, result.recall);
 }
@@ -97,7 +98,7 @@ TEST_F(TubeSegmentationPCE, SystemTestWithSyntheticData16bitBuffers) {
 	parameters = setParameter(parameters, "32bit-vectors", "false");
 	result = runSyntheticData(parameters);
 	EXPECT_GT(1.5, result.averageDistanceFromCenterline);
-	EXPECT_LT(79.0, result.percentageExtractedCenterlines);
+	EXPECT_LT(75.0, result.percentageExtractedCenterlines);
 	EXPECT_LT(0.7, result.precision);
 	EXPECT_LT(0.7, result.recall);
 }
