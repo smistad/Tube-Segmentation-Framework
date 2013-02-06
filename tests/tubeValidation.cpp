@@ -22,11 +22,12 @@ TubeValidation validateTube(TSFOutput * output, std::string segmentationPath, st
 	// /home/smistad/Dropbox/Programmering/Tube-Segmentation-Framework/tubeSegmentation /home/smistad/Dropbox/Programmering/Tube-Validation/noisy0.mhd --parameters vascusynth --storage-dir /home/smistad/Dropbox/Programmering/Tube-Validation/
 	// Then run this program.
 
-	Volume<char> * centerlines = new Volume<char>(centerlinePath.c_str());
-	Volume<char> * detectedCenterlines = new Volume<char>(centerlines);
+	Volume<char> * realCenterlines = new Volume<char>(centerlinePath.c_str());
+	Volume<char> * detectedCenterlines = new Volume<char>(realCenterlines);
 
 	Volume<uchar> * original = new Volume<uchar>(segmentationPath.c_str());
 
+	/*// For visualization
 	Volume<float2> * combined = new Volume<float2>(original->getSize());
 	for(int i = 0; i < original->getTotalSize();i++) {
 		float2 v;
@@ -36,38 +37,54 @@ TubeValidation validateTube(TSFOutput * output, std::string segmentationPath, st
 		v.y = centerlines->get(i);
 		combined->set(i, v);
 	}
-	//combined->showMIP();
+	combined->showMIP();
+	*/
 
 	// load extracted centerlines
-	Volume<char> * eCenterlines = new Volume<char>(*(output->getSize()));
-	eCenterlines->setData(output->getCenterlineVoxels());
+	Volume<char> * extractedCenterlines = new Volume<char>(*(output->getSize()));
+	extractedCenterlines->setData(output->getCenterlineVoxels());
 
 	// For each extracted centerline point, find the closest real centerpoint.
 	float avgDistance = 0.0f;
 	int counter = 0;
-	for(int x = 0; x < eCenterlines->getWidth(); x++) {
-	for(int y = 0; y < eCenterlines->getHeight(); y++) {
-	for(int z = 0; z < eCenterlines->getDepth(); z++) {
-		if(eCenterlines->get(x,y,z) == 1) {
+	int incorrectCenterpoints = 0;
+	for(int x = 0; x < extractedCenterlines->getWidth(); x++) {
+	for(int y = 0; y < extractedCenterlines->getHeight(); y++) {
+	for(int z = 0; z < extractedCenterlines->getDepth(); z++) {
+		if(extractedCenterlines->get(x,y,z) == 1) {
 			// Do BFS from this point on the centerlines volume to find closest real centerpoint
 			int3 start(x,y,z);
 			std::queue<int3> queue;
 			unordered_set<int> visited;
 			queue.push(start);
+			bool firstFound = false;
+			float bestDistance;
+			int3 closest;
 
-			while(true) {
+			while(!queue.empty()) {
 				int3 current = queue.front();
 				queue.pop();
-				visited.insert(current.x+current.y*eCenterlines->getWidth()+current.z*eCenterlines->getWidth()*eCenterlines->getHeight());
+				visited.insert(current.x+current.y*extractedCenterlines->getWidth()+current.z*extractedCenterlines->getWidth()*extractedCenterlines->getHeight());
+				if(current.distance(start) > 5) // max distance for finding a closest centerpoint
+					continue;
 
-				if(centerlines->get(current) == 1) {
-					// Centerline found
-					// Mark and measure distance
-					avgDistance += current.distance(start);
-					counter ++;
-					// TODO: should probably add a threshold on the distance for marking here
-					detectedCenterlines->set(current, 2); // mark centerpoint as detected
-					break;
+				if(realCenterlines->get(current) == 1) {
+					float distance = current.distance(start);
+					if(!firstFound) {
+						firstFound = true;
+						bestDistance = distance;
+						closest = current;
+					} else if(bestDistance > distance) {
+						// found a better one
+						bestDistance = distance;
+						closest = current;
+					} else if(distance > bestDistance+2) {
+						// No more better can be found
+						avgDistance += bestDistance;
+						counter ++;
+						detectedCenterlines->set(closest, 2); // mark centerpoint as detected
+						break;
+					}
 				}
 
 				// Add neighbors that are not visited
@@ -75,12 +92,15 @@ TubeValidation validateTube(TSFOutput * output, std::string segmentationPath, st
 				for(int b = -1; b < 2; b++) {
 				for(int c = -1; c < 2; c++) {
 					int3 n = current + int3(a,b,c);
-					if(eCenterlines->inBounds(n) && visited.find(n.x+n.y*eCenterlines->getWidth()+z*eCenterlines->getWidth()*eCenterlines->getHeight()) == visited.end()) {
+					if(extractedCenterlines->inBounds(n) && visited.find(n.x+n.y*extractedCenterlines->getWidth()+z*extractedCenterlines->getWidth()*extractedCenterlines->getHeight()) == visited.end()) {
 						queue.push(n);
 					}
 
 				}}}
 			}
+
+			if(!firstFound)
+				incorrectCenterpoints++;
 		}
 	}}}
 	avgDistance /= counter;
@@ -88,6 +108,7 @@ TubeValidation validateTube(TSFOutput * output, std::string segmentationPath, st
 
 	std::cout << "Centerline result" << std::endl << "--------------------" << std::endl;
 	std::cout << "Average distance from real centerline was: " << avgDistance << " voxels" << std::endl;
+	std::cout << "Number of incorrect centerpoints: " << incorrectCenterpoints << std::endl;
 
 	Volume<float3> * visualization = new Volume<float3>(detectedCenterlines->getSize());
 	for(int i = 0; i < visualization->getTotalSize(); i++) {
@@ -105,9 +126,9 @@ TubeValidation validateTube(TSFOutput * output, std::string segmentationPath, st
 
 	std::vector<int3> detectedPoints;
 
-	for(int x = 0; x < eCenterlines->getWidth(); x++) {
-	for(int y = 0; y < eCenterlines->getHeight(); y++) {
-	for(int z = 0; z < eCenterlines->getDepth(); z++) {
+	for(int x = 0; x < extractedCenterlines->getWidth(); x++) {
+	for(int y = 0; y < extractedCenterlines->getHeight(); y++) {
+	for(int z = 0; z < extractedCenterlines->getDepth(); z++) {
 		int3 current(x,y,z);
 
 		if(detectedCenterlines->get(current) == 2)
@@ -115,9 +136,9 @@ TubeValidation validateTube(TSFOutput * output, std::string segmentationPath, st
 	}}}
 
 	// Fill gaps
-	const int maxDistance = 5;
-	const int width = eCenterlines->getWidth();
-	const int height = eCenterlines->getHeight();
+	const int maxDistance = 4;
+	const int width = extractedCenterlines->getWidth();
+	const int height = extractedCenterlines->getHeight();
 	for(int i = 0; i < detectedPoints.size(); i++) {
 	for(int j = 0; j < i; j++) {
 		// For each pair of detected points see if there are any undetected points nearby
@@ -201,8 +222,8 @@ TubeValidation validateTube(TSFOutput * output, std::string segmentationPath, st
 
 
 	int extracted = 0;
-	for(int i = 0; i < eCenterlines->getTotalSize(); i++) {
-		if(eCenterlines->get(i) == 1)
+	for(int i = 0; i < extractedCenterlines->getTotalSize(); i++) {
+		if(extractedCenterlines->get(i) == 1)
 			extracted++;
 	}
 	std::cout << "Total nr of real centerpoints: " << detected+undetected << std::endl;
