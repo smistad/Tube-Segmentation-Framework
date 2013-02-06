@@ -83,16 +83,16 @@ TSFOutput * run(std::string filename, paramList &parameters) {
 
     START_TIMER
     SIPL::int3 * size = new SIPL::int3();
-    TSFOutput * output;
+    TSFOutput * output = new TSFOutput(ocl, size);
     try {
         // Read dataset and transfer to device
-        cl::Image3D dataset = readDatasetAndTransfer(*ocl, filename, parameters, size);
+        cl::Image3D dataset = readDatasetAndTransfer(*ocl, filename, parameters, size, output);
 
         // Run specified method on dataset
         if(getParamStr(parameters, "centerline-method") == "ridge") {
-            output = runCircleFittingAndRidgeTraversal(ocl, dataset, size, parameters);
+            runCircleFittingAndRidgeTraversal(ocl, dataset, size, parameters, output);
         } else {
-            output = runCircleFittingAndNewCenterlineAlg(ocl, dataset, size, parameters);
+            runCircleFittingAndNewCenterlineAlg(ocl, dataset, size, parameters, output);
         }
     } catch(cl::Error e) {
     	std::string str = "OpenCL error: " + std::string(getCLErrorString(e.err()));
@@ -2366,7 +2366,7 @@ void writeDataToDisk(TSFOutput * output, std::string storageDirectory) {
 		writeToRaw<char>(output->getSegmentation(), storageDirectory + "segmentation.raw", size->x, size->y, size->z);
 }
 
-TSFOutput * runCircleFittingAndNewCenterlineAlg(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * size, paramList &parameters) {
+void runCircleFittingAndNewCenterlineAlg(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * size, paramList &parameters, TSFOutput * output) {
     INIT_TIMER
     Image3D vectorField, radius;
     Image3D * TDF = new Image3D;
@@ -2382,7 +2382,6 @@ TSFOutput * runCircleFittingAndNewCenterlineAlg(OpenCL * ocl, cl::Image3D &datas
     region[1] = size->y;
     region[2] = size->z;
 
-    TSFOutput * output = new TSFOutput(ocl, size);
     runCircleFittingMethod(*ocl, dataset, *size, parameters, vectorField, *TDF, radius);
     output->setTDF(TDF);
 
@@ -2404,10 +2403,9 @@ TSFOutput * runCircleFittingAndNewCenterlineAlg(OpenCL * ocl, cl::Image3D &datas
 		writeDataToDisk(output, getParamStr(parameters, "storage-dir"));
     }
 
-    return output;
 }
 
-TSFOutput * runCircleFittingAndRidgeTraversal(OpenCL * ocl, Image3D &dataset, SIPL::int3 * size, paramList &parameters) {
+void runCircleFittingAndRidgeTraversal(OpenCL * ocl, Image3D &dataset, SIPL::int3 * size, paramList &parameters, TSFOutput * output) {
     
     INIT_TIMER
     cl::Event startEvent, endEvent;
@@ -2415,7 +2413,6 @@ TSFOutput * runCircleFittingAndRidgeTraversal(OpenCL * ocl, Image3D &dataset, SI
     Image3D vectorField, radius;
     Image3D * TDF = new Image3D;
     TubeSegmentation TS;
-    TSFOutput * output = new TSFOutput(ocl, size);
     runCircleFittingMethod(*ocl, dataset, *size, parameters, vectorField, *TDF, radius);
     output->setTDF(TDF);
     const int totalSize = size->x*size->y*size->z;
@@ -2489,7 +2486,6 @@ TSFOutput * runCircleFittingAndRidgeTraversal(OpenCL * ocl, Image3D &dataset, SI
         writeDataToDisk(output, getParamStr(parameters, "storage-dir"));
     }
 
-    return output;
 }
 
 
@@ -2539,7 +2535,7 @@ void getLimits(paramList parameters, void * data, const int totalSize, float * m
 }
 
 boost::iostreams::mapped_file_source * file;
-Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &parameters, SIPL::int3 * size) {
+Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &parameters, SIPL::int3 * size, TSFOutput * output) {
     cl_ulong start, end;
     Event startEvent, endEvent;
     if(getParamBool(parameters, "timing")) {
@@ -2700,6 +2696,7 @@ Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &par
     }
     // Perform cropping if required
     std::string cropping = getParamStr(parameters, "cropping");
+    SIPL::int3 shiftVector;
     if(cropping == "lung" || cropping == "threshold") {
         std::cout << "performing cropping" << std::endl;
         Kernel cropDatasetKernel;
@@ -2901,6 +2898,9 @@ Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &par
         srcOffset[0] = x1;
         srcOffset[1] = y1;
         srcOffset[2] = z1;
+        shiftVector.x = x1;
+        shiftVector.y = y1;
+        shiftVector.z = z1;
         ocl.queue.enqueueCopyImage(dataset, imageHUvolume, srcOffset, offset, region);
         dataset = imageHUvolume;
         if(getParamBool(parameters, "timing")) {
@@ -2941,6 +2941,8 @@ Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &par
 			std::cout << "NOTE: reduced size to " << size->x << ", " << size->y << ", " << size->z << std::endl;
     	}
     }
+    output = new TSFOutput(&ocl, size);
+    output->setShiftVector(shiftVector);
 
     // Run toFloat kernel
 
@@ -3146,3 +3148,12 @@ char * TSFOutput::getCenterlineVoxels() {
 SIPL::int3 * TSFOutput::getSize() {
 	return size;
 }
+
+SIPL::int3 TSFOutput::getShiftVector() const {
+	return shiftVector;
+}
+
+void TSFOutput::setShiftVector(SIPL::int3 shiftVector) {
+	this->shiftVector = shiftVector;
+}
+
