@@ -1,0 +1,4 @@
+NDims = 3
+DimSize = 100 100 100
+ElementType = MET_UCHAR
+ElementDataFile = noisy0.raw
