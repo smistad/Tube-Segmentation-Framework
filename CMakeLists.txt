@@ -22,7 +22,6 @@ endif()
 # OpenCLUtilities
 ###########
 add_subdirectory(OpenCLUtilities)
-#include_directories(${OPENCL_INCLUDE_DIRS})
 find_package(OCL-Utilities PATHS "${Tube-Segmentation-Framework_BINARY_DIR}/OpenCLUtilities" REQUIRED)
 include(${OCL-Utilities_USE_FILE})
 
@@ -30,7 +29,6 @@ include(${OCL-Utilities_USE_FILE})
 # SIPL
 ###########
 add_subdirectory(SIPL)
-#include_directories(${SIPL_INCLUDE_DIRS})
 find_package(SIPL PATHS "${Tube-Segmentation-Framework_BINARY_DIR}/SIPL" REQUIRED)
 include(${SIPL_USE_FILE})
 
@@ -70,8 +68,10 @@ target_link_libraries(tubeSegmentationLib OCL-Utilities SIPL ${Boost_LIBRARIES} 
 #
 # tubeSegmentation executable
 ###########
-add_executable(tubeSegmentation main.cpp tube-segmentation.cpp histogram-pyramids.cpp parameters.cpp)
-target_link_libraries(tubeSegmentation SIPL OCL-Utilities ${Boost_LIBRARIES} ${OPENCL_LIBRARIES})
+if(SIPL_USE_GTK)
+    add_executable(tubeSegmentation main.cpp tube-segmentation.cpp histogram-pyramids.cpp parameters.cpp)
+    target_link_libraries(tubeSegmentation SIPL OCL-Utilities ${Boost_LIBRARIES} ${OPENCL_LIBRARIES})
+endif()
 
 #------------------------------------------------------------------------------
 # Testing
