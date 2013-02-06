@@ -2941,7 +2941,6 @@ Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &par
 			std::cout << "NOTE: reduced size to " << size->x << ", " << size->y << ", " << size->z << std::endl;
     	}
     }
-    output = new TSFOutput(&ocl, size);
     output->setShiftVector(shiftVector);
 
     // Run toFloat kernel
