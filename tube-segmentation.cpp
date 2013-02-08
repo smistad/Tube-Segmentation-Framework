@@ -1,5 +1,6 @@
 #include "tube-segmentation.hpp"
 #include "SIPL/Types.hpp"
+#include "SIPL/Core.hpp"
 #include <boost/iostreams/device/mapped_file.hpp>
 #include <queue>
 #include <stack>
@@ -91,8 +92,10 @@ TSFOutput * run(std::string filename, paramList &parameters) {
         // Run specified method on dataset
         if(getParamStr(parameters, "centerline-method") == "ridge") {
             runCircleFittingAndRidgeTraversal(ocl, dataset, size, parameters, output);
-        } else {
+        } else if(getParamStr(parameters, "centerline-method") == "gpu") {
             runCircleFittingAndNewCenterlineAlg(ocl, dataset, size, parameters, output);
+        } else if(getParamStr(parameters, "centerline-method") == "test") {
+            runCircleFittingAndTest(ocl, dataset, size, parameters, output);
         }
     } catch(cl::Error e) {
     	std::string str = "OpenCL error: " + std::string(getCLErrorString(e.err()));
@@ -2404,6 +2407,170 @@ void runCircleFittingAndNewCenterlineAlg(OpenCL * ocl, cl::Image3D &dataset, SIP
     }
 
 }
+
+class CrossSection {
+public:
+	int3 pos;
+	float TDF;
+	std::vector<CrossSection *> neighbors;
+	int label;
+};
+
+std::vector<CrossSection *> createGraph(TubeSegmentation &TS, SIPL::int3 size) {
+	// Create vector
+	std::vector<CrossSection *> sections;
+	float threshold = 0.5f;
+
+	// Go through TS.TDF and add all with TDF above threshold
+	int counter = 0;
+	for(int z = 0; z < size.z; z++) {
+	for(int y = 0; y < size.y; y++) {
+	for(int x = 0; x < size.x; x++) {
+		int3 pos(x,y,z);
+		float tdf = TS.TDF[POS(pos)];
+		if(tdf > threshold) {
+			CrossSection * cs = new CrossSection;
+			cs->pos = pos;
+			cs->TDF = tdf;
+			cs->label = counter;
+			counter++;
+			sections.push_back(cs);
+		}
+	}}}
+
+	std::vector<CrossSection *> sectionPairs;
+
+	// For each cross section c_i
+	for(CrossSection * c_i : sections) {
+		// For each cross section c_j
+		for(CrossSection * c_j : sections) {
+			// If all criterias are ok: Add c_j as neighbor to c_i
+			if(c_i->pos.distance(c_j->pos) < 5) {
+				c_i->neighbors.push_back(c_j);
+				sectionPairs.push_back(c_i);
+			}
+			// If no pair is found, remove it
+		}
+	}
+
+	return sectionPairs;
+}
+
+class Segment {
+public:
+	std::vector<int3> crossSections;
+	float benefit;
+};
+
+std::vector<Segment> createSegments(TubeSegmentation &TS, std::vector<CrossSection *> crossSections, SIPL::int3 * size) {
+	// Create segment vector
+
+	// Do a graph component labeling
+
+
+	// For each cross section c_i
+	// For each cross section c_j
+		// If they have the same label
+		// Do a djikstra on the benefit to find best segment between i and j
+		// Add segment to vector
+
+	// Sort the segment vector on benefit
+	// Go through sorted vector and do a region growing
+
+}
+
+void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * size, paramList &parameters, TSFOutput * output) {
+    INIT_TIMER
+    Image3D vectorField, radius;
+    Image3D * TDF = new Image3D;
+    const int totalSize = size->x*size->y*size->z;
+	const bool no3Dwrite = !getParamBool(parameters, "3d_write");
+
+    cl::size_t<3> offset;
+    offset[0] = 0;
+    offset[1] = 0;
+    offset[2] = 0;
+    cl::size_t<3> region;
+    region[0] = size->x;
+    region[1] = size->y;
+    region[2] = size->z;
+
+    runCircleFittingMethod(*ocl, dataset, *size, parameters, vectorField, *TDF, radius);
+    output->setTDF(TDF);
+
+
+    // Transfer from device to host
+    TubeSegmentation TS;
+    TS.Fx = new float[totalSize];
+    TS.Fy = new float[totalSize];
+    TS.Fz = new float[totalSize];
+    if(no3Dwrite || getParamBool(parameters, "32bit-vectors")) {
+    	// 32 bit vector fields
+        float * Fs = new float[totalSize*4];
+        ocl->queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
+#pragma omp parallel for
+        for(int i = 0; i < totalSize; i++) {
+            TS.Fx[i] = Fs[i*4];
+            TS.Fy[i] = Fs[i*4+1];
+            TS.Fz[i] = Fs[i*4+2];
+        }
+        delete[] Fs;
+    } else {
+    	// 16 bit vector fields
+        short * Fs = new short[totalSize*4];
+        ocl->queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
+#pragma omp parallel for
+        for(int i = 0; i < totalSize; i++) {
+            TS.Fx[i] = MAX(-1.0f, Fs[i*4] / 32767.0f);
+            TS.Fy[i] = MAX(-1.0f, Fs[i*4+1] / 32767.0f);;
+            TS.Fz[i] = MAX(-1.0f, Fs[i*4+2] / 32767.0f);
+        }
+        delete[] Fs;
+    }
+    TS.radius = new float[totalSize];
+    TS.TDF = new float[totalSize];
+    ocl->queue.enqueueReadImage(*TDF, CL_TRUE, offset, region, 0, 0, TS.TDF);
+    output->setTDF(TS.TDF);
+    ocl->queue.enqueueReadImage(radius, CL_TRUE, offset, region, 0, 0, TS.radius);
+
+    // Create pairs of voxels with high TDF
+    std::vector<CrossSection *> crossSections = createGraph(TS, *size);
+
+    // Display pairs
+    SIPL::Volume<bool> * pairs = new SIPL::Volume<bool>(*size);
+    pairs->fill(false);
+    for(CrossSection * c : crossSections) {
+    	pairs->set(c->pos, true);
+    }
+    pairs->showMIP();
+
+    // Create segments from pairs
+    //std::vector<Segment> = createSegments(TS, crossSections, size);
+
+    // Display segments
+
+    /*
+    Image3D * centerline = new Image3D;
+    *centerline = runNewCenterlineAlg(*ocl, *size, parameters, vectorField, *TDF, radius, dataset);
+    output->setCenterlineVoxels(centerline);
+
+    Image3D * segmentation = new Image3D;
+    if(!getParamBool(parameters, "no-segmentation")) {
+    	if(!getParamBool(parameters, "sphere-segmentation")) {
+			*segmentation = runInverseGradientSegmentation(*ocl, *centerline, vectorField, *size, parameters);
+    	} else {
+			*segmentation = runSphereSegmentation(*ocl, *centerline, radius, *size, parameters);
+    	}
+    	output->setSegmentation(segmentation);
+    }
+
+	if(getParamStr(parameters, "storage-dir") != "off") {
+		writeDataToDisk(output, getParamStr(parameters, "storage-dir"));
+    }
+    */
+
+}
+
 
 void runCircleFittingAndRidgeTraversal(OpenCL * ocl, Image3D &dataset, SIPL::int3 * size, paramList &parameters, TSFOutput * output) {
     

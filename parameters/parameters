@@ -2,7 +2,7 @@
 device str gpu gpu cpu "Which type of processor to use"
 mode str white black white "Extract black or white tubular structures"
 display bool false "Display results"
-centerline-method str gpu gpu ridge "Centerline extraction method"
+centerline-method str gpu test gpu ridge "Centerline extraction method"
 gvf-iterations num 250 0 2000 50 "Number of GVF iterations"
 radius-min num 0.5 0.5 50.0 0.5 "Minimum radius of tubular structures"
 radius-max num 15.0 2.0 50.0 1.0 "Maximum radius of tubular structures"
