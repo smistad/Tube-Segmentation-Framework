@@ -36,13 +36,11 @@ paramList loadParameterPreset(paramList parameters) {
 	// Check if parameters is set
     if(getParamStr(parameters, "parameters") != "none") {
     	std::string parameterFilename;
-    	std::string path = std::string(PARAMETERS_DIR);
     	if(getParamStr(parameters, "centerline-method") == "gpu") {
-    		parameterFilename = path+"/centerline-gpu/" + getParamStr(parameters, "parameters");
+    		parameterFilename = std::string(PARAMETERS_DIR)+"/centerline-gpu/" + getParamStr(parameters, "parameters");
     	} else if(getParamStr(parameters, "centerline-method") == "ridge") {
-    		parameterFilename = path+"/centerline-ridge/" + getParamStr(parameters, "parameters");
+    		parameterFilename = std::string(PARAMETERS_DIR)+"/centerline-ridge/" + getParamStr(parameters, "parameters");
     	}
-    	std::cout << parameterFilename << std::endl;
     	if(parameterFilename.size() > 0) {
     		// Load file and parse parameters
     		std::ifstream file(parameterFilename.c_str());
@@ -50,6 +48,7 @@ paramList loadParameterPreset(paramList parameters) {
     			//throw SIPL::IOException(parameterFilename.c_str(), __LINE__, __FILE__); // --> malloc
     			throw SIPL::IOException(parameterFilename.c_str());
     		}
+
     		std::string line;
     		while(!file.eof()) {
 				getline(file, line);
@@ -137,8 +136,7 @@ paramList initParameters() {
 paramList setParameter(paramList parameters, string name, string value) {
 	if(parameters.bools.count(name) > 0) {
 		BoolParameter v = parameters.bools[name];
-		bool boolValue = (value == "true") ? true : false;
-		v.set(boolValue);
+		v.set(true);
 		parameters.bools[name] = v;
 	} else if(parameters.numerics.count(name) > 0) {
 		NumericParameter v = parameters.numerics[name];

@@ -7,13 +7,13 @@ using namespace cl;
 #undef min
 #undef max
 
-HistogramPyramid2D::HistogramPyramid2D(OpenCL ocl) {
+HistogramPyramid2D::HistogramPyramid2D(OpenCL &ocl) {
     this->ocl = ocl;
 }
-HistogramPyramid3D::HistogramPyramid3D(OpenCL ocl) {
+HistogramPyramid3D::HistogramPyramid3D(OpenCL &ocl) {
     this->ocl = ocl;
 }
-HistogramPyramid3DBuffer::HistogramPyramid3DBuffer(OpenCL ocl) {
+HistogramPyramid3DBuffer::HistogramPyramid3DBuffer(OpenCL &ocl) {
     this->ocl = ocl;
 }
 
@@ -21,7 +21,7 @@ int HistogramPyramid::getSum() {
     return this->sum;
 }
 
-void HistogramPyramid3D::create(Image3D baseLevel, int sizeX, int sizeY, int sizeZ) {
+void HistogramPyramid3D::create(Image3D &baseLevel, int sizeX, int sizeY, int sizeZ) {
     // Make baseLevel into power of 2 in all dimensions
     if(sizeX == sizeY && sizeY == sizeZ && log2(sizeX) == round(log2(sizeX))) {
         size = sizeX;
@@ -110,7 +110,7 @@ void HistogramPyramid3D::create(Image3D baseLevel, int sizeX, int sizeY, int siz
     this->sum = sum[0] + sum[1] + sum[2] + sum[3] + sum[4] + sum[5] + sum[6] + sum[7];
 }
 
-void HistogramPyramid3DBuffer::create(Buffer baseLevel, int sizeX, int sizeY, int sizeZ) {
+void HistogramPyramid3DBuffer::create(Buffer &baseLevel, int sizeX, int sizeY, int sizeZ) {
     // Make baseLevel into power of 2 in all dimensions
     if(sizeX == sizeY && sizeY == sizeZ && log2(sizeX) == round(log2(sizeX))) {
         size = sizeX;
@@ -225,7 +225,7 @@ void HistogramPyramid3DBuffer::create(Buffer baseLevel, int sizeX, int sizeY, in
     this->sum = sum[0] + sum[1] + sum[2] + sum[3] + sum[4] + sum[5] + sum[6] + sum[7];
 }
 
-void HistogramPyramid2D::create(Image2D baseLevel, int sizeX, int sizeY) {
+void HistogramPyramid2D::create(Image2D &baseLevel, int sizeX, int sizeY) {
     // Make baseLevel into power of 2 in all dimensions
     if(sizeX == sizeY && log2(sizeX) == round(log2(sizeX))) {
         size = sizeX;
@@ -312,7 +312,7 @@ void HistogramPyramid2D::create(Image2D baseLevel, int sizeX, int sizeY) {
     this->sum = sum[0] + sum[1] + sum[2] + sum[3];
 }
 
-void HistogramPyramid2D::traverse(Kernel kernel, int arguments) {
+void HistogramPyramid2D::traverse(Kernel &kernel, int arguments) {
     for(int i = 0; i < 14; i++) {
         int l = i;
         if(i >= HPlevels.size())
@@ -325,7 +325,7 @@ void HistogramPyramid2D::traverse(Kernel kernel, int arguments) {
     ocl.queue.enqueueNDRangeKernel(kernel, NullRange, NDRange(global_work_size), NDRange(64));
 }
 
-void HistogramPyramid3D::traverse(Kernel kernel, int arguments) {
+void HistogramPyramid3D::traverse(Kernel &kernel, int arguments) {
     kernel.setArg(arguments, this->size);
     kernel.setArg(arguments+1, this->sum);
     for(int i = 0; i < 10; i++) {
@@ -340,7 +340,7 @@ void HistogramPyramid3D::traverse(Kernel kernel, int arguments) {
     ocl.queue.enqueueNDRangeKernel(kernel, NullRange, NDRange(global_work_size), NDRange(64));
 }
 
-void HistogramPyramid3DBuffer::traverse(Kernel kernel, int arguments) {
+void HistogramPyramid3DBuffer::traverse(Kernel &kernel, int arguments) {
     kernel.setArg(arguments, this->size);
     kernel.setArg(arguments+1, this->sum);
     for(int i = 0; i < 10; i++) {

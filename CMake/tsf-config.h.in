@@ -3,3 +3,6 @@
 
 // directory containing kernel files
 #define KERNELS_DIR "@KERNELS_DIR@"
+
+// directory containing test data
+#define TESTDATA_DIR "@TESTDATA_DIR@"

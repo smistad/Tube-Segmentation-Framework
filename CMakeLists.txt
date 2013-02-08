@@ -11,7 +11,7 @@ cmake_minimum_required(VERSION 2.8)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -O3")
 option(USE_C++11 "use C++11 (Tube-Segmentation-Framework)" ON) # cmake option to use boost libraries instead of C++11
 if(USE_C++11)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D CP11 -std=c++0x")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D CPP11 -std=c++0x")
 endif()
 
 #------------------------------------------------------------------------------
@@ -107,6 +107,7 @@ configure_file (
 
 set(PARAMETERS_DIR ${PROJECT_SOURCE_DIR}/parameters)
 set(KERNELS_DIR ${PROJECT_SOURCE_DIR})
+set(TESTDATA_DIR ${PROJECT_SOURCE_DIR}/tests/data)
 
 configure_file(
  "${PROJECT_SOURCE_DIR}/CMake/tsf-config.h.in"
