@@ -2470,22 +2470,34 @@ std::vector<CrossSection *> createGraph(TubeSegmentation &TS, SIPL::int3 size) {
 	return sectionPairs;
 }
 
+class CrossSectionComparator {
+private:
+	unordered_map<int, float> distance;
+	int3 size;
+public:
+	CrossSectionComparator(unordered_map<int, float> &distance, SIPL::int3 size) { this->distance = distance; this->size = size;};
+bool operator() (const CrossSection * lhs, const CrossSection * rhs) {
+	float a = distance[POS(lhs->pos)];
+	float b =  distance[POS(rhs->pos)];
+	return a > b;
+};
+};
+
 class Segment {
 public:
 	std::vector<int3> crossSections;
 	float benefit;
 };
 
-std::vector<Segment> createSegments(TubeSegmentation &TS, std::vector<CrossSection *> &crossSections, SIPL::int3 size) {
+std::vector<Segment *> createSegments(TubeSegmentation &TS, std::vector<CrossSection *> &crossSections, SIPL::int3 size) {
 	// Create segment vector
-	std::vector<Segment> segments;
+	std::vector<Segment *> segments;
 
 	// Do a graph component labeling
 	unordered_set<int> visited;
 	for(CrossSection * c : crossSections) {
 		// Do a bfs on c
 		// Check to see if point has been processed before doing a BFS
-		std::cout << c->label << std::endl;
 		if(visited.find(c->label) != visited.end())
 			continue;
 
@@ -2508,11 +2520,53 @@ std::vector<Segment> createSegments(TubeSegmentation &TS, std::vector<CrossSecti
 		visited.insert(c->label);
 	}
 
+
 	// For each cross section c_i
-	// For each cross section c_j
-		// If they have the same label
-		// Do a djikstra on the benefit to find best segment between i and j
-		// Add segment to vector
+	for(CrossSection * c_i : crossSections) {
+		// For each cross section c_j
+		for(CrossSection * c_j : crossSections) {
+			// If they have the same label
+			if(c_i->label == c_j->label) {
+				// Do a djikstra on the tdf to find best segment between i and j
+
+				unordered_map<int, float> distance;
+				for(CrossSection * c : crossSections)
+					distance[POS(c->pos)] = 9999999;
+				unordered_set<int> visited;
+				std::priority_queue<CrossSection *, std::vector<CrossSection *>, CrossSectionComparator> queue(CrossSectionComparator(distance, size), std::vector<CrossSection *>());
+				distance[POS(c_i->pos)] = 0;
+				queue.push(c_i);
+				Segment * segment = new Segment;
+
+				while(!queue.empty()) {
+					CrossSection * c = queue.top();
+					queue.pop();
+					if(visited.find(POS(c->pos)) != visited.end())
+						continue;
+
+					if(c->pos == c_j->pos) // end found
+						break;
+
+					for(CrossSection * n : c->neighbors) {
+						// TODO calculate weights from c to n
+						float weight = 1-n->TDF;
+						float newDistance = distance[POS(c->pos)] + weight;
+						if(newDistance < distance[POS(n->pos)]) {
+							distance[POS(n->pos)] = newDistance;
+							queue.push(n);
+						}
+					}
+					visited.insert(POS(c->pos));
+				}
+
+				// TODO set cross sections of segment
+				// TODO set benefit of segment
+
+				// Add segment to vector
+				segments.push_back(segment);
+			}
+		}
+	}
 
 	// Sort the segment vector on benefit
 	// Go through sorted vector and do a region growing
@@ -2586,7 +2640,7 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
     pairs->showMIP();
 
     // Create segments from pairs
-    std::vector<Segment> segments = createSegments(TS, crossSections, *size);
+    std::vector<Segment *> segments = createSegments(TS, crossSections, *size);
 
     // Display segments
 
