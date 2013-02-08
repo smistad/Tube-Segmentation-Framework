@@ -2476,7 +2476,7 @@ public:
 	float benefit;
 };
 
-std::vector<Segment> createSegments(TubeSegmentation &TS, std::vector<CrossSection *> crossSections, SIPL::int3 size) {
+std::vector<Segment> createSegments(TubeSegmentation &TS, std::vector<CrossSection *> &crossSections, SIPL::int3 size) {
 	// Create segment vector
 	std::vector<Segment> segments;
 
@@ -2484,26 +2484,28 @@ std::vector<Segment> createSegments(TubeSegmentation &TS, std::vector<CrossSecti
 	unordered_set<int> visited;
 	for(CrossSection * c : crossSections) {
 		// Do a bfs on c
-		std::stack<CrossSection *> stack;
 		// Check to see if point has been processed before doing a BFS
-		if(visited.find(POS(c->pos)) == visited.end())
+		std::cout << c->label << std::endl;
+		if(visited.find(c->label) != visited.end())
 			continue;
 
+		std::stack<CrossSection *> stack;
 		stack.push(c);
 		while(!stack.empty()) {
 			CrossSection * current = stack.top();
 			stack.pop();
-			visited.insert(POS(current->pos));
 			// Check label of neighbors to see if they have been added
 			if(current->label != c->label || c->pos == current->pos) {
 				// Change label of neighbors if not
 				current->label = c->label;
 				// Add neighbors to stack
 				for(CrossSection * n : current->neighbors) {
-					stack.push(n);
+					if(n->label != c->label)
+						stack.push(n);
 				}
 			}
 		}
+		visited.insert(c->label);
 	}
 
 	// For each cross section c_i
