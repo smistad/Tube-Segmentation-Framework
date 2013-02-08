@@ -2423,9 +2423,9 @@ std::vector<CrossSection *> createGraph(TubeSegmentation &TS, SIPL::int3 size) {
 
 	// Go through TS.TDF and add all with TDF above threshold
 	int counter = 0;
-	for(int z = 0; z < size.z; z++) {
-	for(int y = 0; y < size.y; y++) {
-	for(int x = 0; x < size.x; x++) {
+	for(int z = 1; z < size.z-1; z++) {
+	for(int y = 1; y < size.y-1; y++) {
+	for(int x = 1; x < size.x-1; x++) {
 		int3 pos(x,y,z);
 		float tdf = TS.TDF[POS(pos)];
 		if(tdf > threshold) {
