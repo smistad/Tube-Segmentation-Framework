@@ -2414,6 +2414,7 @@ public:
 	float TDF;
 	std::vector<CrossSection *> neighbors;
 	int label;
+	int index;
 };
 
 std::vector<CrossSection *> createGraph(TubeSegmentation &TS, SIPL::int3 size) {
@@ -2445,7 +2446,7 @@ std::vector<CrossSection *> createGraph(TubeSegmentation &TS, SIPL::int3 size) {
 		// For each cross section c_j
 		for(CrossSection * c_j : sections) {
 			// If all criterias are ok: Add c_j as neighbor to c_i
-			if(c_i->pos.distance(c_j->pos) < 5) {
+			if(c_i->pos.distance(c_j->pos) < 5 && !(c_i->pos == c_j->pos)) {
 				float3 e1_i = getTubeDirection(TS, c_i->pos, size);
 				float3 e1_j = getTubeDirection(TS, c_j->pos, size);
 				int3 cint = c_i->pos - c_j->pos;
@@ -2470,22 +2471,9 @@ std::vector<CrossSection *> createGraph(TubeSegmentation &TS, SIPL::int3 size) {
 	return sectionPairs;
 }
 
-class CrossSectionComparator {
-private:
-	unordered_map<int, float> distance;
-	int3 size;
-public:
-	CrossSectionComparator(unordered_map<int, float> &distance, SIPL::int3 size) { this->distance = distance; this->size = size;};
-bool operator() (const CrossSection * lhs, const CrossSection * rhs) {
-	float a = distance[POS(lhs->pos)];
-	float b =  distance[POS(rhs->pos)];
-	return a > b;
-};
-};
-
 class Segment {
 public:
-	std::vector<int3> crossSections;
+	std::vector<CrossSection *> sections;
 	float benefit;
 };
 
@@ -2520,53 +2508,75 @@ std::vector<Segment *> createSegments(TubeSegmentation &TS, std::vector<CrossSec
 		visited.insert(c->label);
 	}
 
+	std::cout << "finished graph component labeling" << std::endl;
 
-	// For each cross section c_i
-	for(CrossSection * c_i : crossSections) {
-		// For each cross section c_j
-		for(CrossSection * c_j : crossSections) {
-			// If they have the same label
-			if(c_i->label == c_j->label) {
-				// Do a djikstra on the tdf to find best segment between i and j
+	// Do a floyd warshall all pairs shortest path
+	unordered_map<int, float> dist;
+	unordered_map<int, int> pred;
+	int totalSize = crossSections.size();
+	std::cout << "number of cross sections is " << totalSize << std::endl;
 
-				unordered_map<int, float> distance;
-				for(CrossSection * c : crossSections)
-					distance[POS(c->pos)] = 9999999;
-				unordered_set<int> visited;
-				std::priority_queue<CrossSection *, std::vector<CrossSection *>, CrossSectionComparator> queue(CrossSectionComparator(distance, size), std::vector<CrossSection *>());
-				distance[POS(c_i->pos)] = 0;
-				queue.push(c_i);
-				Segment * segment = new Segment;
+	for(int u = 0; u < crossSections.size(); u++) {
+		CrossSection * U = crossSections[u];
+		U->index = u;
+	}
 
-				while(!queue.empty()) {
-					CrossSection * c = queue.top();
-					queue.pop();
-					if(visited.find(POS(c->pos)) != visited.end())
-						continue;
+	#define DPOS(U, V) U+V*totalSize
+	// For each cross section U
+	for(int u = 0; u < crossSections.size(); u++) {
+		CrossSection * U = crossSections[u];
+		// For each cross section V
+		for(int v = 0; v < crossSections.size(); v++) {
+			CrossSection * V = crossSections[v];
+			dist[DPOS(u,v)] = 99999999;
+			pred[DPOS(u,v)] = -1;
+		}
+		dist[DPOS(U->index,U->index)] = 0;
+		for(CrossSection * V : U->neighbors) {
+			// TODO calculate more advanced weight
+			dist[DPOS(U->index,V->index)] = (1-U->TDF) + (1-V->TDF);
+			pred[DPOS(U->index,V->index)] = U->index;
+		}
 
-					if(c->pos == c_j->pos) // end found
-						break;
+	}
 
-					for(CrossSection * n : c->neighbors) {
-						// TODO calculate weights from c to n
-						float weight = 1-n->TDF;
-						float newDistance = distance[POS(c->pos)] + weight;
-						if(newDistance < distance[POS(n->pos)]) {
-							distance[POS(n->pos)] = newDistance;
-							queue.push(n);
-						}
-					}
-					visited.insert(POS(c->pos));
+	for(int t = 0; t < crossSections.size(); t++) {
+		CrossSection * T = crossSections[t];
+		// For each cross section U
+		for(int u = 0; u < crossSections.size(); u++) {
+			CrossSection * U = crossSections[u];
+			// For each cross section V
+			for(int v = 0; v < crossSections.size(); v++) {
+				CrossSection * V = crossSections[v];
+				float newLength = dist[DPOS(u, t)] + dist[DPOS(t,v)];
+				if(newLength < dist[DPOS(u,v)]) {
+					dist[DPOS(u,v)] = newLength;
+					pred[DPOS(u,v)] = pred[DPOS(t,v)];
 				}
-
-				// TODO set cross sections of segment
-				// TODO set benefit of segment
-
-				// Add segment to vector
-				segments.push_back(segment);
 			}
 		}
 	}
+
+
+	for(CrossSection * U : crossSections) {
+		for(CrossSection * V : crossSections) {
+			if(U->label == V->label && U->index != V->index) {
+				Segment * segment;
+				// add all cross sections in segment
+				float benefit = 0.0f;
+				segment->sections.push_back(V);
+				int current = pred[DPOS(U->index, V->index)]; // get predecessor
+				while(current != 0) {
+					CrossSection * C = crossSections[current];
+					benefit += C->TDF;
+					segment->sections.push_back(C);
+					current = pred[DPOS(current,V->index)];
+				}
+				segment->benefit = benefit;
+			}
+		}
+	}
+
 
 	// Sort the segment vector on benefit
 	// Go through sorted vector and do a region growing
