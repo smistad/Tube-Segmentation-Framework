@@ -2476,11 +2476,35 @@ public:
 	float benefit;
 };
 
-std::vector<Segment> createSegments(TubeSegmentation &TS, std::vector<CrossSection *> crossSections, SIPL::int3 * size) {
+std::vector<Segment> createSegments(TubeSegmentation &TS, std::vector<CrossSection *> crossSections, SIPL::int3 size) {
 	// Create segment vector
+	std::vector<Segment> segments;
 
 	// Do a graph component labeling
+	unordered_set<int> visited;
+	for(CrossSection * c : crossSections) {
+		// Do a bfs on c
+		std::stack<CrossSection *> stack;
+		// Check to see if point has been processed before doing a BFS
+		if(visited.find(POS(c->pos)) == visited.end())
+			continue;
 
+		stack.push(c);
+		while(!stack.empty()) {
+			CrossSection * current = stack.top();
+			stack.pop();
+			visited.insert(POS(current->pos));
+			// Check label of neighbors to see if they have been added
+			if(current->label != c->label || c->pos == current->pos) {
+				// Change label of neighbors if not
+				current->label = c->label;
+				// Add neighbors to stack
+				for(CrossSection * n : current->neighbors) {
+					stack.push(n);
+				}
+			}
+		}
+	}
 
 	// For each cross section c_i
 	// For each cross section c_j
@@ -2491,6 +2515,7 @@ std::vector<Segment> createSegments(TubeSegmentation &TS, std::vector<CrossSecti
 	// Sort the segment vector on benefit
 	// Go through sorted vector and do a region growing
 
+	return segments;
 }
 
 void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * size, paramList &parameters, TSFOutput * output) {
@@ -2559,7 +2584,7 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
     pairs->showMIP();
 
     // Create segments from pairs
-    //std::vector<Segment> = createSegments(TS, crossSections, size);
+    std::vector<Segment> segments = createSegments(TS, crossSections, *size);
 
     // Display segments
 
