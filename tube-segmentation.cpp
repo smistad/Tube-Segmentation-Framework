@@ -2446,10 +2446,24 @@ std::vector<CrossSection *> createGraph(TubeSegmentation &TS, SIPL::int3 size) {
 		for(CrossSection * c_j : sections) {
 			// If all criterias are ok: Add c_j as neighbor to c_i
 			if(c_i->pos.distance(c_j->pos) < 5) {
+				float3 e1_i = getTubeDirection(TS, c_i->pos, size);
+				float3 e1_j = getTubeDirection(TS, c_j->pos, size);
+				int3 cint = c_i->pos - c_j->pos;
+				float3 c = cint.normalize();
+
+				if(acos((double)fabs(e1_i.dot(e1_j))) > 1.05) // 60 degrees
+					continue;
+
+				if(acos((double)fabs(e1_i.dot(c))) > 1.05)
+					continue;
+
+				if(acos((double)fabs(e1_j.dot(c))) > 1.05)
+					continue;
+
 				c_i->neighbors.push_back(c_j);
 				sectionPairs.push_back(c_i);
 			}
-			// If no pair is found, remove it
+			// If no pair is found, dont add it
 		}
 	}
 
