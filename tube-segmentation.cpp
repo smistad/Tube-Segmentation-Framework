@@ -2526,36 +2526,44 @@ std::vector<Segment *> createSegments(TubeSegmentation &TS, std::vector<CrossSec
 	for(int u = 0; u < crossSections.size(); u++) {
 		CrossSection * U = crossSections[u];
 		// For each cross section V
+		/*
 		for(int v = 0; v < crossSections.size(); v++) {
 			CrossSection * V = crossSections[v];
 			dist[DPOS(u,v)] = 99999999;
 			pred[DPOS(u,v)] = -1;
 		}
+		*/
 		dist[DPOS(U->index,U->index)] = 0;
 		for(CrossSection * V : U->neighbors) {
 			// TODO calculate more advanced weight
 			dist[DPOS(U->index,V->index)] = (1-U->TDF) + (1-V->TDF);
 			pred[DPOS(U->index,V->index)] = U->index;
 		}
-
 	}
+	std::cout << "finished initializing floyd warshall" << std::endl;
 
 	for(int t = 0; t < crossSections.size(); t++) {
 		CrossSection * T = crossSections[t];
 		// For each cross section U
 		for(int u = 0; u < crossSections.size(); u++) {
 			CrossSection * U = crossSections[u];
+			if(dist.find(DPOS(u,t)) == dist.end())
+				continue;
 			// For each cross section V
 			for(int v = 0; v < crossSections.size(); v++) {
+				if(dist.find(DPOS(t,v)) == dist.end())
+					continue;
 				CrossSection * V = crossSections[v];
 				float newLength = dist[DPOS(u, t)] + dist[DPOS(t,v)];
-				if(newLength < dist[DPOS(u,v)]) {
+				if(dist.find(DPOS(u,v)) != dist.end() && newLength < dist[DPOS(u,v)]) {
 					dist[DPOS(u,v)] = newLength;
 					pred[DPOS(u,v)] = pred[DPOS(t,v)];
 				}
 			}
 		}
 	}
+
+	std::cout << "finished performing floyd warshall" << std::endl;
 
 
 	for(CrossSection * U : crossSections) {
@@ -2573,9 +2581,13 @@ std::vector<Segment *> createSegments(TubeSegmentation &TS, std::vector<CrossSec
 					current = pred[DPOS(current,V->index)];
 				}
 				segment->benefit = benefit;
+				segments.push_back(segment);
 			}
 		}
 	}
+
+	std::cout << "finished creating segments" << std::endl;
+	std::cout << "total number of segments is " << segments.size() << std::endl;
 
 
 	// Sort the segment vector on benefit
