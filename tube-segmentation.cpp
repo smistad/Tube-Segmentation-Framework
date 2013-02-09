@@ -2508,6 +2508,10 @@ public:
 	float benefit;
 };
 
+bool segmentCompare(Segment * a, Segment * b) {
+	return a->benefit > b->benefit;
+}
+
 std::vector<Segment *> createSegments(TubeSegmentation &TS, std::vector<CrossSection *> &crossSections, SIPL::int3 size) {
 	// Create segment vector
 	std::vector<Segment *> segments;
@@ -2552,13 +2556,12 @@ std::vector<Segment *> createSegments(TubeSegmentation &TS, std::vector<CrossSec
 		U->index = u;
 	}
 
-	#define DPOS(U, V) U+V*totalSize
+	#define DPOS(U, V) V+U*totalSize
 	// For each cross section U
 	for(int u = 0; u < crossSections.size(); u++) {
 		CrossSection * U = crossSections[u];
 		// For each cross section V
 		for(int v = 0; v < crossSections.size(); v++) {
-			CrossSection * V = crossSections[v];
 			dist[DPOS(u,v)] = 99999999;
 			pred[DPOS(u,v)] = -1;
 		}
@@ -2592,19 +2595,19 @@ std::vector<Segment *> createSegments(TubeSegmentation &TS, std::vector<CrossSec
 	std::cout << "finished performing floyd warshall" << std::endl;
 
 
-	for(CrossSection * U : crossSections) {
-		for(CrossSection * V : crossSections) {
-			if(U->label == V->label && U->index != V->index) {
-				Segment * segment;
+	for(CrossSection * S : crossSections) { // Source
+		for(CrossSection * T : crossSections) { // Target
+			if(S->label == T->label && S->index != T->index) {
+				Segment * segment = new Segment;
 				// add all cross sections in segment
 				float benefit = 0.0f;
-				segment->sections.push_back(V);
-				int current = pred[DPOS(U->index, V->index)]; // get predecessor
-				while(current != 0) {
+				segment->sections.push_back(T);
+				int current = pred[DPOS(S->index, T->index)]; // get predecessor
+				while(current != S->index) {
 					CrossSection * C = crossSections[current];
 					benefit += C->TDF;
 					segment->sections.push_back(C);
-					current = pred[DPOS(current,V->index)];
+					current = pred[DPOS(S->index,current)];
 				}
 				segment->benefit = benefit;
 				segments.push_back(segment);
@@ -2617,7 +2620,12 @@ std::vector<Segment *> createSegments(TubeSegmentation &TS, std::vector<CrossSec
 
 
 	// Sort the segment vector on benefit
+	std::sort(segments.begin(), segments.end(), segmentCompare);
+
 	// Go through sorted vector and do a region growing
+	for(Segment * s : segments) {
+		std::cout << s->benefit << std::endl;
+	}
 
 	return segments;
 }
