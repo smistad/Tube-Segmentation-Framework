@@ -2517,6 +2517,8 @@ class Connection {
 public:
 	Segment * source;
 	Segment * target;
+	CrossSection * source_section;
+	CrossSection * target_section;
 	float cost;
 };
 
@@ -2751,8 +2753,8 @@ std::vector<Segment *> findOptimalSubtree(std::vector<Segment *> segments, int *
 		int mj = depthFirstOrdering[j];
 		score[j] = segments[mj]->benefit - r * segments[mj]->cost;
 		// For all children of mj
-		for(Connection * c : segments[mj]) {
-			int k = c->target; //child
+		for(Connection * c : segments[mj]->connections) {
+			int k = c->target->index; //child
 			if(score[depthFirstOrdering[segments[k]->index]] >= 0)
 				score[j] += score[depthFirstOrdering[segments[k]->index]];
 		}
@@ -2768,8 +2770,8 @@ std::vector<Segment *> findOptimalSubtree(std::vector<Segment *> segments, int *
 		int mj = depthFirstOrdering[j];
 		if(v[mj] == 1) {
 			// For all children of mj
-			for(Connection * c : segments[mj]) {
-				int k = c->target; //child
+			for(Connection * c : segments[mj]->connections) {
+				int k = c->target->index; //child
 				if(score[depthFirstOrdering[segments[k]->index]] >= 0)
 					v[depthFirstOrdering[segments[k]->index]] = 1;
 			}
@@ -2788,11 +2790,69 @@ std::vector<Segment *> findOptimalSubtree(std::vector<Segment *> segments, int *
 	return finalSegments;
 }
 
+float calculateConnectionCost(CrossSection * a, CrossSection * b, TubeSegmentation &TS, int3 size) {
+	float cost = 0.0f;
+	int distance = ceil(a->pos.distance(b->pos));
+	float3 direction(b->pos.x-a->pos.x,b->pos.y-a->pos.y,b->pos.z-a->pos.z);
+	for(int i = 0; i < distance; i++) {
+		float frac = (float)i/distance;
+		float3 n = a->pos + frac*direction;
+		int3 in(round(n.x),round(n.y),round(n.z));
+		cost += 1.0f-TS.TDF[POS(in)];
+	}
+
+	return cost;
+}
+
 void createConnections(TubeSegmentation &TS, std::vector<Segment *> segments, int3 size) {
 	// For all pairs of segments
-	// See if they are allowed to connect
-	// If so, create connection object and add to segemnt
-	// Calculate cost and add to connetion and segment
+	for(int k = 0; k < segments.size(); k++) {
+		Segment * s_k = segments[k];
+		for(int l = 0; l < k; l++) {
+			Segment * s_l = segments[l];
+			// For each C_k, cross sections in S_k, calculate costs and select the one with least cost
+			float bestCost = 999999999.0f;
+			CrossSection * c_k_best, * c_l_best;
+			bool found = false;
+			for(CrossSection * c_k : s_k->sections) {
+				for(CrossSection * c_l : s_l->sections) {
+					if(c_k->pos.distance(c_l->pos) > 20)
+						continue;
+
+					// TODO add direciton constraints
+
+					float cost = calculateConnectionCost(c_k, c_l, TS, size);
+					if(cost < bestCost) {
+						bestCost = cost;
+						c_k_best = c_k;
+						c_l_best = c_l;
+						found = true;
+					}
+				}
+			}
+
+
+			// See if they are allowed to connect
+			if(found) {
+				// If so, create connection object and add to segemnt
+				Connection * c = new Connection;
+				c->cost = bestCost;
+				c->source = s_k;
+				c->source_section = c_k_best;
+				c->target = s_l;
+				c->target_section = c_l_best;
+				s_k->connections.push_back(c);
+				Connection * c2 = new Connection;
+				c2->cost = bestCost;
+				c2->source = s_l;
+				c2->source_section = c_l_best;
+				c2->target = s_k;
+				c2->target_section = c_k_best;
+				s_l->connections.push_back(c2);
+				// Add cost to connetion
+			}
+		}
+	}
 }
 
 void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * size, paramList &parameters, TSFOutput * output) {
@@ -2874,10 +2934,38 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
     segs->showMIP();
 
     // Create connections between segments
+    std::cout << "creating connections..." << std::endl;
     createConnections(TS, segments, *size);
+    std::cout << "finished creating connections." << std::endl;
 
     // Display connections, in a separate color for instance
+    SIPL::Volume<float3> * connections = new SIPL::Volume<float3>(*size);
+    for(Segment * s : segments) {
+		for(CrossSection * c : s->sections) {
+			float3 v = connections->get(c->pos);
+			v.x = 1.0f;
 
+			connections->set(c->pos, v);
+		}
+		for(Connection * c : s->connections) {
+			CrossSection * a = c->source_section;
+			CrossSection * b = c->target_section;
+			int distance = ceil(a->pos.distance(b->pos));
+			float3 direction(b->pos.x-a->pos.x,b->pos.y-a->pos.y,b->pos.z-a->pos.z);
+			for(int i = 0; i < distance; i++) {
+				float frac = (float)i/distance;
+				float3 n = a->pos + frac*direction;
+				int3 in(round(n.x),round(n.y),round(n.z));
+				float3 v = connections->get(in);
+				v.y = 1.0f;
+				connections->set(in, v);
+			}
+
+		}
+    }
+    connections->showMIP();
+
+    /*
     // Do minimum spanning tree on segments, where each segment is a node and the connetions are edges
     // must also select a root segment
     int root = selectRoot(segments);
@@ -2893,6 +2981,7 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
 
     // TODO Display final segments and the connections
 
+	*/
 }
 
 
