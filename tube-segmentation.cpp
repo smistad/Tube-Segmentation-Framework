@@ -2502,10 +2502,22 @@ std::vector<CrossSection *> createGraph(TubeSegmentation &TS, SIPL::int3 size) {
 	return sectionPairs;
 }
 
+class Connection;
+
 class Segment {
 public:
 	std::vector<CrossSection *> sections;
+	std::vector<Connection *> connections;
 	float benefit;
+	float cost;
+	int index;
+};
+
+class Connection {
+public:
+	Segment * source;
+	Segment * target;
+	float cost;
 };
 
 bool segmentCompare(Segment * a, Segment * b) {
@@ -2682,6 +2694,100 @@ std::vector<Segment *> createSegments(TubeSegmentation &TS, std::vector<CrossSec
 	return filteredSegments;
 }
 
+int selectRoot(std::vector<Segment *> segments) {
+	int root = 0;
+	for(int i = 1; i < segments.size(); i++) {
+		if(segments[i]->benefit > segments[root]->benefit)
+			root = i;
+	}
+	return root;
+}
+
+void DFS(Segment * current, int * ordering, int &counter) {
+	ordering[counter] = current->index;
+	counter++;
+	for(Connection * edge : current->connections) {
+		DFS(edge->target, ordering, counter);
+	}
+}
+
+int * createDepthFirstOrdering(std::vector<Segment *> segments, int root) {
+	int * ordering = new int[segments.size()];
+	int counter = 0;
+
+	// Give imdexes to segments
+	for(int i = 0; i < segments.size(); i++) {
+		segments[i]->index = i;
+	}
+
+	DFS(segments[0], ordering, counter);
+
+	return ordering;
+}
+
+std::vector<Segment *> minimumSpanningTree(Segment * root, int3 size) {
+	// Need a priority queue on Connection objects based on the cost
+
+	// Add all connections of the root to the queue
+
+	// Select minimum connection
+	// Check if target is already added
+	// if not, add all of its connection to the queue
+	// add this connection to the source
+	// Add target segment and clear its connections
+	// Also add cost to the segment object
+}
+
+std::vector<Segment *> findOptimalSubtree(std::vector<Segment *> segments, int * depthFirstOrdering) {
+
+	int Ns = segments.size();
+	float * score = new float[Ns]();
+	float r = 3.0;
+
+	// TODO THE ORDERING IS WRONG; IT SHOULD BE THE DEEPEST ONE FIRST
+
+	// Stage 1 bottum up
+	for(int j = 0; j < Ns; j++) {
+		int mj = depthFirstOrdering[j];
+		score[j] = segments[mj]->benefit - r * segments[mj]->cost;
+		// For all children of mj
+		for(Connection * c : segments[mj]) {
+			int k = c->target; //child
+			if(score[depthFirstOrdering[segments[k]->index]] >= 0)
+				score[j] += score[depthFirstOrdering[segments[k]->index]];
+		}
+	}
+
+	// Stage 2 top down
+	bool * v = new bool[Ns];
+	for(int i = 1; i < Ns; i++)
+		v[i] = 0;
+	v[0] = 1;
+
+	for(int j = Ns-1; j >= 0; j--) {
+		if(v[j] == 1) {
+			int mj = depthFirstOrdering[j];
+			// For all children of mj
+			for(Connection * c : segments[mj]) {
+				int k = c->target; //child
+				if(score[depthFirstOrdering[segments[k]->index]] >= 0)
+					v[depthFirstOrdering[segments[k]->index]] = 1;
+			}
+		}
+	}
+
+	delete[] score;
+
+	std::vector<Segment *> finalSegments;
+	for(int i = 0; i < Ns; i++) {
+		if(v[i]) {
+			finalSegments.push_back(segments[depthFirstOrdering[i]]);
+		}
+	}
+	delete[] v;
+	return finalSegments;
+}
+
 void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * size, paramList &parameters, TSFOutput * output) {
     INIT_TIMER
     Image3D vectorField, radius;
@@ -2760,6 +2866,21 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
     }
     segs->showMIP();
 
+    // Create connections between segments
+    createConnections(TS, segments, *size);
+
+    // TODO Do minimum spanning tree on segments, where each segment is a node and the connetions are edges
+    // must also select a root segment
+    int root = selectRoot(segments);
+    segments = minimumSpanningTree(segments[root], *size);
+
+    // create depth first ordering
+    int * depthFirstOrderingOfSegments = createDepthFirstOrdering(segments, root);
+
+    // TODO Do the dynamic programming algorithm for locating the best subtree
+    std::vector<Segment *> finalSegments = findOptimalSubtree(segments, depthFirstOrderingOfSegments);
+
+    // TODO Display final segments and the connections
 
     /*
     Image3D * centerline = new Image3D;
