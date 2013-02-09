@@ -159,7 +159,7 @@ bool inBounds(SIPL::int3 pos, SIPL::int3 size) {
 
 #define LPOS(a,b,c) (a)+(b)*(size.x)+(c)*(size.x*size.y)
 #define M(a,b,c) 1-sqrt(pow(T.Fx[a+b*size.x+c*size.x*size.y],2.0f) + pow(T.Fy[a+b*size.x+c*size.x*size.y],2.0f) + pow(T.Fz[a+b*size.x+c*size.x*size.y],2.0f))
-#define SQR_MAG(pos) sqrt(pow(T.Fx[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f) + pow(T.Fy[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f) + pow(T.Fz[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f))
+#define SQR_MAG(pos) sqrt(pow(TS.Fx[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f) + pow(TS.Fy[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f) + pow(TS.Fz[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f))
 
 #define SIZE 3
 
@@ -2415,6 +2415,7 @@ public:
 	std::vector<CrossSection *> neighbors;
 	int label;
 	int index;
+	float3 direction;
 };
 
 std::vector<CrossSection *> createGraph(TubeSegmentation &TS, SIPL::int3 size) {
@@ -2424,18 +2425,48 @@ std::vector<CrossSection *> createGraph(TubeSegmentation &TS, SIPL::int3 size) {
 
 	// Go through TS.TDF and add all with TDF above threshold
 	int counter = 0;
+	float thetaLimit = 0.5;
 	for(int z = 1; z < size.z-1; z++) {
 	for(int y = 1; y < size.y-1; y++) {
 	for(int x = 1; x < size.x-1; x++) {
 		int3 pos(x,y,z);
 		float tdf = TS.TDF[POS(pos)];
 		if(tdf > threshold) {
-			CrossSection * cs = new CrossSection;
-			cs->pos = pos;
-			cs->TDF = tdf;
-			cs->label = counter;
-			counter++;
-			sections.push_back(cs);
+			int maxD = std::min(std::max((int)round(TS.radius[POS(pos)]), 1), 5);
+			//std::cout << "radius" << TS.radius[POS(pos)] << std::endl;
+			//std::cout << "maxD "<< maxD <<std::endl;
+			float3 e1 = getTubeDirection(TS, pos, size);
+			bool invalid = false;
+		    for(int a = -maxD; a <= maxD; a++) {
+		    for(int b = -maxD; b <= maxD; b++) {
+		    for(int c = -maxD; c <= maxD; c++) {
+		        if(a == 0 && b == 0 && c == 0)
+		            continue;
+		        const int3 n = pos + int3(a,b,c);
+		        float3 r(a,b,c);
+		        const float dp = e1.dot(r);
+		        float3 r_projected = float3(r.x-e1.x*dp,r.y-e1.y*dp,r.z-e1.z*dp);
+		        float3 rn = r.normalize();
+		        float3 rpn = r_projected.normalize();
+		        float theta = acos((double)rn.dot(rpn));
+		        //std::cout << "theta: " << theta << std::endl;
+		        if((theta < thetaLimit && r.length() < maxD)) {
+		        	//std::cout << SQR_MAG(n) << std::endl;
+		            if(SQR_MAG(n) < SQR_MAG(pos)) {
+		                invalid = true;
+		                break;
+		            }
+		        }
+		    }}}
+		    if(!invalid) {
+				CrossSection * cs = new CrossSection;
+				cs->pos = pos;
+				cs->TDF = tdf;
+				cs->label = counter;
+				cs->direction = e1;
+				counter++;
+				sections.push_back(cs);
+		    }
 		}
 	}}}
 
@@ -2447,8 +2478,8 @@ std::vector<CrossSection *> createGraph(TubeSegmentation &TS, SIPL::int3 size) {
 		for(CrossSection * c_j : sections) {
 			// If all criterias are ok: Add c_j as neighbor to c_i
 			if(c_i->pos.distance(c_j->pos) < 5 && !(c_i->pos == c_j->pos)) {
-				float3 e1_i = getTubeDirection(TS, c_i->pos, size);
-				float3 e1_j = getTubeDirection(TS, c_j->pos, size);
+				float3 e1_i = c_i->direction;
+				float3 e1_j = c_j->direction;
 				int3 cint = c_i->pos - c_j->pos;
 				float3 c = cint.normalize();
 
@@ -2511,9 +2542,9 @@ std::vector<Segment *> createSegments(TubeSegmentation &TS, std::vector<CrossSec
 	std::cout << "finished graph component labeling" << std::endl;
 
 	// Do a floyd warshall all pairs shortest path
-	unordered_map<int, float> dist;
-	unordered_map<int, int> pred;
 	int totalSize = crossSections.size();
+	float * dist = new float[totalSize*totalSize];
+	int * pred = new int[totalSize*totalSize];
 	std::cout << "number of cross sections is " << totalSize << std::endl;
 
 	for(int u = 0; u < crossSections.size(); u++) {
@@ -2526,13 +2557,11 @@ std::vector<Segment *> createSegments(TubeSegmentation &TS, std::vector<CrossSec
 	for(int u = 0; u < crossSections.size(); u++) {
 		CrossSection * U = crossSections[u];
 		// For each cross section V
-		/*
 		for(int v = 0; v < crossSections.size(); v++) {
 			CrossSection * V = crossSections[v];
 			dist[DPOS(u,v)] = 99999999;
 			pred[DPOS(u,v)] = -1;
 		}
-		*/
 		dist[DPOS(U->index,U->index)] = 0;
 		for(CrossSection * V : U->neighbors) {
 			// TODO calculate more advanced weight
@@ -2543,19 +2572,16 @@ std::vector<Segment *> createSegments(TubeSegmentation &TS, std::vector<CrossSec
 	std::cout << "finished initializing floyd warshall" << std::endl;
 
 	for(int t = 0; t < crossSections.size(); t++) {
-		CrossSection * T = crossSections[t];
+		//CrossSection * T = crossSections[t];
+		//std::cout << "processing t=" << t << std::endl;
 		// For each cross section U
 		for(int u = 0; u < crossSections.size(); u++) {
-			CrossSection * U = crossSections[u];
-			if(dist.find(DPOS(u,t)) == dist.end())
-				continue;
+			//CrossSection * U = crossSections[u];
 			// For each cross section V
 			for(int v = 0; v < crossSections.size(); v++) {
-				if(dist.find(DPOS(t,v)) == dist.end())
-					continue;
-				CrossSection * V = crossSections[v];
+				//CrossSection * V = crossSections[v];
 				float newLength = dist[DPOS(u, t)] + dist[DPOS(t,v)];
-				if(dist.find(DPOS(u,v)) != dist.end() && newLength < dist[DPOS(u,v)]) {
+				if(newLength < dist[DPOS(u,v)]) {
 					dist[DPOS(u,v)] = newLength;
 					pred[DPOS(u,v)] = pred[DPOS(t,v)];
 				}
@@ -2665,6 +2691,15 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
     std::vector<Segment *> segments = createSegments(TS, crossSections, *size);
 
     // Display segments
+	SIPL::Volume<bool> * segs = new SIPL::Volume<bool>(*size);
+    segs->fill(false);
+    for(Segment * s : segments) {
+		for(CrossSection * c : s->sections) {
+			segs->set(c->pos, true);
+		}
+    }
+    segs->showMIP();
+
 
     /*
     Image3D * centerline = new Image3D;
