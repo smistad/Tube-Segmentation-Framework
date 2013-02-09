@@ -2512,6 +2512,49 @@ bool segmentCompare(Segment * a, Segment * b) {
 	return a->benefit > b->benefit;
 }
 
+bool segmentInSegmentation(Segment * s, unordered_set<int> &segmentation, int3 size) {
+	bool in = false;
+	for(CrossSection * c : s->sections) {
+		if(segmentation.find(POS(c->pos)) != segmentation.end()) {
+			in = true;
+			break;
+		}
+	}
+	return in;
+}
+
+void inverseGradientRegionGrowing(Segment * s, TubeSegmentation &TS, unordered_set<int> &segmentation, int3 size) {
+	vector<int3> centerpoints;
+	for(int c = 0; c < s->sections.size()-1; c++) {
+		CrossSection * a = s->sections[c];
+		CrossSection * b = s->sections[c+1];
+		int distance = ceil(a->pos.distance(b->pos));
+		float3 direction(b->pos.x-a->pos.x,b->pos.y-a->pos.y,b->pos.z-a->pos.z);
+		for(int i = 0; i < distance; i++) {
+			float frac = (float)i/distance;
+			float3 n = a->pos + frac*direction;
+			int3 in(round(n.x),round(n.y),round(n.z));
+			centerpoints.push_back(in);
+		}
+	}
+
+	// Dilate the centerline
+	unordered_set<int> centerline;
+	for(int3 pos : centerpoints) {
+		for(int a = -1; a < 2; a++) {
+		for(int b = -1; b < 2; b++) {
+		for(int c = -1; c < 2; c++) {
+			int3 n = pos + int3(a,b,c);
+			centerline.insert(POS(n));
+		}}}
+	}
+
+	// TODO the rest of the inverse gradient region growing
+
+	// Add all segmented voxels to segmentation
+	segmentation.insert(centerline.begin(), centerline.end());
+}
+
 std::vector<Segment *> createSegments(TubeSegmentation &TS, std::vector<CrossSection *> &crossSections, SIPL::int3 size) {
 	// Create segment vector
 	std::vector<Segment *> segments;
@@ -2602,12 +2645,12 @@ std::vector<Segment *> createSegments(TubeSegmentation &TS, std::vector<CrossSec
 				// add all cross sections in segment
 				float benefit = 0.0f;
 				segment->sections.push_back(T);
-				int current = pred[DPOS(S->index, T->index)]; // get predecessor
+				int current = T->index;
 				while(current != S->index) {
 					CrossSection * C = crossSections[current];
 					benefit += C->TDF;
 					segment->sections.push_back(C);
-					current = pred[DPOS(S->index,current)];
+					current = pred[DPOS(S->index,current)];// get predecessor
 				}
 				segment->benefit = benefit;
 				segments.push_back(segment);
@@ -2621,13 +2664,22 @@ std::vector<Segment *> createSegments(TubeSegmentation &TS, std::vector<CrossSec
 
 	// Sort the segment vector on benefit
 	std::sort(segments.begin(), segments.end(), segmentCompare);
+	unordered_set<int> segmentation;
 
 	// Go through sorted vector and do a region growing
+	std::vector<Segment *> filteredSegments;
 	for(Segment * s : segments) {
-		std::cout << s->benefit << std::endl;
+		if(!segmentInSegmentation(s, segmentation, size) && s->benefit > 2) {
+			std::cout << "adding segment with benefit: " << s->benefit << std::endl;
+			// Do region growing and Add all segmented voxels to a set
+			inverseGradientRegionGrowing(s, TS, segmentation, size);
+			filteredSegments.push_back(s);
+		}
 	}
 
-	return segments;
+	std::cout << "total number of segments after remove overlapping segments " << filteredSegments.size() << std::endl;
+
+	return filteredSegments;
 }
 
 void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * size, paramList &parameters, TSFOutput * output) {
