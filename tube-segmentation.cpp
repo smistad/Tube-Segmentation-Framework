@@ -2765,8 +2765,8 @@ std::vector<Segment *> findOptimalSubtree(std::vector<Segment *> segments, int *
 	v[0] = 1;
 
 	for(int j = Ns-1; j >= 0; j--) {
-		if(v[j] == 1) {
-			int mj = depthFirstOrdering[j];
+		int mj = depthFirstOrdering[j];
+		if(v[mj] == 1) {
 			// For all children of mj
 			for(Connection * c : segments[mj]) {
 				int k = c->target; //child
@@ -2781,11 +2781,18 @@ std::vector<Segment *> findOptimalSubtree(std::vector<Segment *> segments, int *
 	std::vector<Segment *> finalSegments;
 	for(int i = 0; i < Ns; i++) {
 		if(v[i]) {
-			finalSegments.push_back(segments[depthFirstOrdering[i]]);
+			finalSegments.push_back(segments[i]);
 		}
 	}
 	delete[] v;
 	return finalSegments;
+}
+
+void createConnections(TubeSegmentation &TS, std::vector<Segment *> segments, int3 size) {
+	// For all pairs of segments
+	// See if they are allowed to connect
+	// If so, create connection object and add to segemnt
+	// Calculate cost and add to connetion and segment
 }
 
 void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * size, paramList &parameters, TSFOutput * output) {
@@ -2869,10 +2876,14 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
     // Create connections between segments
     createConnections(TS, segments, *size);
 
-    // TODO Do minimum spanning tree on segments, where each segment is a node and the connetions are edges
+    // Display connections, in a separate color for instance
+
+    // Do minimum spanning tree on segments, where each segment is a node and the connetions are edges
     // must also select a root segment
     int root = selectRoot(segments);
     segments = minimumSpanningTree(segments[root], *size);
+
+    // Display which connections have been retained and which are removed
 
     // create depth first ordering
     int * depthFirstOrderingOfSegments = createDepthFirstOrdering(segments, root);
@@ -2881,26 +2892,6 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
     std::vector<Segment *> finalSegments = findOptimalSubtree(segments, depthFirstOrderingOfSegments);
 
     // TODO Display final segments and the connections
-
-    /*
-    Image3D * centerline = new Image3D;
-    *centerline = runNewCenterlineAlg(*ocl, *size, parameters, vectorField, *TDF, radius, dataset);
-    output->setCenterlineVoxels(centerline);
-
-    Image3D * segmentation = new Image3D;
-    if(!getParamBool(parameters, "no-segmentation")) {
-    	if(!getParamBool(parameters, "sphere-segmentation")) {
-			*segmentation = runInverseGradientSegmentation(*ocl, *centerline, vectorField, *size, parameters);
-    	} else {
-			*segmentation = runSphereSegmentation(*ocl, *centerline, radius, *size, parameters);
-    	}
-    	output->setSegmentation(segmentation);
-    }
-
-	if(getParamStr(parameters, "storage-dir") != "off") {
-		writeDataToDisk(output, getParamStr(parameters, "storage-dir"));
-    }
-    */
 
 }
 
