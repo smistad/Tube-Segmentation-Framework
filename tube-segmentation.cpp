@@ -2727,17 +2727,52 @@ int * createDepthFirstOrdering(std::vector<Segment *> segments, int root) {
 	return ordering;
 }
 
+class ConnectionComparator {
+public:
+	bool operator()(Connection * a, Connection *b) const {
+		return a->cost > b->cost;
+	}
+};
+
 std::vector<Segment *> minimumSpanningTree(Segment * root, int3 size) {
 	// Need a priority queue on Connection objects based on the cost
+	std::priority_queue<Connection *, std::vector<Connection *>, ConnectionComparator> queue;
+	std::vector<Segment *> result;
+	unordered_set<int> visited;
+	result.push_back(root);
+	visited.insert(root->index);
 
 	// Add all connections of the root to the queue
+	for(Connection * c : root->connections) {
+		queue.push(c);
+	}
 
+	while(!queue.empty()) {
 	// Select minimum connection
 	// Check if target is already added
 	// if not, add all of its connection to the queue
 	// add this connection to the source
 	// Add target segment and clear its connections
 	// Also add cost to the segment object
+		Connection * c = queue.top();
+		std::cout << c->cost << std::endl;
+		queue.pop();
+		if(visited.find(c->target->index) != visited.end())
+			continue;
+
+		for(Connection * cn : cn->target->connections) {
+			if(visited.find(cn->target->index) == visited.end())
+				queue.push(cn);
+		}
+
+		c->source->connections.push_back(c);
+		// c->target->connections.clear(); doest his delete the objects?
+		c->target->connections = std::vector<Connection *>();
+		c->target->cost = c->cost;
+		result.push_back(c->target);
+	}
+
+	return result;
 }
 
 std::vector<Segment *> findOptimalSubtree(std::vector<Segment *> segments, int * depthFirstOrdering) {
@@ -2965,17 +3000,49 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
     }
     connections->showMIP();
 
-    /*
     // Do minimum spanning tree on segments, where each segment is a node and the connetions are edges
     // must also select a root segment
+    std::cout << "running minimum spanning tree" << std::endl;
     int root = selectRoot(segments);
     segments = minimumSpanningTree(segments[root], *size);
+    std::cout << "finished running minimum spanning tree" << std::endl;
+
+    // Visualize
+
+    SIPL::Volume<float3> * connections2 = new SIPL::Volume<float3>(*size);
+	for(Segment * s : segments) {
+		for(CrossSection * c : s->sections) {
+			float3 v = connections2->get(c->pos);
+			v.x = 1.0f;
+
+			connections2->set(c->pos, v);
+		}
+		for(Connection * c : s->connections) {
+			CrossSection * a = c->source_section;
+			CrossSection * b = c->target_section;
+			int distance = ceil(a->pos.distance(b->pos));
+			float3 direction(b->pos.x-a->pos.x,b->pos.y-a->pos.y,b->pos.z-a->pos.z);
+			for(int i = 0; i < distance; i++) {
+				float frac = (float)i/distance;
+				float3 n = a->pos + frac*direction;
+				int3 in(round(n.x),round(n.y),round(n.z));
+				float3 v = connections2->get(in);
+				v.y = 1.0f;
+				connections2->set(in, v);
+			}
+
+		}
+    }
+    connections2->showMIP();
+
+    /*
 
     // Display which connections have been retained and which are removed
 
     // create depth first ordering
     int * depthFirstOrderingOfSegments = createDepthFirstOrdering(segments, root);
 
+	// TODO have to take into account that not all segments are part of the final tree, for instance, return Ns
     // TODO Do the dynamic programming algorithm for locating the best subtree
     std::vector<Segment *> finalSegments = findOptimalSubtree(segments, depthFirstOrderingOfSegments);
 
