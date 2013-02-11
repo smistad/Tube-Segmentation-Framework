@@ -2890,7 +2890,7 @@ std::vector<Segment *> minimumSpanningTree(Segment * root, int3 size) {
 std::vector<Segment *> findOptimalSubtree(std::vector<Segment *> segments, int * depthFirstOrdering, int Ns) {
 
 	float * score = new float[Ns]();
-	float r = 3.0;
+	float r = 1.0;
 
 	// Stage 1 bottom up
 	for(int j = 0; j < Ns; j++) {
@@ -2899,8 +2899,8 @@ std::vector<Segment *> findOptimalSubtree(std::vector<Segment *> segments, int *
 		// For all children of mj
 		for(Connection * c : segments[mj]->connections) {
 			int k = c->target->index; //child
-			if(score[depthFirstOrdering[segments[k]->index]] >= 0)
-				score[mj] += score[depthFirstOrdering[segments[k]->index]];
+			if(score[segments[k]->index] >= 0)
+				score[mj] += score[segments[k]->index];
 		}
 	}
 
@@ -2916,8 +2916,8 @@ std::vector<Segment *> findOptimalSubtree(std::vector<Segment *> segments, int *
 			// For all children of mj
 			for(Connection * c : segments[mj]->connections) {
 				int k = c->target->index; //child
-				if(score[depthFirstOrdering[segments[k]->index]] >= 0)
-					v[depthFirstOrdering[segments[k]->index]] = true;
+				if(score[segments[k]->index] >= 0)
+					v[segments[k]->index] = true;
 			}
 		}
 	}
@@ -2999,7 +2999,7 @@ void createConnections(TubeSegmentation &TS, std::vector<Segment *> segments, in
 	}
 }
 
-SIPL::Volume<float3> visualizeSegments(std::vector<Segment *> segments, int3 size) {
+SIPL::Volume<float3> * visualizeSegments(std::vector<Segment *> segments, int3 size) {
 	SIPL::Volume<float3> * connections = new SIPL::Volume<float3>(size);
     for(Segment * s : segments) {
     	for(int i = 0; i < s->sections.size()-1; i++) {
@@ -3157,7 +3157,20 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
     std::cout << "number of segments is " << finalSegments.size() << std::endl;
 
     // TODO Display final segments and the connections
-    visualizeSegments(finalSegments, *size);
+    SIPL::Volume<float3> * v = visualizeSegments(finalSegments, *size);
+    char * centerline = new char[totalSize]();
+    for(int i = 0; i < totalSize; i++) {
+    	float3 value = v->get(i);
+    	if(value.x > 0 || value.y > 0) {
+    		centerline[i] = 1;
+    	}
+    }
+    output->setCenterlineVoxels(centerline);
+
+	if(getParamStr(parameters, "storage-dir") != "off") {
+        writeDataToDisk(output, getParamStr(parameters, "storage-dir"));
+    }
+
 }
 
 
