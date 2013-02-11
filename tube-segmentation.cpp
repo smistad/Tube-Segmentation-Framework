@@ -2705,15 +2705,19 @@ int selectRoot(std::vector<Segment *> segments) {
 	return root;
 }
 
-void DFS(Segment * current, int * ordering, int &counter) {
+void DFS(Segment * current, int * ordering, int &counter, unordered_set<int> &visited) {
+	if(visited.find(current->index) != visited.end())
+		return;
 	ordering[counter] = current->index;
+	std::cout << counter << ": " << current->index << std::endl;
 	counter++;
 	for(Connection * edge : current->connections) {
-		DFS(edge->target, ordering, counter);
+		DFS(edge->target, ordering, counter, visited);
 	}
+	visited.insert(current->index);
 }
 
-int * createDepthFirstOrdering(std::vector<Segment *> segments, int root) {
+int * createDepthFirstOrdering(std::vector<Segment *> segments, int root, int &Ns) {
 	int * ordering = new int[segments.size()];
 	int counter = 0;
 
@@ -2722,9 +2726,18 @@ int * createDepthFirstOrdering(std::vector<Segment *> segments, int root) {
 		segments[i]->index = i;
 	}
 
-	DFS(segments[0], ordering, counter);
+	unordered_set<int> visited;
 
-	return ordering;
+	DFS(segments[root], ordering, counter, visited);
+
+	Ns = counter;
+	int * reversedOrdering = new int[Ns];
+	for(int i = 0; i < Ns; i++) {
+		reversedOrdering[i] = ordering[Ns-i-1];
+	}
+
+	delete[] ordering;
+	return reversedOrdering;
 }
 
 class ConnectionComparator {
@@ -2775,40 +2788,37 @@ std::vector<Segment *> minimumSpanningTree(Segment * root, int3 size) {
 	return result;
 }
 
-std::vector<Segment *> findOptimalSubtree(std::vector<Segment *> segments, int * depthFirstOrdering) {
+std::vector<Segment *> findOptimalSubtree(std::vector<Segment *> segments, int * depthFirstOrdering, int Ns) {
 
-	int Ns = segments.size();
 	float * score = new float[Ns]();
 	float r = 3.0;
 
-	// TODO THE ORDERING IS WRONG; IT SHOULD BE THE DEEPEST ONE FIRST
-
-	// Stage 1 bottum up
+	// Stage 1 bottom up
 	for(int j = 0; j < Ns; j++) {
 		int mj = depthFirstOrdering[j];
-		score[j] = segments[mj]->benefit - r * segments[mj]->cost;
+		score[mj] = segments[mj]->benefit - r * segments[mj]->cost;
 		// For all children of mj
 		for(Connection * c : segments[mj]->connections) {
 			int k = c->target->index; //child
 			if(score[depthFirstOrdering[segments[k]->index]] >= 0)
-				score[j] += score[depthFirstOrdering[segments[k]->index]];
+				score[mj] += score[depthFirstOrdering[segments[k]->index]];
 		}
 	}
 
 	// Stage 2 top down
 	bool * v = new bool[Ns];
 	for(int i = 1; i < Ns; i++)
-		v[i] = 0;
-	v[0] = 1;
+		v[i] = false;
+	v[0] = true;
 
 	for(int j = Ns-1; j >= 0; j--) {
 		int mj = depthFirstOrdering[j];
-		if(v[mj] == 1) {
+		if(v[mj]) {
 			// For all children of mj
 			for(Connection * c : segments[mj]->connections) {
 				int k = c->target->index; //child
 				if(score[depthFirstOrdering[segments[k]->index]] >= 0)
-					v[depthFirstOrdering[segments[k]->index]] = 1;
+					v[depthFirstOrdering[segments[k]->index]] = true;
 			}
 		}
 	}
@@ -2888,6 +2898,43 @@ void createConnections(TubeSegmentation &TS, std::vector<Segment *> segments, in
 			}
 		}
 	}
+}
+
+SIPL::Volume<float3> visualizeSegments(std::vector<Segment *> segments, int3 size) {
+	SIPL::Volume<float3> * connections = new SIPL::Volume<float3>(size);
+    for(Segment * s : segments) {
+    	for(int i = 0; i < s->sections.size()-1; i++) {
+    		CrossSection * a = s->sections[i];
+    		CrossSection * b = s->sections[i+1];
+			int distance = ceil(a->pos.distance(b->pos));
+			float3 direction(b->pos.x-a->pos.x,b->pos.y-a->pos.y,b->pos.z-a->pos.z);
+			for(int i = 0; i < distance; i++) {
+				float frac = (float)i/distance;
+				float3 n = a->pos + frac*direction;
+				int3 in(round(n.x),round(n.y),round(n.z));
+				float3 v = connections->get(in);
+				v.x = 1.0f;
+				connections->set(in, v);
+			}
+		}
+		for(Connection * c : s->connections) {
+			CrossSection * a = c->source_section;
+			CrossSection * b = c->target_section;
+			int distance = ceil(a->pos.distance(b->pos));
+			float3 direction(b->pos.x-a->pos.x,b->pos.y-a->pos.y,b->pos.z-a->pos.z);
+			for(int i = 0; i < distance; i++) {
+				float frac = (float)i/distance;
+				float3 n = a->pos + frac*direction;
+				int3 in(round(n.x),round(n.y),round(n.z));
+				float3 v = connections->get(in);
+				v.y = 1.0f;
+				connections->set(in, v);
+			}
+
+		}
+    }
+    connections->showMIP();
+    return connections;
 }
 
 void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * size, paramList &parameters, TSFOutput * output) {
@@ -2974,31 +3021,7 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
     std::cout << "finished creating connections." << std::endl;
 
     // Display connections, in a separate color for instance
-    SIPL::Volume<float3> * connections = new SIPL::Volume<float3>(*size);
-    for(Segment * s : segments) {
-		for(CrossSection * c : s->sections) {
-			float3 v = connections->get(c->pos);
-			v.x = 1.0f;
-
-			connections->set(c->pos, v);
-		}
-		for(Connection * c : s->connections) {
-			CrossSection * a = c->source_section;
-			CrossSection * b = c->target_section;
-			int distance = ceil(a->pos.distance(b->pos));
-			float3 direction(b->pos.x-a->pos.x,b->pos.y-a->pos.y,b->pos.z-a->pos.z);
-			for(int i = 0; i < distance; i++) {
-				float frac = (float)i/distance;
-				float3 n = a->pos + frac*direction;
-				int3 in(round(n.x),round(n.y),round(n.z));
-				float3 v = connections->get(in);
-				v.y = 1.0f;
-				connections->set(in, v);
-			}
-
-		}
-    }
-    connections->showMIP();
+    visualizeSegments(segments, *size);
 
     // Do minimum spanning tree on segments, where each segment is a node and the connetions are edges
     // must also select a root segment
@@ -3008,47 +3031,31 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
     std::cout << "finished running minimum spanning tree" << std::endl;
 
     // Visualize
-
-    SIPL::Volume<float3> * connections2 = new SIPL::Volume<float3>(*size);
-	for(Segment * s : segments) {
-		for(CrossSection * c : s->sections) {
-			float3 v = connections2->get(c->pos);
-			v.x = 1.0f;
-
-			connections2->set(c->pos, v);
-		}
-		for(Connection * c : s->connections) {
-			CrossSection * a = c->source_section;
-			CrossSection * b = c->target_section;
-			int distance = ceil(a->pos.distance(b->pos));
-			float3 direction(b->pos.x-a->pos.x,b->pos.y-a->pos.y,b->pos.z-a->pos.z);
-			for(int i = 0; i < distance; i++) {
-				float frac = (float)i/distance;
-				float3 n = a->pos + frac*direction;
-				int3 in(round(n.x),round(n.y),round(n.z));
-				float3 v = connections2->get(in);
-				v.y = 1.0f;
-				connections2->set(in, v);
-			}
-
-		}
-    }
-    connections2->showMIP();
-
-    /*
+    visualizeSegments(segments, *size);
 
     // Display which connections have been retained and which are removed
 
     // create depth first ordering
-    int * depthFirstOrderingOfSegments = createDepthFirstOrdering(segments, root);
+    std::cout << "creating depth first ordering..." << std::endl;
+    int Ns;
+    int * depthFirstOrderingOfSegments = createDepthFirstOrdering(segments, root, Ns);
+    std::cout << "finished creating depth first ordering" << std::endl;
+    std::cout << "number of segments is " << segments.size() << std::endl;
+    std::cout << "Ns is " << Ns << std::endl;
+    std::cout << "root is " << root << std::endl;
+    for(int i = 0; i < Ns; i++) {
+    	std::cout << depthFirstOrderingOfSegments[i] << " ";
+    }
+    std::cout << std::endl;
 
-	// TODO have to take into account that not all segments are part of the final tree, for instance, return Ns
-    // TODO Do the dynamic programming algorithm for locating the best subtree
-    std::vector<Segment *> finalSegments = findOptimalSubtree(segments, depthFirstOrderingOfSegments);
+	// have to take into account that not all segments are part of the final tree, for instance, return Ns
+    // Do the dynamic programming algorithm for locating the best subtree
+    std::cout << "finding optimal subtree..." << std::endl;
+    std::vector<Segment *> finalSegments = findOptimalSubtree(segments, depthFirstOrderingOfSegments, Ns);
+    std::cout << "finished." << std::endl;
 
     // TODO Display final segments and the connections
-
-	*/
+    visualizeSegments(finalSegments, *size);
 }
 
 
