@@ -2453,6 +2453,8 @@ std::vector<CrossSection *> createGraph(TubeSegmentation &TS, SIPL::int3 size) {
 		        if(a == 0 && b == 0 && c == 0)
 		            continue;
 		        const int3 n = pos + int3(a,b,c);
+		        if(!inBounds(n, size))
+		        	continue;
 		        float3 r(a,b,c);
 		        const float dp = e1.dot(r);
 		        float3 r_projected = float3(r.x-e1.x*dp,r.y-e1.y*dp,r.z-e1.z*dp);
@@ -2462,7 +2464,8 @@ std::vector<CrossSection *> createGraph(TubeSegmentation &TS, SIPL::int3 size) {
 		        //std::cout << "theta: " << theta << std::endl;
 		        if((theta < thetaLimit && r.length() < maxD)) {
 		        	//std::cout << SQR_MAG(n) << std::endl;
-		            if(SQR_MAG(n) < SQR_MAG(pos)) {
+		            //if(SQR_MAG(n) < SQR_MAG(pos)) {
+		            if(TS.TDF[POS(n)] > TS.TDF[POS(pos)]) {
 		                invalid = true;
 		                break;
 		            }
@@ -2718,7 +2721,7 @@ std::vector<Segment *> createSegments(TubeSegmentation &TS, std::vector<CrossSec
 		dist[DPOS(U->index,U->index)] = 0;
 		for(CrossSection * V : U->neighbors) {
 			// TODO calculate more advanced weight
-			dist[DPOS(U->index,V->index)] = (1-U->TDF) + (1-V->TDF);
+			dist[DPOS(U->index,V->index)] = /*(1-U->TDF) +*/ (1-V->TDF);
 			pred[DPOS(U->index,V->index)] = U->index;
 		}
 	}
@@ -2777,7 +2780,7 @@ std::vector<Segment *> createSegments(TubeSegmentation &TS, std::vector<CrossSec
 	std::vector<Segment *> filteredSegments;
 	int counter = 0;
 	for(Segment * s : segments) {
-		if(!segmentInSegmentation(s, segmentation, size) && s->benefit > 2) {
+		if(!segmentInSegmentation(s, segmentation, size) /*&& s->benefit > 2*/) {
 			std::cout << "adding segment with benefit: " << s->benefit << std::endl;
 			// Do region growing and Add all segmented voxels to a set
 			inverseGradientRegionGrowing(s, TS, segmentation, size);
@@ -3144,10 +3147,6 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
     std::cout << "finished creating depth first ordering" << std::endl;
     std::cout << "Ns is " << Ns << std::endl;
     std::cout << "root is " << root << std::endl;
-    for(int i = 0; i < Ns; i++) {
-    	std::cout << depthFirstOrderingOfSegments[i] << " ";
-    }
-    std::cout << std::endl;
 
 	// have to take into account that not all segments are part of the final tree, for instance, return Ns
     // Do the dynamic programming algorithm for locating the best subtree
