@@ -2418,6 +2418,16 @@ public:
 	float3 direction;
 };
 
+class CrossSectionCompare {
+private:
+	float * dist;
+public:
+	CrossSectionCompare(float * dist) { this->dist = dist; };
+	bool operator() (const CrossSection * a, const CrossSection * b) {
+		return dist[a->index] > dist[b->index];
+	};
+};
+
 std::vector<CrossSection *> createGraph(TubeSegmentation &TS, SIPL::int3 size) {
 	// Create vector
 	std::vector<CrossSection *> sections;
@@ -2470,7 +2480,6 @@ std::vector<CrossSection *> createGraph(TubeSegmentation &TS, SIPL::int3 size) {
 		}
 	}}}
 
-	std::vector<CrossSection *> sectionPairs;
 
 	// For each cross section c_i
 	for(CrossSection * c_i : sections) {
@@ -2493,9 +2502,16 @@ std::vector<CrossSection *> createGraph(TubeSegmentation &TS, SIPL::int3 size) {
 					continue;
 
 				c_i->neighbors.push_back(c_j);
-				sectionPairs.push_back(c_i);
+				//sectionPairs.push_back(c_i);
 			}
 			// If no pair is found, dont add it
+		}
+	}
+
+	std::vector<CrossSection *> sectionPairs;
+	for(CrossSection * c_i : sections) {
+		if(c_i->neighbors.size()>0) {
+			sectionPairs.push_back(c_i);
 		}
 	}
 
@@ -2602,6 +2618,83 @@ std::vector<Segment *> createSegments(TubeSegmentation &TS, std::vector<CrossSec
 
 	std::cout << "finished graph component labeling" << std::endl;
 
+
+	// For each valid pair of segments, do a dijkstra shortest path
+
+	/*
+	int totalSize = crossSections.size();
+
+	std::cout << "number of cross sections is " << totalSize << std::endl;
+	for(int u = 0; u < crossSections.size(); u++) {
+		CrossSection * U = crossSections[u];
+		U->index = u;
+	}
+//#pragma omp parallel for
+	for(int u = 0; u < crossSections.size(); u++) {
+		CrossSection * U = crossSections[u];
+		for(int v = 0; v < u; v++) {
+			CrossSection * V = crossSections[v];
+			if(U->label != V->label)
+				continue;
+
+			if(U->index == V->index)
+				continue;
+
+			float * dist = new float[totalSize];
+			int * pred = new int[totalSize];
+			for(int i = 0; i < totalSize; i++)
+				dist[i] = 99999999.0f;
+			dist[U->index] = 0;
+			// Do dijkstra
+			typedef std::priority_queue<CrossSection *, std::vector<CrossSection *>, CrossSectionCompare> queueType;
+			queueType queue = queueType(CrossSectionCompare(dist), std::vector<CrossSection *>());
+			queue.push(U);
+			unordered_set<int> visited;
+			while(!queue.empty()) {
+				CrossSection * current = queue.top();
+				queue.pop();
+				if(visited.find(current->index) != visited.end()) // already processed
+					continue;
+
+				visited.insert(current->index);
+				if(current->pos == V->pos) { // target is found
+					break;
+				}
+
+				for(CrossSection * N : current->neighbors) {
+					if(visited.find(N->index) != visited.end()) // already processed
+						continue;
+					float weight = (1-N->TDF);
+					float newDistance = dist[current->index] + weight;
+					if(newDistance < dist[N->index]) {
+						dist[N->index] = newDistance;
+						pred[N->index] = current->index;
+						queue.push(N);
+					}
+				}
+			}
+
+			// Dijkstra finished
+			//std::cout << "dijkstra finished for " << u << " " << v << std::endl;
+
+			// Create segment
+			Segment * segment = new Segment;
+			// add all cross sections in segment
+			float benefit = 0.0f;
+			int current = V->index;
+			while(current != U->index) {
+				benefit += crossSections[current]->TDF;
+				segment->sections.push_back(crossSections[current]);
+				current = pred[current];
+			}
+//#pragma omp critical
+			segments.push_back(segment);
+			delete[] pred;
+			delete[] dist;
+		}
+		//std::cout << u << std::endl;
+	}
+	*/
 	// Do a floyd warshall all pairs shortest path
 	int totalSize = crossSections.size();
 	float * dist = new float[totalSize*totalSize];
@@ -2682,12 +2775,15 @@ std::vector<Segment *> createSegments(TubeSegmentation &TS, std::vector<CrossSec
 
 	// Go through sorted vector and do a region growing
 	std::vector<Segment *> filteredSegments;
+	int counter = 0;
 	for(Segment * s : segments) {
 		if(!segmentInSegmentation(s, segmentation, size) && s->benefit > 2) {
 			std::cout << "adding segment with benefit: " << s->benefit << std::endl;
 			// Do region growing and Add all segmented voxels to a set
 			inverseGradientRegionGrowing(s, TS, segmentation, size);
 			filteredSegments.push_back(s);
+			s->index = counter;
+			counter++;
 		}
 	}
 
@@ -2759,6 +2855,8 @@ std::vector<Segment *> minimumSpanningTree(Segment * root, int3 size) {
 	for(Connection * c : root->connections) {
 		queue.push(c);
 	}
+	// Remove connections from root
+	root->connections = std::vector<Connection *>();
 
 	while(!queue.empty()) {
 	// Select minimum connection
@@ -2773,7 +2871,7 @@ std::vector<Segment *> minimumSpanningTree(Segment * root, int3 size) {
 		if(visited.find(c->target->index) != visited.end())
 			continue;
 
-		for(Connection * cn : cn->target->connections) {
+		for(Connection * cn : c->target->connections) {
 			if(visited.find(cn->target->index) == visited.end())
 				queue.push(cn);
 		}
@@ -2783,6 +2881,7 @@ std::vector<Segment *> minimumSpanningTree(Segment * root, int3 size) {
 		c->target->connections = std::vector<Connection *>();
 		c->target->cost = c->cost;
 		result.push_back(c->target);
+		visited.insert(c->target->index);
 	}
 
 	return result;
@@ -3017,8 +3116,10 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
 
     // Create connections between segments
     std::cout << "creating connections..." << std::endl;
+    std::cout << "number of segments is " << segments.size() << std::endl;
     createConnections(TS, segments, *size);
     std::cout << "finished creating connections." << std::endl;
+    std::cout << "number of segments is " << segments.size() << std::endl;
 
     // Display connections, in a separate color for instance
     visualizeSegments(segments, *size);
@@ -3029,6 +3130,7 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
     int root = selectRoot(segments);
     segments = minimumSpanningTree(segments[root], *size);
     std::cout << "finished running minimum spanning tree" << std::endl;
+    std::cout << "number of segments is " << segments.size() << std::endl;
 
     // Visualize
     visualizeSegments(segments, *size);
@@ -3040,7 +3142,6 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
     int Ns;
     int * depthFirstOrderingOfSegments = createDepthFirstOrdering(segments, root, Ns);
     std::cout << "finished creating depth first ordering" << std::endl;
-    std::cout << "number of segments is " << segments.size() << std::endl;
     std::cout << "Ns is " << Ns << std::endl;
     std::cout << "root is " << root << std::endl;
     for(int i = 0; i < Ns; i++) {
@@ -3053,6 +3154,7 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
     std::cout << "finding optimal subtree..." << std::endl;
     std::vector<Segment *> finalSegments = findOptimalSubtree(segments, depthFirstOrderingOfSegments, Ns);
     std::cout << "finished." << std::endl;
+    std::cout << "number of segments is " << finalSegments.size() << std::endl;
 
     // TODO Display final segments and the connections
     visualizeSegments(finalSegments, *size);
