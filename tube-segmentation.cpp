@@ -1,5 +1,6 @@
 #include "tube-segmentation.hpp"
 #include "SIPL/Types.hpp"
+#include "SIPL/Core.hpp"
 #include <boost/iostreams/device/mapped_file.hpp>
 #include <queue>
 #include <stack>
@@ -91,8 +92,10 @@ TSFOutput * run(std::string filename, paramList &parameters) {
         // Run specified method on dataset
         if(getParamStr(parameters, "centerline-method") == "ridge") {
             runCircleFittingAndRidgeTraversal(ocl, dataset, size, parameters, output);
-        } else {
+        } else if(getParamStr(parameters, "centerline-method") == "gpu") {
             runCircleFittingAndNewCenterlineAlg(ocl, dataset, size, parameters, output);
+        } else if(getParamStr(parameters, "centerline-method") == "test") {
+            runCircleFittingAndTest(ocl, dataset, size, parameters, output);
         }
     } catch(cl::Error e) {
     	std::string str = "OpenCL error: " + std::string(getCLErrorString(e.err()));
@@ -156,7 +159,7 @@ bool inBounds(SIPL::int3 pos, SIPL::int3 size) {
 
 #define LPOS(a,b,c) (a)+(b)*(size.x)+(c)*(size.x*size.y)
 #define M(a,b,c) 1-sqrt(pow(T.Fx[a+b*size.x+c*size.x*size.y],2.0f) + pow(T.Fy[a+b*size.x+c*size.x*size.y],2.0f) + pow(T.Fz[a+b*size.x+c*size.x*size.y],2.0f))
-#define SQR_MAG(pos) sqrt(pow(T.Fx[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f) + pow(T.Fy[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f) + pow(T.Fz[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f))
+#define SQR_MAG(pos) sqrt(pow(TS.Fx[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f) + pow(TS.Fy[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f) + pow(TS.Fz[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f))
 
 #define SIZE 3
 
@@ -2404,6 +2407,776 @@ void runCircleFittingAndNewCenterlineAlg(OpenCL * ocl, cl::Image3D &dataset, SIP
     }
 
 }
+
+class CrossSection {
+public:
+	int3 pos;
+	float TDF;
+	std::vector<CrossSection *> neighbors;
+	int label;
+	int index;
+	float3 direction;
+};
+
+class CrossSectionCompare {
+private:
+	float * dist;
+public:
+	CrossSectionCompare(float * dist) { this->dist = dist; };
+	bool operator() (const CrossSection * a, const CrossSection * b) {
+		return dist[a->index] > dist[b->index];
+	};
+};
+
+std::vector<CrossSection *> createGraph(TubeSegmentation &TS, SIPL::int3 size) {
+	// Create vector
+	std::vector<CrossSection *> sections;
+	float threshold = 0.5f;
+
+	// Go through TS.TDF and add all with TDF above threshold
+	int counter = 0;
+	float thetaLimit = 0.5;
+	for(int z = 1; z < size.z-1; z++) {
+	for(int y = 1; y < size.y-1; y++) {
+	for(int x = 1; x < size.x-1; x++) {
+		int3 pos(x,y,z);
+		float tdf = TS.TDF[POS(pos)];
+		if(tdf > threshold) {
+			int maxD = std::min(std::max((int)round(TS.radius[POS(pos)]), 1), 5);
+			//std::cout << "radius" << TS.radius[POS(pos)] << std::endl;
+			//std::cout << "maxD "<< maxD <<std::endl;
+			float3 e1 = getTubeDirection(TS, pos, size);
+			bool invalid = false;
+		    for(int a = -maxD; a <= maxD; a++) {
+		    for(int b = -maxD; b <= maxD; b++) {
+		    for(int c = -maxD; c <= maxD; c++) {
+		        if(a == 0 && b == 0 && c == 0)
+		            continue;
+		        const int3 n = pos + int3(a,b,c);
+		        if(!inBounds(n, size))
+		        	continue;
+		        float3 r(a,b,c);
+		        const float dp = e1.dot(r);
+		        float3 r_projected = float3(r.x-e1.x*dp,r.y-e1.y*dp,r.z-e1.z*dp);
+		        float3 rn = r.normalize();
+		        float3 rpn = r_projected.normalize();
+		        float theta = acos((double)rn.dot(rpn));
+		        //std::cout << "theta: " << theta << std::endl;
+		        if((theta < thetaLimit && r.length() < maxD)) {
+		        	//std::cout << SQR_MAG(n) << std::endl;
+		            //if(SQR_MAG(n) < SQR_MAG(pos)) {
+		            if(TS.TDF[POS(n)] > TS.TDF[POS(pos)]) {
+		                invalid = true;
+		                break;
+		            }
+		        }
+		    }}}
+		    if(!invalid) {
+				CrossSection * cs = new CrossSection;
+				cs->pos = pos;
+				cs->TDF = tdf;
+				cs->label = counter;
+				cs->direction = e1;
+				counter++;
+				sections.push_back(cs);
+		    }
+		}
+	}}}
+
+
+	// For each cross section c_i
+	for(CrossSection * c_i : sections) {
+		// For each cross section c_j
+		for(CrossSection * c_j : sections) {
+			// If all criterias are ok: Add c_j as neighbor to c_i
+			if(c_i->pos.distance(c_j->pos) < 5 && !(c_i->pos == c_j->pos)) {
+				float3 e1_i = c_i->direction;
+				float3 e1_j = c_j->direction;
+				int3 cint = c_i->pos - c_j->pos;
+				float3 c = cint.normalize();
+
+				if(acos((double)fabs(e1_i.dot(e1_j))) > 1.05) // 60 degrees
+					continue;
+
+				if(acos((double)fabs(e1_i.dot(c))) > 1.05)
+					continue;
+
+				if(acos((double)fabs(e1_j.dot(c))) > 1.05)
+					continue;
+
+				c_i->neighbors.push_back(c_j);
+				//sectionPairs.push_back(c_i);
+			}
+			// If no pair is found, dont add it
+		}
+	}
+
+	std::vector<CrossSection *> sectionPairs;
+	for(CrossSection * c_i : sections) {
+		if(c_i->neighbors.size()>0) {
+			sectionPairs.push_back(c_i);
+		}
+	}
+
+	return sectionPairs;
+}
+
+class Connection;
+
+class Segment {
+public:
+	std::vector<CrossSection *> sections;
+	std::vector<Connection *> connections;
+	float benefit;
+	float cost;
+	int index;
+};
+
+class Connection {
+public:
+	Segment * source;
+	Segment * target;
+	CrossSection * source_section;
+	CrossSection * target_section;
+	float cost;
+};
+
+bool segmentCompare(Segment * a, Segment * b) {
+	return a->benefit > b->benefit;
+}
+
+bool segmentInSegmentation(Segment * s, unordered_set<int> &segmentation, int3 size) {
+	bool in = false;
+	for(CrossSection * c : s->sections) {
+		if(segmentation.find(POS(c->pos)) != segmentation.end()) {
+			in = true;
+			break;
+		}
+	}
+	return in;
+}
+
+void inverseGradientRegionGrowing(Segment * s, TubeSegmentation &TS, unordered_set<int> &segmentation, int3 size) {
+	vector<int3> centerpoints;
+	for(int c = 0; c < s->sections.size()-1; c++) {
+		CrossSection * a = s->sections[c];
+		CrossSection * b = s->sections[c+1];
+		int distance = ceil(a->pos.distance(b->pos));
+		float3 direction(b->pos.x-a->pos.x,b->pos.y-a->pos.y,b->pos.z-a->pos.z);
+		for(int i = 0; i < distance; i++) {
+			float frac = (float)i/distance;
+			float3 n = a->pos + frac*direction;
+			int3 in(round(n.x),round(n.y),round(n.z));
+			centerpoints.push_back(in);
+		}
+	}
+
+	// Dilate the centerline
+	unordered_set<int> centerline;
+	for(int3 pos : centerpoints) {
+		for(int a = -1; a < 2; a++) {
+		for(int b = -1; b < 2; b++) {
+		for(int c = -1; c < 2; c++) {
+			int3 n = pos + int3(a,b,c);
+			centerline.insert(POS(n));
+		}}}
+	}
+
+	// TODO the rest of the inverse gradient region growing
+
+	// Add all segmented voxels to segmentation
+	segmentation.insert(centerline.begin(), centerline.end());
+}
+
+std::vector<Segment *> createSegments(TubeSegmentation &TS, std::vector<CrossSection *> &crossSections, SIPL::int3 size) {
+	// Create segment vector
+	std::vector<Segment *> segments;
+
+	// Do a graph component labeling
+	unordered_set<int> visited;
+	for(CrossSection * c : crossSections) {
+		// Do a bfs on c
+		// Check to see if point has been processed before doing a BFS
+		if(visited.find(c->label) != visited.end())
+			continue;
+
+		std::stack<CrossSection *> stack;
+		stack.push(c);
+		while(!stack.empty()) {
+			CrossSection * current = stack.top();
+			stack.pop();
+			// Check label of neighbors to see if they have been added
+			if(current->label != c->label || c->pos == current->pos) {
+				// Change label of neighbors if not
+				current->label = c->label;
+				// Add neighbors to stack
+				for(CrossSection * n : current->neighbors) {
+					if(n->label != c->label)
+						stack.push(n);
+				}
+			}
+		}
+		visited.insert(c->label);
+	}
+
+	std::cout << "finished graph component labeling" << std::endl;
+
+
+	// For each valid pair of segments, do a dijkstra shortest path
+
+	/*
+	int totalSize = crossSections.size();
+
+	std::cout << "number of cross sections is " << totalSize << std::endl;
+	for(int u = 0; u < crossSections.size(); u++) {
+		CrossSection * U = crossSections[u];
+		U->index = u;
+	}
+//#pragma omp parallel for
+	for(int u = 0; u < crossSections.size(); u++) {
+		CrossSection * U = crossSections[u];
+		for(int v = 0; v < u; v++) {
+			CrossSection * V = crossSections[v];
+			if(U->label != V->label)
+				continue;
+
+			if(U->index == V->index)
+				continue;
+
+			float * dist = new float[totalSize];
+			int * pred = new int[totalSize];
+			for(int i = 0; i < totalSize; i++)
+				dist[i] = 99999999.0f;
+			dist[U->index] = 0;
+			// Do dijkstra
+			typedef std::priority_queue<CrossSection *, std::vector<CrossSection *>, CrossSectionCompare> queueType;
+			queueType queue = queueType(CrossSectionCompare(dist), std::vector<CrossSection *>());
+			queue.push(U);
+			unordered_set<int> visited;
+			while(!queue.empty()) {
+				CrossSection * current = queue.top();
+				queue.pop();
+				if(visited.find(current->index) != visited.end()) // already processed
+					continue;
+
+				visited.insert(current->index);
+				if(current->pos == V->pos) { // target is found
+					break;
+				}
+
+				for(CrossSection * N : current->neighbors) {
+					if(visited.find(N->index) != visited.end()) // already processed
+						continue;
+					float weight = (1-N->TDF);
+					float newDistance = dist[current->index] + weight;
+					if(newDistance < dist[N->index]) {
+						dist[N->index] = newDistance;
+						pred[N->index] = current->index;
+						queue.push(N);
+					}
+				}
+			}
+
+			// Dijkstra finished
+			//std::cout << "dijkstra finished for " << u << " " << v << std::endl;
+
+			// Create segment
+			Segment * segment = new Segment;
+			// add all cross sections in segment
+			float benefit = 0.0f;
+			int current = V->index;
+			while(current != U->index) {
+				benefit += crossSections[current]->TDF;
+				segment->sections.push_back(crossSections[current]);
+				current = pred[current];
+			}
+//#pragma omp critical
+			segments.push_back(segment);
+			delete[] pred;
+			delete[] dist;
+		}
+		//std::cout << u << std::endl;
+	}
+	*/
+	// Do a floyd warshall all pairs shortest path
+	int totalSize = crossSections.size();
+	float * dist = new float[totalSize*totalSize];
+	int * pred = new int[totalSize*totalSize];
+	std::cout << "number of cross sections is " << totalSize << std::endl;
+
+	for(int u = 0; u < crossSections.size(); u++) {
+		CrossSection * U = crossSections[u];
+		U->index = u;
+	}
+
+	#define DPOS(U, V) V+U*totalSize
+	// For each cross section U
+	for(int u = 0; u < crossSections.size(); u++) {
+		CrossSection * U = crossSections[u];
+		// For each cross section V
+		for(int v = 0; v < crossSections.size(); v++) {
+			dist[DPOS(u,v)] = 99999999;
+			pred[DPOS(u,v)] = -1;
+		}
+		dist[DPOS(U->index,U->index)] = 0;
+		for(CrossSection * V : U->neighbors) {
+			// TODO calculate more advanced weight
+			dist[DPOS(U->index,V->index)] = /*(1-U->TDF) +*/ (1-V->TDF);
+			pred[DPOS(U->index,V->index)] = U->index;
+		}
+	}
+	std::cout << "finished initializing floyd warshall" << std::endl;
+
+	for(int t = 0; t < crossSections.size(); t++) {
+		//CrossSection * T = crossSections[t];
+		//std::cout << "processing t=" << t << std::endl;
+		// For each cross section U
+		for(int u = 0; u < crossSections.size(); u++) {
+			//CrossSection * U = crossSections[u];
+			// For each cross section V
+			for(int v = 0; v < crossSections.size(); v++) {
+				//CrossSection * V = crossSections[v];
+				float newLength = dist[DPOS(u, t)] + dist[DPOS(t,v)];
+				if(newLength < dist[DPOS(u,v)]) {
+					dist[DPOS(u,v)] = newLength;
+					pred[DPOS(u,v)] = pred[DPOS(t,v)];
+				}
+			}
+		}
+	}
+
+	std::cout << "finished performing floyd warshall" << std::endl;
+
+
+	for(CrossSection * S : crossSections) { // Source
+		for(CrossSection * T : crossSections) { // Target
+			if(S->label == T->label && S->index != T->index) {
+				Segment * segment = new Segment;
+				// add all cross sections in segment
+				float benefit = 0.0f;
+				segment->sections.push_back(T);
+				int current = T->index;
+				while(current != S->index) {
+					CrossSection * C = crossSections[current];
+					benefit += C->TDF;
+					segment->sections.push_back(C);
+					current = pred[DPOS(S->index,current)];// get predecessor
+				}
+				segment->benefit = benefit;
+				segments.push_back(segment);
+			}
+		}
+	}
+
+	std::cout << "finished creating segments" << std::endl;
+	std::cout << "total number of segments is " << segments.size() << std::endl;
+
+
+	// Sort the segment vector on benefit
+	std::sort(segments.begin(), segments.end(), segmentCompare);
+	unordered_set<int> segmentation;
+
+	// Go through sorted vector and do a region growing
+	std::vector<Segment *> filteredSegments;
+	int counter = 0;
+	for(Segment * s : segments) {
+		if(!segmentInSegmentation(s, segmentation, size) /*&& s->benefit > 2*/) {
+			//std::cout << "adding segment with benefit: " << s->benefit << std::endl;
+			// Do region growing and Add all segmented voxels to a set
+			inverseGradientRegionGrowing(s, TS, segmentation, size);
+			filteredSegments.push_back(s);
+			s->index = counter;
+			counter++;
+		}
+	}
+
+	std::cout << "total number of segments after remove overlapping segments " << filteredSegments.size() << std::endl;
+
+	return filteredSegments;
+}
+
+int selectRoot(std::vector<Segment *> segments) {
+	int root = 0;
+	for(int i = 1; i < segments.size(); i++) {
+		if(segments[i]->benefit > segments[root]->benefit)
+			root = i;
+	}
+	return root;
+}
+
+void DFS(Segment * current, int * ordering, int &counter, unordered_set<int> &visited) {
+	if(visited.find(current->index) != visited.end())
+		return;
+	ordering[counter] = current->index;
+	//std::cout << counter << ": " << current->index << std::endl;
+	counter++;
+	for(Connection * edge : current->connections) {
+		DFS(edge->target, ordering, counter, visited);
+	}
+	visited.insert(current->index);
+}
+
+int * createDepthFirstOrdering(std::vector<Segment *> segments, int root, int &Ns) {
+	int * ordering = new int[segments.size()];
+	int counter = 0;
+
+	// Give imdexes to segments
+	for(int i = 0; i < segments.size(); i++) {
+		segments[i]->index = i;
+	}
+
+	unordered_set<int> visited;
+
+	DFS(segments[root], ordering, counter, visited);
+
+	Ns = counter;
+	int * reversedOrdering = new int[Ns];
+	for(int i = 0; i < Ns; i++) {
+		reversedOrdering[i] = ordering[Ns-i-1];
+	}
+
+	delete[] ordering;
+	return reversedOrdering;
+}
+
+class ConnectionComparator {
+public:
+	bool operator()(Connection * a, Connection *b) const {
+		return a->cost > b->cost;
+	}
+};
+
+std::vector<Segment *> minimumSpanningTree(Segment * root, int3 size) {
+	// Need a priority queue on Connection objects based on the cost
+	std::priority_queue<Connection *, std::vector<Connection *>, ConnectionComparator> queue;
+	std::vector<Segment *> result;
+	unordered_set<int> visited;
+	result.push_back(root);
+	visited.insert(root->index);
+
+	// Add all connections of the root to the queue
+	for(Connection * c : root->connections) {
+		queue.push(c);
+	}
+	// Remove connections from root
+	root->connections = std::vector<Connection *>();
+
+	while(!queue.empty()) {
+	// Select minimum connection
+	// Check if target is already added
+	// if not, add all of its connection to the queue
+	// add this connection to the source
+	// Add target segment and clear its connections
+	// Also add cost to the segment object
+		Connection * c = queue.top();
+		//std::cout << c->cost << std::endl;
+		queue.pop();
+		if(visited.find(c->target->index) != visited.end())
+			continue;
+
+		for(Connection * cn : c->target->connections) {
+			if(visited.find(cn->target->index) == visited.end())
+				queue.push(cn);
+		}
+
+		c->source->connections.push_back(c);
+		// c->target->connections.clear(); doest his delete the objects?
+		c->target->connections = std::vector<Connection *>();
+		c->target->cost = c->cost;
+		result.push_back(c->target);
+		visited.insert(c->target->index);
+	}
+
+	return result;
+}
+
+std::vector<Segment *> findOptimalSubtree(std::vector<Segment *> segments, int * depthFirstOrdering, int Ns) {
+
+	float * score = new float[Ns]();
+	float r = 1.0;
+
+	// Stage 1 bottom up
+	for(int j = 0; j < Ns; j++) {
+		int mj = depthFirstOrdering[j];
+		score[mj] = segments[mj]->benefit - r * segments[mj]->cost;
+		// For all children of mj
+		for(Connection * c : segments[mj]->connections) {
+			int k = c->target->index; //child
+			if(score[segments[k]->index] >= 0)
+				score[mj] += score[segments[k]->index];
+		}
+	}
+
+	// Stage 2 top down
+	bool * v = new bool[Ns];
+	for(int i = 1; i < Ns; i++)
+		v[i] = false;
+	v[0] = true;
+
+	for(int j = Ns-1; j >= 0; j--) {
+		int mj = depthFirstOrdering[j];
+		if(v[mj]) {
+			// For all children of mj
+			for(Connection * c : segments[mj]->connections) {
+				int k = c->target->index; //child
+				if(score[segments[k]->index] >= 0)
+					v[segments[k]->index] = true;
+			}
+		}
+	}
+
+	delete[] score;
+
+	std::vector<Segment *> finalSegments;
+	for(int i = 0; i < Ns; i++) {
+		if(v[i]) {
+			finalSegments.push_back(segments[i]);
+		}
+	}
+	delete[] v;
+	return finalSegments;
+}
+
+float calculateConnectionCost(CrossSection * a, CrossSection * b, TubeSegmentation &TS, int3 size) {
+	float cost = 0.0f;
+	int distance = ceil(a->pos.distance(b->pos));
+	float3 direction(b->pos.x-a->pos.x,b->pos.y-a->pos.y,b->pos.z-a->pos.z);
+	for(int i = 0; i < distance; i++) {
+		float frac = (float)i/distance;
+		float3 n = a->pos + frac*direction;
+		int3 in(round(n.x),round(n.y),round(n.z));
+		cost += 1.0f-TS.TDF[POS(in)];
+	}
+
+	return cost;
+}
+
+void createConnections(TubeSegmentation &TS, std::vector<Segment *> segments, int3 size) {
+	// For all pairs of segments
+	for(int k = 0; k < segments.size(); k++) {
+		Segment * s_k = segments[k];
+		for(int l = 0; l < k; l++) {
+			Segment * s_l = segments[l];
+			// For each C_k, cross sections in S_k, calculate costs and select the one with least cost
+			float bestCost = 999999999.0f;
+			CrossSection * c_k_best, * c_l_best;
+			bool found = false;
+			for(CrossSection * c_k : s_k->sections) {
+				for(CrossSection * c_l : s_l->sections) {
+					if(c_k->pos.distance(c_l->pos) > 20)
+						continue;
+
+					float3 c(c_k->pos.x-c_l->pos.x, c_k->pos.y-c_l->pos.y,c_k->pos.z-c_l->pos.z);
+					c = c.normalize();
+					if(acos(fabs(c_k->direction.dot(c))) > 1.05f)
+						continue;
+					if(acos(fabs(c_l->direction.dot(c))) > 1.05f)
+						continue;
+
+					float cost = calculateConnectionCost(c_k, c_l, TS, size);
+					if(cost < bestCost) {
+						bestCost = cost;
+						c_k_best = c_k;
+						c_l_best = c_l;
+						found = true;
+					}
+				}
+			}
+
+
+			// See if they are allowed to connect
+			if(found) {
+				// If so, create connection object and add to segemnt
+				Connection * c = new Connection;
+				c->cost = bestCost;
+				c->source = s_k;
+				c->source_section = c_k_best;
+				c->target = s_l;
+				c->target_section = c_l_best;
+				s_k->connections.push_back(c);
+				Connection * c2 = new Connection;
+				c2->cost = bestCost;
+				c2->source = s_l;
+				c2->source_section = c_l_best;
+				c2->target = s_k;
+				c2->target_section = c_k_best;
+				s_l->connections.push_back(c2);
+				// Add cost to connetion
+			}
+		}
+	}
+}
+
+SIPL::Volume<float3> * visualizeSegments(std::vector<Segment *> segments, int3 size) {
+	SIPL::Volume<float3> * connections = new SIPL::Volume<float3>(size);
+    for(Segment * s : segments) {
+    	for(int i = 0; i < s->sections.size()-1; i++) {
+    		CrossSection * a = s->sections[i];
+    		CrossSection * b = s->sections[i+1];
+			int distance = ceil(a->pos.distance(b->pos));
+			float3 direction(b->pos.x-a->pos.x,b->pos.y-a->pos.y,b->pos.z-a->pos.z);
+			for(int i = 0; i < distance; i++) {
+				float frac = (float)i/distance;
+				float3 n = a->pos + frac*direction;
+				int3 in(round(n.x),round(n.y),round(n.z));
+				float3 v = connections->get(in);
+				v.x = 1.0f;
+				connections->set(in, v);
+			}
+		}
+		for(Connection * c : s->connections) {
+			CrossSection * a = c->source_section;
+			CrossSection * b = c->target_section;
+			int distance = ceil(a->pos.distance(b->pos));
+			float3 direction(b->pos.x-a->pos.x,b->pos.y-a->pos.y,b->pos.z-a->pos.z);
+			for(int i = 0; i < distance; i++) {
+				float frac = (float)i/distance;
+				float3 n = a->pos + frac*direction;
+				int3 in(round(n.x),round(n.y),round(n.z));
+				float3 v = connections->get(in);
+				v.y = 1.0f;
+				connections->set(in, v);
+			}
+
+		}
+    }
+    connections->showMIP();
+    return connections;
+}
+
+void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * size, paramList &parameters, TSFOutput * output) {
+    INIT_TIMER
+    Image3D vectorField, radius;
+    Image3D * TDF = new Image3D;
+    const int totalSize = size->x*size->y*size->z;
+	const bool no3Dwrite = !getParamBool(parameters, "3d_write");
+
+    cl::size_t<3> offset;
+    offset[0] = 0;
+    offset[1] = 0;
+    offset[2] = 0;
+    cl::size_t<3> region;
+    region[0] = size->x;
+    region[1] = size->y;
+    region[2] = size->z;
+
+    runCircleFittingMethod(*ocl, dataset, *size, parameters, vectorField, *TDF, radius);
+    output->setTDF(TDF);
+
+
+    // Transfer from device to host
+    TubeSegmentation TS;
+    TS.Fx = new float[totalSize];
+    TS.Fy = new float[totalSize];
+    TS.Fz = new float[totalSize];
+    if(no3Dwrite || getParamBool(parameters, "32bit-vectors")) {
+    	// 32 bit vector fields
+        float * Fs = new float[totalSize*4];
+        ocl->queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
+#pragma omp parallel for
+        for(int i = 0; i < totalSize; i++) {
+            TS.Fx[i] = Fs[i*4];
+            TS.Fy[i] = Fs[i*4+1];
+            TS.Fz[i] = Fs[i*4+2];
+        }
+        delete[] Fs;
+    } else {
+    	// 16 bit vector fields
+        short * Fs = new short[totalSize*4];
+        ocl->queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
+#pragma omp parallel for
+        for(int i = 0; i < totalSize; i++) {
+            TS.Fx[i] = MAX(-1.0f, Fs[i*4] / 32767.0f);
+            TS.Fy[i] = MAX(-1.0f, Fs[i*4+1] / 32767.0f);;
+            TS.Fz[i] = MAX(-1.0f, Fs[i*4+2] / 32767.0f);
+        }
+        delete[] Fs;
+    }
+    TS.radius = new float[totalSize];
+    TS.TDF = new float[totalSize];
+    ocl->queue.enqueueReadImage(*TDF, CL_TRUE, offset, region, 0, 0, TS.TDF);
+    output->setTDF(TS.TDF);
+    ocl->queue.enqueueReadImage(radius, CL_TRUE, offset, region, 0, 0, TS.radius);
+
+    // Create pairs of voxels with high TDF
+    std::vector<CrossSection *> crossSections = createGraph(TS, *size);
+
+    // Display pairs
+    SIPL::Volume<bool> * pairs = new SIPL::Volume<bool>(*size);
+    pairs->fill(false);
+    for(CrossSection * c : crossSections) {
+    	pairs->set(c->pos, true);
+    }
+    pairs->showMIP();
+
+    // Create segments from pairs
+    std::vector<Segment *> segments = createSegments(TS, crossSections, *size);
+
+    // Display segments
+	SIPL::Volume<bool> * segs = new SIPL::Volume<bool>(*size);
+    segs->fill(false);
+    for(Segment * s : segments) {
+		for(CrossSection * c : s->sections) {
+			segs->set(c->pos, true);
+		}
+    }
+    segs->showMIP();
+
+    // Create connections between segments
+    std::cout << "creating connections..." << std::endl;
+    std::cout << "number of segments is " << segments.size() << std::endl;
+    createConnections(TS, segments, *size);
+    std::cout << "finished creating connections." << std::endl;
+    std::cout << "number of segments is " << segments.size() << std::endl;
+
+    // Display connections, in a separate color for instance
+    visualizeSegments(segments, *size);
+
+    // Do minimum spanning tree on segments, where each segment is a node and the connetions are edges
+    // must also select a root segment
+    std::cout << "running minimum spanning tree" << std::endl;
+    int root = selectRoot(segments);
+    segments = minimumSpanningTree(segments[root], *size);
+    std::cout << "finished running minimum spanning tree" << std::endl;
+    std::cout << "number of segments is " << segments.size() << std::endl;
+
+    // Visualize
+    visualizeSegments(segments, *size);
+
+    // Display which connections have been retained and which are removed
+
+    // create depth first ordering
+    std::cout << "creating depth first ordering..." << std::endl;
+    int Ns;
+    int * depthFirstOrderingOfSegments = createDepthFirstOrdering(segments, root, Ns);
+    std::cout << "finished creating depth first ordering" << std::endl;
+    std::cout << "Ns is " << Ns << std::endl;
+    std::cout << "root is " << root << std::endl;
+
+	// have to take into account that not all segments are part of the final tree, for instance, return Ns
+    // Do the dynamic programming algorithm for locating the best subtree
+    std::cout << "finding optimal subtree..." << std::endl;
+    std::vector<Segment *> finalSegments = findOptimalSubtree(segments, depthFirstOrderingOfSegments, Ns);
+    std::cout << "finished." << std::endl;
+    std::cout << "number of segments is " << finalSegments.size() << std::endl;
+
+    // TODO Display final segments and the connections
+    SIPL::Volume<float3> * v = visualizeSegments(finalSegments, *size);
+    char * centerline = new char[totalSize]();
+    for(int i = 0; i < totalSize; i++) {
+    	float3 value = v->get(i);
+    	if(value.x > 0 || value.y > 0) {
+    		centerline[i] = 1;
+    	}
+    }
+    output->setCenterlineVoxels(centerline);
+
+	if(getParamStr(parameters, "storage-dir") != "off") {
+        writeDataToDisk(output, getParamStr(parameters, "storage-dir"));
+    }
+
+}
+
 
 void runCircleFittingAndRidgeTraversal(OpenCL * ocl, Image3D &dataset, SIPL::int3 * size, paramList &parameters, TSFOutput * output) {
     
