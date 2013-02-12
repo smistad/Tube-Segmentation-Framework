@@ -2966,7 +2966,12 @@ void createConnections(TubeSegmentation &TS, std::vector<Segment *> segments, in
 					if(c_k->pos.distance(c_l->pos) > 20)
 						continue;
 
-					// TODO add direciton constraints
+					float3 c(c_k->pos.x-c_l->pos.x, c_k->pos.y-c_l->pos.y,c_k->pos.z-c_l->pos.z);
+					c = c.normalize();
+					if(acos(fabs(c_k->direction.dot(c))) > 1.05f)
+						continue;
+					if(acos(fabs(c_l->direction.dot(c))) > 1.05f)
+						continue;
 
 					float cost = calculateConnectionCost(c_k, c_l, TS, size);
 					if(cost < bestCost) {
