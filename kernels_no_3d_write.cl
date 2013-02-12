@@ -1805,31 +1805,3 @@ void eigen_decomposition(float A[SIZE][SIZE], float V[SIZE][SIZE], float d[SIZE]
   tql2(V, d, e);
 }
 
-__kernel void floyd_warshall_iteration(
-    __global float * dist,
-    __global int * pred,
-    __private int size,
-    __private int t
-    ) {
-    int u = get_global_id(0);
-    int v = get_global_id(1);
-    int width = size;
-    u = u < size ? u : 0;
-    v = v < size ? v : 0;
-	#define DPOS(U, V) V+U*width
-
-/*
-    float newLength = dist[DPOS(u, t)] + dist[DPOS(t,v)];
-    dist[DPOS(u,v)] = newLength < dist[DPOS(u,v)] ? newLength : dist[DPOS(u,v)];
-    pred[DPOS(u,v)] = newLength < dist[DPOS(u,v)] ? pred[DPOS(t,v)] : pred[DPOS(u,v)];
-*/
-
-    float newLength = dist[DPOS(u, t)] + dist[DPOS(t,v)];
-    if(newLength < dist[DPOS(u,v)]) {
-        dist[DPOS(u,v)] = newLength;
-        pred[DPOS(u,v)] = pred[DPOS(t,v)];
-    }
-}
-
-
-

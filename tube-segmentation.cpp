@@ -2464,8 +2464,8 @@ std::vector<CrossSection *> createGraph(TubeSegmentation &TS, SIPL::int3 size) {
 		        //std::cout << "theta: " << theta << std::endl;
 		        if((theta < thetaLimit && r.length() < maxD)) {
 		        	//std::cout << SQR_MAG(n) << std::endl;
-		            //if(SQR_MAG(n) < SQR_MAG(pos)) {
-		            if(TS.TDF[POS(n)] > TS.TDF[POS(pos)]) {
+		            if(SQR_MAG(n) < SQR_MAG(pos)) {
+		            //if(TS.TDF[POS(n)] > TS.TDF[POS(pos)]) {
 		                invalid = true;
 		                break;
 		            }
@@ -2661,7 +2661,6 @@ std::vector<Segment *> createSegments(OpenCL &ocl, TubeSegmentation &TS, std::ve
 			pred[DPOS(U->index,V->index)] = U->index;
 		}
 	}
-	std::cout << "finished initializing floyd warshall" << std::endl;
 	for(int t = 0; t < totalSize; t++) {
 		//CrossSection * T = crossSections[t];
 		//std::cout << "processing t=" << t << std::endl;
@@ -2680,7 +2679,6 @@ std::vector<Segment *> createSegments(OpenCL &ocl, TubeSegmentation &TS, std::ve
 		}
 }
 
-	std::cout << "finished performing floyd warshall" << std::endl;
 
 
 	for(CrossSection * S : list) { // Source
@@ -2707,34 +2705,7 @@ std::vector<Segment *> createSegments(OpenCL &ocl, TubeSegmentation &TS, std::ve
         delete[] pred;
 
     }
-    /*
-    */
-    /*
-    Buffer oclDist = Buffer(ocl.context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, sizeof(float)*totalSize*totalSize, dist);
-    Buffer oclPred = Buffer(ocl.context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, sizeof(int)*totalSize*totalSize, pred);
-    Kernel floydWarshall(ocl.program, "floyd_warshall_iteration");
-    floydWarshall.setArg(0, oclDist);
-    floydWarshall.setArg(1, oclPred);
-    floydWarshall.setArg(2, totalSize);
-
-    int globalSize = totalSize;
-    while(globalSize % 8 != 0)
-        globalSize++;
-
-	for(int t = 0; t < totalSize; t++) {
-        floydWarshall.setArg(3, t);
-        ocl.queue.enqueueNDRangeKernel(
-                floydWarshall,
-                NullRange,
-                NDRange(globalSize, globalSize),
-                NDRange(8,8)
-        );
-        usleep(1);
-    }
-    std::cout << "finished issuing all floyd warshall iterations" << std::endl;
-    ocl.queue.enqueueReadBuffer(oclDist, CL_TRUE, 0, sizeof(float)*totalSize*totalSize, dist);
-    ocl.queue.enqueueReadBuffer(oclPred, CL_TRUE, 0, sizeof(int)*totalSize*totalSize, pred);
-    */
+	std::cout << "finished performing floyd warshall" << std::endl;
 
 	std::cout << "finished creating segments" << std::endl;
 	std::cout << "total number of segments is " << segments.size() << std::endl;
