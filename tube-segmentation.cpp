@@ -2557,7 +2557,7 @@ bool segmentInSegmentation(Segment * s, unordered_set<int> &segmentation, int3 s
 }
 
 void inverseGradientRegionGrowing(Segment * s, TubeSegmentation &TS, unordered_set<int> &segmentation, int3 size) {
-	vector<int3> centerpoints;
+    std::vector<int3> centerpoints;
 	for(int c = 0; c < s->sections.size()-1; c++) {
 		CrossSection * a = s->sections[c];
 		CrossSection * b = s->sections[c+1];
@@ -2731,6 +2731,7 @@ std::vector<Segment *> createSegments(TubeSegmentation &TS, std::vector<CrossSec
 		//CrossSection * T = crossSections[t];
 		//std::cout << "processing t=" << t << std::endl;
 		// For each cross section U
+#pragma omp parallel for
 		for(int u = 0; u < crossSections.size(); u++) {
 			//CrossSection * U = crossSections[u];
 			// For each cross section V
@@ -2780,7 +2781,7 @@ std::vector<Segment *> createSegments(TubeSegmentation &TS, std::vector<CrossSec
 	std::vector<Segment *> filteredSegments;
 	int counter = 0;
 	for(Segment * s : segments) {
-		if(!segmentInSegmentation(s, segmentation, size) /*&& s->benefit > 2*/) {
+		if(!segmentInSegmentation(s, segmentation, size)) {
 			//std::cout << "adding segment with benefit: " << s->benefit << std::endl;
 			// Do region growing and Add all segmented voxels to a set
 			inverseGradientRegionGrowing(s, TS, segmentation, size);
@@ -3061,7 +3062,6 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
     region[2] = size->z;
 
     runCircleFittingMethod(*ocl, dataset, *size, parameters, vectorField, *TDF, radius);
-    output->setTDF(TDF);
 
 
     // Transfer from device to host
