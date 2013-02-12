@@ -6,6 +6,7 @@
 #include "tsf-config.h"
 #include <locale>
 #include <sstream>
+#include "tsf-config.h"
 using namespace std;
 
 float stringToFloat(string str) {
@@ -32,14 +33,14 @@ vector<string> split(string str, string delimiter) {
 	return list;
 }
 
-paramList loadParameterPreset(paramList parameters) {
+paramList loadParameterPreset(paramList parameters, std::string parameter_dir) {
 	// Check if parameters is set
     if(getParamStr(parameters, "parameters") != "none") {
     	std::string parameterFilename;
     	if(getParamStr(parameters, "centerline-method") == "gpu") {
-    		parameterFilename = std::string(PARAMETERS_DIR)+"/centerline-gpu/" + getParamStr(parameters, "parameters");
+    		parameterFilename = parameter_dir+"/centerline-gpu/" + getParamStr(parameters, "parameters");
     	} else if(getParamStr(parameters, "centerline-method") == "ridge") {
-    		parameterFilename = std::string(PARAMETERS_DIR)+"/centerline-ridge/" + getParamStr(parameters, "parameters");
+    		parameterFilename = parameter_dir+"/centerline-ridge/" + getParamStr(parameters, "parameters");
     	}
     	if(parameterFilename.size() > 0) {
     		// Load file and parse parameters
@@ -72,11 +73,13 @@ paramList loadParameterPreset(paramList parameters) {
     return parameters;
 }
 
-paramList initParameters() {
+paramList initParameters(std::string parameter_dir) {
 	paramList parameters;
 
 	std::ifstream file;
-	std::string filename = std::string(PARAMETERS_DIR)+"/parameters";
+//	std::string filename = std::string(PARAMETERS_DIR)+"/parameters";
+	std::string filename = parameter_dir+"/parameters";
+
 	file.open(filename.c_str());
 	if(!file.is_open())
 		throw SIPL::IOException(filename.c_str(), __LINE__, __FILE__);
@@ -184,7 +187,7 @@ string getParamStr(paramList parameters, string parameterName) {
 }
 
 paramList getParameters(int argc, char ** argv) {
-	paramList parameters = initParameters();
+	paramList parameters = initParameters(std::string(PARAMETERS_DIR));
 
     // Go through each parameter, first parameter is filename
     // Try to see if the parameters parameter is set
@@ -209,7 +212,7 @@ paramList getParameters(int argc, char ** argv) {
     }
 
     // If a parameter preset is given load these values
-    parameters = loadParameterPreset(parameters);
+    parameters = loadParameterPreset(parameters, std::string(PARAMETERS_DIR));
 
     // Go through each parameter, first parameter is filename
 	for(int i = 2; i < argc; i++) {

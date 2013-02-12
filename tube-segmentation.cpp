@@ -14,7 +14,7 @@ using std::unordered_set;
 using boost::unordered_set;
 #endif
 #include "histogram-pyramids.hpp"
-#include "tsf-config.h"
+//#include "tsf-config.h"
 
 //#define TIMING
 
@@ -60,7 +60,7 @@ void print(paramList parameters){
 	}
 }
 
-TSFOutput * run(std::string filename, paramList &parameters) {
+TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_dir) {
 
     INIT_TIMER
     OpenCL * ocl = new OpenCL;
@@ -83,7 +83,7 @@ TSFOutput * run(std::string filename, paramList &parameters) {
 
     // Compile and create program
     if(!getParamBool(parameters, "buffers-only") && (int)devices[0].getInfo<CL_DEVICE_EXTENSIONS>().find("cl_khr_3d_image_writes") > -1) {
-    	std::string filename = std::string(KERNELS_DIR)+"/kernels.cl";
+    	std::string filename = kernel_dir+"/kernels.cl";
         ocl->program = buildProgramFromSource(ocl->context, filename.c_str());
         BoolParameter v = parameters.bools["3d_write"];
         v.set(true);
@@ -92,7 +92,7 @@ TSFOutput * run(std::string filename, paramList &parameters) {
         BoolParameter v = parameters.bools["3d_write"];
         v.set(false);
         parameters.bools["3d_write"] = v;
-        std::string filename = std::string(KERNELS_DIR)+"/kernels_no_3d_write.cl";
+        std::string filename = kernel_dir+"/kernels_no_3d_write.cl";
         ocl->program = buildProgramFromSource(ocl->context, filename.c_str());
         std::cout << "NOTE: Writing to 3D textures is not supported on the selected device." << std::endl;
     }

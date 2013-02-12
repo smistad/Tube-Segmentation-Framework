@@ -23,6 +23,6 @@ include(${OCL-Utilities_USE_FILE})
 #------------------------------------------------------------------------------
 # Where to look for includes and libraries
 #------------------------------------------------------------------------------
-include_directories( ${Tube-Segmentation-Framework_INCLUDE_DIRS}  ${Tube-Segmentation-Framework_BINARY_DIR} ${Boost_INCLUDE_DIRS}) #${GTK2_INCLUDE_DIRS})
-link_directories (${Tube-Segmentation-Framework_LIBRARY_DIRS})# ${OCL-Utilities_LIBRARY_DIRS})
+include_directories( ${Tube-Segmentation-Framework_INCLUDE_DIRS}  ${Tube-Segmentation-Framework_BINARY_DIR} ${Boost_INCLUDE_DIRS})
+link_directories (${Tube-Segmentation-Framework_LIBRARY_DIRS})
 
