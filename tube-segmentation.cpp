@@ -2781,7 +2781,7 @@ std::vector<Segment *> createSegments(TubeSegmentation &TS, std::vector<CrossSec
 	int counter = 0;
 	for(Segment * s : segments) {
 		if(!segmentInSegmentation(s, segmentation, size) /*&& s->benefit > 2*/) {
-			std::cout << "adding segment with benefit: " << s->benefit << std::endl;
+			//std::cout << "adding segment with benefit: " << s->benefit << std::endl;
 			// Do region growing and Add all segmented voxels to a set
 			inverseGradientRegionGrowing(s, TS, segmentation, size);
 			filteredSegments.push_back(s);
@@ -2808,7 +2808,7 @@ void DFS(Segment * current, int * ordering, int &counter, unordered_set<int> &vi
 	if(visited.find(current->index) != visited.end())
 		return;
 	ordering[counter] = current->index;
-	std::cout << counter << ": " << current->index << std::endl;
+	//std::cout << counter << ": " << current->index << std::endl;
 	counter++;
 	for(Connection * edge : current->connections) {
 		DFS(edge->target, ordering, counter, visited);
@@ -2869,7 +2869,7 @@ std::vector<Segment *> minimumSpanningTree(Segment * root, int3 size) {
 	// Add target segment and clear its connections
 	// Also add cost to the segment object
 		Connection * c = queue.top();
-		std::cout << c->cost << std::endl;
+		//std::cout << c->cost << std::endl;
 		queue.pop();
 		if(visited.find(c->target->index) != visited.end())
 			continue;
