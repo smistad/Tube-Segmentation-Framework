@@ -2475,7 +2475,7 @@ std::vector<CrossSection *> createGraph(TubeSegmentation &TS, SIPL::int3 size) {
 				CrossSection * cs = new CrossSection;
 				cs->pos = pos;
 				cs->TDF = tdf;
-				cs->label = counter;
+				cs->label = -1;//counter;
 				cs->direction = e1;
 				counter++;
 				sections.push_back(cs);
@@ -2594,11 +2594,17 @@ std::vector<Segment *> createSegments(OpenCL &ocl, TubeSegmentation &TS, std::ve
 
 	// Do a graph component labeling
 	unordered_set<int> visited;
+    int labelCounter = 0;
+    std::vector<std::vector<CrossSection *> > labels;
 	for(CrossSection * c : crossSections) {
 		// Do a bfs on c
 		// Check to see if point has been processed before doing a BFS
 		if(visited.find(c->label) != visited.end())
 			continue;
+
+        c->label = labelCounter;
+        labelCounter++;
+        std::vector<CrossSection *> list;
 
 		std::stack<CrossSection *> stack;
 		stack.push(c);
@@ -2607,6 +2613,7 @@ std::vector<Segment *> createSegments(OpenCL &ocl, TubeSegmentation &TS, std::ve
 			stack.pop();
 			// Check label of neighbors to see if they have been added
 			if(current->label != c->label || c->pos == current->pos) {
+                list.push_back(current);
 				// Change label of neighbors if not
 				current->label = c->label;
 				// Add neighbors to stack
@@ -2617,126 +2624,52 @@ std::vector<Segment *> createSegments(OpenCL &ocl, TubeSegmentation &TS, std::ve
 			}
 		}
 		visited.insert(c->label);
+        labels.push_back(list); 
 	}
 
 	std::cout << "finished graph component labeling" << std::endl;
 
-
-	// For each valid pair of segments, do a dijkstra shortest path
-
-	/*
-	int totalSize = crossSections.size();
-
-	std::cout << "number of cross sections is " << totalSize << std::endl;
-	for(int u = 0; u < crossSections.size(); u++) {
-		CrossSection * U = crossSections[u];
-		U->index = u;
-	}
-//#pragma omp parallel for
-	for(int u = 0; u < crossSections.size(); u++) {
-		CrossSection * U = crossSections[u];
-		for(int v = 0; v < u; v++) {
-			CrossSection * V = crossSections[v];
-			if(U->label != V->label)
-				continue;
-
-			if(U->index == V->index)
-				continue;
-
-			float * dist = new float[totalSize];
-			int * pred = new int[totalSize];
-			for(int i = 0; i < totalSize; i++)
-				dist[i] = 99999999.0f;
-			dist[U->index] = 0;
-			// Do dijkstra
-			typedef std::priority_queue<CrossSection *, std::vector<CrossSection *>, CrossSectionCompare> queueType;
-			queueType queue = queueType(CrossSectionCompare(dist), std::vector<CrossSection *>());
-			queue.push(U);
-			unordered_set<int> visited;
-			while(!queue.empty()) {
-				CrossSection * current = queue.top();
-				queue.pop();
-				if(visited.find(current->index) != visited.end()) // already processed
-					continue;
-
-				visited.insert(current->index);
-				if(current->pos == V->pos) { // target is found
-					break;
-				}
-
-				for(CrossSection * N : current->neighbors) {
-					if(visited.find(N->index) != visited.end()) // already processed
-						continue;
-					float weight = (1-N->TDF);
-					float newDistance = dist[current->index] + weight;
-					if(newDistance < dist[N->index]) {
-						dist[N->index] = newDistance;
-						pred[N->index] = current->index;
-						queue.push(N);
-					}
-				}
-			}
-
-			// Dijkstra finished
-			//std::cout << "dijkstra finished for " << u << " " << v << std::endl;
-
-			// Create segment
-			Segment * segment = new Segment;
-			// add all cross sections in segment
-			float benefit = 0.0f;
-			int current = V->index;
-			while(current != U->index) {
-				benefit += crossSections[current]->TDF;
-				segment->sections.push_back(crossSections[current]);
-				current = pred[current];
-			}
-//#pragma omp critical
-			segments.push_back(segment);
-			delete[] pred;
-			delete[] dist;
-		}
-		//std::cout << u << std::endl;
-	}
-	*/
 	// Do a floyd warshall all pairs shortest path
 	int totalSize = crossSections.size();
-	float * dist = new float[totalSize*totalSize];
-	int * pred = new int[totalSize*totalSize];
 	std::cout << "number of cross sections is " << totalSize << std::endl;
 
-	for(int u = 0; u < crossSections.size(); u++) {
-		CrossSection * U = crossSections[u];
-		U->index = u;
-	}
 
-	#define DPOS(U, V) V+U*totalSize
+    // For each label
+    for(std::vector<CrossSection *> list : labels) {
+        // Do floyd warshall on all pairs
+        int totalSize = list.size();
+        float * dist = new float[totalSize*totalSize];
+        int * pred = new int[totalSize*totalSize];
+
+        for(int u = 0; u < totalSize; u++) {
+            CrossSection * U = list[u];
+            U->index = u;
+        }
+        #define DPOS(U, V) V+U*totalSize
 	// For each cross section U
-	for(int u = 0; u < crossSections.size(); u++) {
-		CrossSection * U = crossSections[u];
+	for(int u = 0; u < totalSize; u++) {
+		CrossSection * U = list[u];
 		// For each cross section V
-		for(int v = 0; v < crossSections.size(); v++) {
+		for(int v = 0; v < totalSize; v++) {
 			dist[DPOS(u,v)] = 99999999;
 			pred[DPOS(u,v)] = -1;
 		}
 		dist[DPOS(U->index,U->index)] = 0;
 		for(CrossSection * V : U->neighbors) {
 			// TODO calculate more advanced weight
-			dist[DPOS(U->index,V->index)] = /*(1-U->TDF) +*/ (1-V->TDF);
+			dist[DPOS(U->index,V->index)] = (1-V->TDF);
 			pred[DPOS(U->index,V->index)] = U->index;
 		}
 	}
 	std::cout << "finished initializing floyd warshall" << std::endl;
-
-    /*
-	for(int t = 0; t < crossSections.size(); t++) {
+	for(int t = 0; t < totalSize; t++) {
 		//CrossSection * T = crossSections[t];
 		//std::cout << "processing t=" << t << std::endl;
 		// For each cross section U
-#pragma omp parallel for
-		for(int u = 0; u < crossSections.size(); u++) {
+		for(int u = 0; u < totalSize; u++) {
 			//CrossSection * U = crossSections[u];
 			// For each cross section V
-			for(int v = 0; v < crossSections.size(); v++) {
+			for(int v = 0; v < totalSize; v++) {
 				//CrossSection * V = crossSections[v];
 				float newLength = dist[DPOS(u, t)] + dist[DPOS(t,v)];
 				if(newLength < dist[DPOS(u,v)]) {
@@ -2745,8 +2678,38 @@ std::vector<Segment *> createSegments(OpenCL &ocl, TubeSegmentation &TS, std::ve
 				}
 			}
 		}
+}
+
+	std::cout << "finished performing floyd warshall" << std::endl;
+
+
+	for(CrossSection * S : list) { // Source
+		for(CrossSection * T : list) { // Target
+			if(S->label == T->label && S->index != T->index) {
+				Segment * segment = new Segment;
+				// add all cross sections in segment
+				float benefit = 0.0f;
+				segment->sections.push_back(T);
+				int current = T->index;
+				while(current != S->index) {
+					CrossSection * C = list[current];
+					benefit += C->TDF;
+					segment->sections.push_back(C);
+					current = pred[DPOS(S->index,current)];// get predecessor
+				}
+				segment->benefit = benefit;
+				segments.push_back(segment);
+			}
+		}
 	}
+
+        delete[] dist;
+        delete[] pred;
+
+    }
+    /*
     */
+    /*
     Buffer oclDist = Buffer(ocl.context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, sizeof(float)*totalSize*totalSize, dist);
     Buffer oclPred = Buffer(ocl.context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, sizeof(int)*totalSize*totalSize, pred);
     Kernel floydWarshall(ocl.program, "floyd_warshall_iteration");
@@ -2771,29 +2734,7 @@ std::vector<Segment *> createSegments(OpenCL &ocl, TubeSegmentation &TS, std::ve
     std::cout << "finished issuing all floyd warshall iterations" << std::endl;
     ocl.queue.enqueueReadBuffer(oclDist, CL_TRUE, 0, sizeof(float)*totalSize*totalSize, dist);
     ocl.queue.enqueueReadBuffer(oclPred, CL_TRUE, 0, sizeof(int)*totalSize*totalSize, pred);
-
-	std::cout << "finished performing floyd warshall" << std::endl;
-
-
-	for(CrossSection * S : crossSections) { // Source
-		for(CrossSection * T : crossSections) { // Target
-			if(S->label == T->label && S->index != T->index) {
-				Segment * segment = new Segment;
-				// add all cross sections in segment
-				float benefit = 0.0f;
-				segment->sections.push_back(T);
-				int current = T->index;
-				while(current != S->index) {
-					CrossSection * C = crossSections[current];
-					benefit += C->TDF;
-					segment->sections.push_back(C);
-					current = pred[DPOS(S->index,current)];// get predecessor
-				}
-				segment->benefit = benefit;
-				segments.push_back(segment);
-			}
-		}
-	}
+    */
 
 	std::cout << "finished creating segments" << std::endl;
 	std::cout << "total number of segments is " << segments.size() << std::endl;
