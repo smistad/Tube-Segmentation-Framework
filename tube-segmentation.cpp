@@ -2464,8 +2464,8 @@ std::vector<CrossSection *> createGraph(TubeSegmentation &TS, SIPL::int3 size) {
 		        //std::cout << "theta: " << theta << std::endl;
 		        if((theta < thetaLimit && r.length() < maxD)) {
 		        	//std::cout << SQR_MAG(n) << std::endl;
-		            if(SQR_MAG(n) < SQR_MAG(pos)) {
-		            //if(TS.TDF[POS(n)] > TS.TDF[POS(pos)]) {
+		            //if(SQR_MAG(n) < SQR_MAG(pos)) {
+		            if(TS.TDF[POS(n)] > TS.TDF[POS(pos)]) {
 		                invalid = true;
 		                break;
 		            }
@@ -2884,7 +2884,9 @@ float calculateConnectionCost(CrossSection * a, CrossSection * b, TubeSegmentati
 		float frac = (float)i/distance;
 		float3 n = a->pos + frac*direction;
 		int3 in(round(n.x),round(n.y),round(n.z));
-		cost += 1.0f-TS.TDF[POS(in)];
+		cost += /*SQR_MAG(in) +*/ (1.0f-TS.TDF[POS(in)]);
+        //float3 e1 = getTubeDirection(TS, in, size);
+        //cost += (1-fabs(a->direction.dot(e1)))+(1-fabs(b->direction.dot(e1)));
 	}
 
 	return cost;
@@ -2911,6 +2913,14 @@ void createConnections(TubeSegmentation &TS, std::vector<Segment *> segments, in
 						continue;
 					if(acos(fabs(c_l->direction.dot(c))) > 1.05f)
 						continue;
+
+                    float rk = TS.radius[POS(c_k->pos)];
+                    float rl = TS.radius[POS(c_l->pos)];
+
+                    if(rk > 2 || rl > 2) {
+                        if(std::max(rk,rl) / std::min(rk,rl) > 2)
+                            continue;
+                    }
 
 					float cost = calculateConnectionCost(c_k, c_l, TS, size);
 					if(cost < bestCost) {
@@ -2940,7 +2950,6 @@ void createConnections(TubeSegmentation &TS, std::vector<Segment *> segments, in
 				c2->target = s_k;
 				c2->target_section = c_k_best;
 				s_l->connections.push_back(c2);
-				// Add cost to connetion
 			}
 		}
 	}
@@ -3108,6 +3117,19 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
     	}
     }
     output->setCenterlineVoxels(centerline);
+
+    Image3D * volume = new Image3D;
+    if(!getParamBool(parameters, "no-segmentation")) {
+        *volume = Image3D(ocl->context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, ImageFormat(CL_R, CL_SIGNED_INT8), size->x, size->y, size->z, 0, 0, centerline);
+		if(!getParamBool(parameters, "sphere-segmentation")) {
+			*volume = runInverseGradientSegmentation(*ocl, *volume, vectorField, *size, parameters);
+    	} else {
+			*volume = runSphereSegmentation(*ocl,*volume, radius, *size, parameters);
+    	}
+		output->setSegmentation(volume);
+    }
+
+
 
 	if(getParamStr(parameters, "storage-dir") != "off") {
         writeDataToDisk(output, getParamStr(parameters, "storage-dir"));
