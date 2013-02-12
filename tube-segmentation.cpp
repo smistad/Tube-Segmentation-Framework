@@ -2588,7 +2588,7 @@ void inverseGradientRegionGrowing(Segment * s, TubeSegmentation &TS, unordered_s
 	segmentation.insert(centerline.begin(), centerline.end());
 }
 
-std::vector<Segment *> createSegments(TubeSegmentation &TS, std::vector<CrossSection *> &crossSections, SIPL::int3 size) {
+std::vector<Segment *> createSegments(OpenCL &ocl, TubeSegmentation &TS, std::vector<CrossSection *> &crossSections, SIPL::int3 size) {
 	// Create segment vector
 	std::vector<Segment *> segments;
 
@@ -2727,6 +2727,7 @@ std::vector<Segment *> createSegments(TubeSegmentation &TS, std::vector<CrossSec
 	}
 	std::cout << "finished initializing floyd warshall" << std::endl;
 
+    /*
 	for(int t = 0; t < crossSections.size(); t++) {
 		//CrossSection * T = crossSections[t];
 		//std::cout << "processing t=" << t << std::endl;
@@ -2745,6 +2746,31 @@ std::vector<Segment *> createSegments(TubeSegmentation &TS, std::vector<CrossSec
 			}
 		}
 	}
+    */
+    Buffer oclDist = Buffer(ocl.context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, sizeof(float)*totalSize*totalSize, dist);
+    Buffer oclPred = Buffer(ocl.context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, sizeof(int)*totalSize*totalSize, pred);
+    Kernel floydWarshall(ocl.program, "floyd_warshall_iteration");
+    floydWarshall.setArg(0, oclDist);
+    floydWarshall.setArg(1, oclPred);
+    floydWarshall.setArg(2, totalSize);
+
+    int globalSize = totalSize;
+    while(globalSize % 8 != 0)
+        globalSize++;
+
+	for(int t = 0; t < totalSize; t++) {
+        floydWarshall.setArg(3, t);
+        ocl.queue.enqueueNDRangeKernel(
+                floydWarshall,
+                NullRange,
+                NDRange(globalSize, globalSize),
+                NDRange(8,8)
+        );
+        usleep(1);
+    }
+    std::cout << "finished issuing all floyd warshall iterations" << std::endl;
+    ocl.queue.enqueueReadBuffer(oclDist, CL_TRUE, 0, sizeof(float)*totalSize*totalSize, dist);
+    ocl.queue.enqueueReadBuffer(oclPred, CL_TRUE, 0, sizeof(int)*totalSize*totalSize, pred);
 
 	std::cout << "finished performing floyd warshall" << std::endl;
 
@@ -3110,7 +3136,7 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
     pairs->showMIP();
 
     // Create segments from pairs
-    std::vector<Segment *> segments = createSegments(TS, crossSections, *size);
+    std::vector<Segment *> segments = createSegments(*ocl, TS, crossSections, *size);
 
     // Display segments
 	SIPL::Volume<bool> * segs = new SIPL::Volume<bool>(*size);
