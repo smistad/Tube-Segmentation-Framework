@@ -2709,6 +2709,7 @@ std::vector<Segment *> createSegments(OpenCL &ocl, TubeSegmentation &TS, std::ve
 					current = pred[DPOS(S->index,current)];// get predecessor
 					benefit += calculateBenefit(C, list[current], TS, size);
 				}
+				segment->sections.push_back(list[current]);
 				segment->benefit = benefit;
 				segments.push_back(segment);
 			}
@@ -2852,6 +2853,9 @@ std::vector<Segment *> findOptimalSubtree(std::vector<Segment *> segments, int *
 	for(int j = 0; j < Ns; j++) {
 		int mj = depthFirstOrdering[j];
 		score[mj] = segments[mj]->benefit - r * segments[mj]->cost;
+		/*std::cout << "cross sections: " << segments[mj]->sections.size() << " benefit: "
+				<< segments[mj]->benefit << " cost: " << segments[mj]->cost <<
+				" children: " << segments[mj]->connections.size() << std::endl;*/
 		// For all children of mj
 		for(Connection * c : segments[mj]->connections) {
 			int k = c->target->index; //child
@@ -2962,6 +2966,11 @@ void createConnections(TubeSegmentation &TS, std::vector<Segment *> segments, in
 
 			// See if they are allowed to connect
 			if(found) {
+				/*if(bestCost < 2) {
+					std::cout << bestCost << std::endl;
+					std::cout << "labels: " << c_k_best->label << " " << c_l_best->label << std::endl;
+					std::cout << "distance: " << c_k_best->pos.distance(c_l_best->pos) << std::endl;
+				}*/
 				// If so, create connection object and add to segemnt
 				Connection * c = new Connection;
 				c->cost = bestCost;
