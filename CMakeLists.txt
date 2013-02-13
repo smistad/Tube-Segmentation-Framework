@@ -85,6 +85,14 @@ if(GTEST_FOUND)
 endif()
 
 #------------------------------------------------------------------------------
+# Set variables
+#------------------------------------------------------------------------------
+
+set(PARAMETERS_DIR ${PROJECT_SOURCE_DIR}/parameters)
+set(KERNELS_DIR ${PROJECT_SOURCE_DIR})
+set(TESTDATA_DIR ${PROJECT_SOURCE_DIR}/tests/data)
+
+#------------------------------------------------------------------------------
 # Configure file for find_package module 
 #------------------------------------------------------------------------------
 
@@ -104,10 +112,6 @@ configure_file (
 #------------------------------------------------------------------------------
 # Configure file for settings, filepaths, parameters ...
 #------------------------------------------------------------------------------
-
-set(PARAMETERS_DIR ${PROJECT_SOURCE_DIR}/parameters)
-set(KERNELS_DIR ${PROJECT_SOURCE_DIR})
-set(TESTDATA_DIR ${PROJECT_SOURCE_DIR}/tests/data)
 
 configure_file(
  "${PROJECT_SOURCE_DIR}/CMake/tsf-config.h.in"

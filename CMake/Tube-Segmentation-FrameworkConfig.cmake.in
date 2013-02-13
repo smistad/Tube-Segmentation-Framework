@@ -22,8 +22,8 @@ set (Tube-Segmentation-Framework_BINARY_DIR "@Tube-Segmentation-Framework_BINARY
 set (Tube-Segmentation-Framework_INCLUDE_DIRS "@Tube-Segmentation-Framework_INCLUDE_DIRS@")
 set (Tube-Segmentation-Framework_LIBRARY_DIRS "@Tube-Segmentation-Framework_LIBRARY_DIRS@")
 
-set(Tube-Segmentation-Framework_PARAMETERS_DIR "${PARAMETERS_DIR}")
-set(Tube-Segmentation-Framework_KERNELS_DIR "${KERNELS_DIR}")
+set(Tube-Segmentation-Framework_PARAMETERS_DIR "@PARAMETERS_DIR@")
+set(Tube-Segmentation-Framework_KERNELS_DIR "@KERNELS_DIR@")
 
 set (Tube-Segmentation-Framework_USE_FILE "@Tube-Segmentation-Framework_SOURCE_DIR@/CMake/Tube-Segmentation-FrameworkUse.cmake")
 
