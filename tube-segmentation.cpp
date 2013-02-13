@@ -2464,8 +2464,8 @@ std::vector<CrossSection *> createGraph(TubeSegmentation &TS, SIPL::int3 size) {
 		        //std::cout << "theta: " << theta << std::endl;
 		        if((theta < thetaLimit && r.length() < maxD)) {
 		        	//std::cout << SQR_MAG(n) << std::endl;
-		            //if(SQR_MAG(n) < SQR_MAG(pos)) {
-		            if(TS.TDF[POS(n)] > TS.TDF[POS(pos)]) {
+		            if(SQR_MAG(n) < SQR_MAG(pos)) {
+		            //if(TS.TDF[POS(n)] > TS.TDF[POS(pos)]) {
 		                invalid = true;
 		                break;
 		            }
@@ -2489,7 +2489,7 @@ std::vector<CrossSection *> createGraph(TubeSegmentation &TS, SIPL::int3 size) {
 		// For each cross section c_j
 		for(CrossSection * c_j : sections) {
 			// If all criterias are ok: Add c_j as neighbor to c_i
-			if(c_i->pos.distance(c_j->pos) < 5 && !(c_i->pos == c_j->pos)) {
+			if(c_i->pos.distance(c_j->pos) < 6 && !(c_i->pos == c_j->pos)) {
 				float3 e1_i = c_i->direction;
 				float3 e1_j = c_j->direction;
 				int3 cint = c_i->pos - c_j->pos;
@@ -2554,6 +2554,20 @@ bool segmentInSegmentation(Segment * s, unordered_set<int> &segmentation, int3 s
 		}
 	}
 	return in;
+}
+
+float calculateBenefit(CrossSection * a, CrossSection * b, TubeSegmentation &TS, int3 size) {
+	float benefit = 0.0f;
+	int distance = ceil(a->pos.distance(b->pos));
+	float3 direction(b->pos.x-a->pos.x,b->pos.y-a->pos.y,b->pos.z-a->pos.z);
+	for(int i = 0; i < distance; i++) {
+		float frac = (float)i/distance;
+		float3 n = a->pos + frac*direction;
+		int3 in(round(n.x),round(n.y),round(n.z));
+		benefit += (TS.TDF[POS(in)]);
+	}
+
+	return benefit;
 }
 
 void inverseGradientRegionGrowing(Segment * s, TubeSegmentation &TS, unordered_set<int> &segmentation, int3 size) {
@@ -2691,9 +2705,9 @@ std::vector<Segment *> createSegments(OpenCL &ocl, TubeSegmentation &TS, std::ve
 				int current = T->index;
 				while(current != S->index) {
 					CrossSection * C = list[current];
-					benefit += C->TDF;
 					segment->sections.push_back(C);
 					current = pred[DPOS(S->index,current)];// get predecessor
+					benefit += calculateBenefit(C, list[current], TS, size);
 				}
 				segment->benefit = benefit;
 				segments.push_back(segment);
@@ -2841,8 +2855,8 @@ std::vector<Segment *> findOptimalSubtree(std::vector<Segment *> segments, int *
 		// For all children of mj
 		for(Connection * c : segments[mj]->connections) {
 			int k = c->target->index; //child
-			if(score[segments[k]->index] >= 0)
-				score[mj] += score[segments[k]->index];
+			if(score[k] >= 0)
+				score[mj] += score[k];
 		}
 	}
 
@@ -2858,8 +2872,8 @@ std::vector<Segment *> findOptimalSubtree(std::vector<Segment *> segments, int *
 			// For all children of mj
 			for(Connection * c : segments[mj]->connections) {
 				int k = c->target->index; //child
-				if(score[segments[k]->index] >= 0)
-					v[segments[k]->index] = true;
+				if(score[k] >= 0)
+					v[k] = true;
 			}
 		}
 	}
@@ -2870,6 +2884,19 @@ std::vector<Segment *> findOptimalSubtree(std::vector<Segment *> segments, int *
 	for(int i = 0; i < Ns; i++) {
 		if(v[i]) {
 			finalSegments.push_back(segments[i]);
+
+			// for all children, check if they are true in v, if not remove connections
+			std::vector<Connection *> connections;
+			for(Connection * c : segments[i]->connections) {
+				int k = c->target->index; //child
+				if(v[k]) {
+					// keep connection
+					connections.push_back(c);
+				} else {
+					delete c;
+				}
+			}
+			segments[i]->connections = connections;
 		}
 	}
 	delete[] v;
