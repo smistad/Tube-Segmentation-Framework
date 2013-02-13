@@ -2462,7 +2462,7 @@ std::vector<CrossSection *> createGraph(TubeSegmentation &TS, SIPL::int3 size) {
 		        float3 rpn = r_projected.normalize();
 		        float theta = acos((double)rn.dot(rpn));
 		        //std::cout << "theta: " << theta << std::endl;
-		        if((theta < thetaLimit && r.length() < maxD)) {
+		        if((theta < thetaLimit && r.length() < maxD-0.5f)) {
 		        	//std::cout << SQR_MAG(n) << std::endl;
 		            if(SQR_MAG(n) < SQR_MAG(pos)) {
 		            //if(TS.TDF[POS(n)] > TS.TDF[POS(pos)]) {
@@ -2671,7 +2671,7 @@ std::vector<Segment *> createSegments(OpenCL &ocl, TubeSegmentation &TS, std::ve
 		dist[DPOS(U->index,U->index)] = 0;
 		for(CrossSection * V : U->neighbors) {
 			// TODO calculate more advanced weight
-			dist[DPOS(U->index,V->index)] = (1-V->TDF);
+			dist[DPOS(U->index,V->index)] = ceil(U->pos.distance(V->pos)) - calculateBenefit(U, V, TS, size); //(1-V->TDF);
 			pred[DPOS(U->index,V->index)] = U->index;
 		}
 	}
