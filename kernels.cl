@@ -1177,10 +1177,12 @@ __kernel void circleFittingTDF(
 		if(dot(normalize(V), normalize(V_alpha)) < 0.2f)
 			negatives++;
 	}
-	if(negatives > 0 || read_imagef(dataset, sampler, pos).x > 0.3f) {
+	/*
+	if(negatives > 0 || read_imagef(dataset, sampler, pos).x > 0.4f) {
 		maxSum = 0;
 		maxRadius = 0;
 	}
+	*/
 
 	// Store result
     T[LPOS(pos)] = maxSum;

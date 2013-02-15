@@ -2435,7 +2435,7 @@ public:
 std::vector<CrossSection *> createGraph(TubeSegmentation &TS, SIPL::int3 size) {
 	// Create vector
 	std::vector<CrossSection *> sections;
-	float threshold = 0.4f;
+	float threshold = 0.3f;
 
 	// Go through TS.TDF and add all with TDF above threshold
 	int counter = 0;
@@ -2498,11 +2498,13 @@ std::vector<CrossSection *> createGraph(TubeSegmentation &TS, SIPL::int3 size) {
 
 
 	// For each cross section c_i
-	for(CrossSection * c_i : sections) {
+	for(int i = 0; i < sections.size(); i++) {
+		CrossSection * c_i = sections[i];
 		// For each cross section c_j
-		for(CrossSection * c_j : sections) {
+		for(int j = 0; j < i; j++) {
+			CrossSection * c_j = sections[j];
 			// If all criterias are ok: Add c_j as neighbor to c_i
-			if(c_i->pos.distance(c_j->pos) < 4 && !(c_i->pos == c_j->pos)) {
+			if(c_i->pos.distance(c_j->pos) < 3 && !(c_i->pos == c_j->pos)) {
 				float3 e1_i = c_i->direction;
 				float3 e1_j = c_j->direction;
 				int3 cint = c_i->pos - c_j->pos;
@@ -2517,7 +2519,26 @@ std::vector<CrossSection *> createGraph(TubeSegmentation &TS, SIPL::int3 size) {
 				if(acos((double)fabs(e1_j.dot(c))) > 1.05)
 					continue;
 
+				int distance = ceil(c_i->pos.distance(c_j->pos));
+				float3 direction(c_j->pos.x-c_i->pos.x,c_j->pos.y-c_i->pos.y,c_j->pos.z-c_i->pos.z);
+				bool invalid = false;
+				for(int i = 0; i < distance; i++) {
+					float frac = (float)i/distance;
+					float3 n = c_i->pos + frac*direction;
+					int3 in(round(n.x),round(n.y),round(n.z));
+					//float3 e1 = getTubeDirection(TS, in, size);
+					//cost += (1-fabs(a->direction.dot(e1)))+(1-fabs(b->direction.dot(e1)));
+					if(TS.intensity[POS(in)] > 0.5f) {
+						invalid = true;
+						break;
+					}
+				}
+				//if(invalid)
+				//	continue;
+
+
 				c_i->neighbors.push_back(c_j);
+				c_j->neighbors.push_back(c_i);
 				//sectionPairs.push_back(c_i);
 			}
 			// If no pair is found, dont add it
@@ -2860,7 +2881,7 @@ std::vector<Segment *> minimumSpanningTree(Segment * root, int3 size) {
 std::vector<Segment *> findOptimalSubtree(std::vector<Segment *> segments, int * depthFirstOrdering, int Ns) {
 
 	float * score = new float[Ns]();
-	float r = 3.0;
+	float r = 2.0;
 
 	// Stage 1 bottom up
 	for(int j = 0; j < Ns; j++) {
