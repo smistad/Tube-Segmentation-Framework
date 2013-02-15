@@ -1085,7 +1085,6 @@ __constant float sinValues[32] = {0.0f, 0.841471f, 0.909297f, 0.14112f, -0.75680
 
 __kernel void circleFittingTDF(
         __read_only image3d_t vectorField,
-        __read_only image3d_t dataset,
         __global float * T,
         __global float * Radius,
         __private float rMin,

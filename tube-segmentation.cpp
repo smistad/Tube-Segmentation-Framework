@@ -1093,12 +1093,11 @@ if(getParamBool(parameters, "timing")) {
     TDFsmall = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
     radiusSmall = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
     circleFittingTDFKernel.setArg(0, vectorField);
-    circleFittingTDFKernel.setArg(1, dataset);
-    circleFittingTDFKernel.setArg(2, TDFsmall);
-    circleFittingTDFKernel.setArg(3, radiusSmall);
-    circleFittingTDFKernel.setArg(4, radiusMin);
-    circleFittingTDFKernel.setArg(5, 3.0f);
-    circleFittingTDFKernel.setArg(6, 0.5f);
+    circleFittingTDFKernel.setArg(1, TDFsmall);
+    circleFittingTDFKernel.setArg(2, radiusSmall);
+    circleFittingTDFKernel.setArg(3, radiusMin);
+    circleFittingTDFKernel.setArg(4, 3.0f);
+    circleFittingTDFKernel.setArg(5, 0.5f);
 
     ocl.queue.enqueueNDRangeKernel(
             circleFittingTDFKernel,
@@ -1407,13 +1406,13 @@ if(getParamBool(parameters, "timing")) {
     // Run circle fitting TDF kernel on GVF result
     Buffer TDFlarge = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
     Buffer radiusLarge = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
+
     circleFittingTDFKernel.setArg(0, vectorField);
-    circleFittingTDFKernel.setArg(1, dataset);
-    circleFittingTDFKernel.setArg(2, TDFlarge);
-    circleFittingTDFKernel.setArg(3, radiusLarge);
-    circleFittingTDFKernel.setArg(4, std::max(1.0f, radiusMin));
-    circleFittingTDFKernel.setArg(5, radiusMax);
-    circleFittingTDFKernel.setArg(6, radiusStep);
+    circleFittingTDFKernel.setArg(1, TDFlarge);
+    circleFittingTDFKernel.setArg(2, radiusLarge);
+    circleFittingTDFKernel.setArg(3, std::max(1.0f, radiusMin));
+    circleFittingTDFKernel.setArg(4, radiusMax);
+    circleFittingTDFKernel.setArg(5, radiusStep);
 
     ocl.queue.enqueueNDRangeKernel(
             circleFittingTDFKernel,
@@ -1421,6 +1420,7 @@ if(getParamBool(parameters, "timing")) {
             NDRange(size.x,size.y,size.z),
             NDRange(4,4,4)
     );
+
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
