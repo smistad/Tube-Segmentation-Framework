@@ -1085,6 +1085,7 @@ __constant float sinValues[32] = {0.0f, 0.841471f, 0.909297f, 0.14112f, -0.75680
 
 __kernel void circleFittingTDF(
         __read_only image3d_t vectorField,
+        __read_only image3d_t dataset,
         __global float * T,
         __global float * Radius,
         __private float rMin,
@@ -1136,6 +1137,7 @@ __kernel void circleFittingTDF(
         float radiusSum = 0.0f;
         int samples = 32;
         int stride = 1;
+        int negatives = 0;
         /*
         if(radius < 3) {
             samples = 8;
@@ -1151,7 +1153,11 @@ __kernel void circleFittingTDF(
             float4 position = floatPos + radius*V_alpha.xyzz;
             float3 V = -read_imagef(vectorField, interpolationSampler, position).xyz;
             radiusSum += dot(V, V_alpha);
+            if(dot(normalize(V), normalize(V_alpha)) < 0.2f)
+            	negatives++;
         }
+        if(negatives > 0)
+        	continue;
         radiusSum /= samples;
         if(radiusSum > maxSum) {
             maxSum = radiusSum;
@@ -1161,7 +1167,22 @@ __kernel void circleFittingTDF(
         }
     }
 
-    // Store result
+    int samples = 32;
+    int negatives = 0;
+	int stride = 1;
+	for(int j = 0; j < samples; j++) {
+		float3 V_alpha = cosValues[j*stride]*e3 + sinValues[j*stride]*e2;
+		float4 position = floatPos + maxRadius*V_alpha.xyzz;
+		float3 V = -read_imagef(vectorField, interpolationSampler, position).xyz;
+		if(dot(normalize(V), normalize(V_alpha)) < 0.2f)
+			negatives++;
+	}
+	if(negatives > 0 || read_imagef(dataset, sampler, pos).x > 0.3f) {
+		maxSum = 0;
+		maxRadius = 0;
+	}
+
+	// Store result
     T[LPOS(pos)] = maxSum;
     Radius[LPOS(pos)] = maxRadius;
 }

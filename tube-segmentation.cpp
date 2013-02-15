@@ -160,6 +160,7 @@ bool inBounds(SIPL::int3 pos, SIPL::int3 size) {
 #define LPOS(a,b,c) (a)+(b)*(size.x)+(c)*(size.x*size.y)
 #define M(a,b,c) 1-sqrt(pow(T.Fx[a+b*size.x+c*size.x*size.y],2.0f) + pow(T.Fy[a+b*size.x+c*size.x*size.y],2.0f) + pow(T.Fz[a+b*size.x+c*size.x*size.y],2.0f))
 #define SQR_MAG(pos) sqrt(pow(TS.Fx[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f) + pow(TS.Fy[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f) + pow(TS.Fz[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f))
+#define SQR_MAG_SMALL(pos) sqrt(pow(TS.FxSmall[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f) + pow(TS.FySmall[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f) + pow(TS.FzSmall[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f))
 
 #define SIZE 3
 
@@ -935,7 +936,7 @@ float * createBlurMask(float sigma, int * maskSizePointer) {
     return mask;
 }
 
-void runCircleFittingMethod(OpenCL &ocl, Image3D &dataset, SIPL::int3 size, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radiusImage) {
+void runCircleFittingMethod(OpenCL &ocl, Image3D &dataset, SIPL::int3 size, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radiusImage, Image3D &vectorFieldSmall) {
     // Set up parameters
     const int GVFIterations = getParam(parameters, "gvf-iterations");
     const float radiusMin = getParam(parameters, "radius-min");
@@ -1076,6 +1077,7 @@ if(getParamBool(parameters, "timing")) {
         );
 
     }
+    vectorFieldSmall = vectorField;
        
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
@@ -1091,11 +1093,12 @@ if(getParamBool(parameters, "timing")) {
     TDFsmall = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
     radiusSmall = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
     circleFittingTDFKernel.setArg(0, vectorField);
-    circleFittingTDFKernel.setArg(1, TDFsmall);
-    circleFittingTDFKernel.setArg(2, radiusSmall);
-    circleFittingTDFKernel.setArg(3, radiusMin);
-    circleFittingTDFKernel.setArg(4, 3.0f);
-    circleFittingTDFKernel.setArg(5, 0.5f);
+    circleFittingTDFKernel.setArg(1, dataset);
+    circleFittingTDFKernel.setArg(2, TDFsmall);
+    circleFittingTDFKernel.setArg(3, radiusSmall);
+    circleFittingTDFKernel.setArg(4, radiusMin);
+    circleFittingTDFKernel.setArg(5, 3.0f);
+    circleFittingTDFKernel.setArg(6, 0.5f);
 
     ocl.queue.enqueueNDRangeKernel(
             circleFittingTDFKernel,
@@ -1405,11 +1408,12 @@ if(getParamBool(parameters, "timing")) {
     Buffer TDFlarge = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
     Buffer radiusLarge = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
     circleFittingTDFKernel.setArg(0, vectorField);
-    circleFittingTDFKernel.setArg(1, TDFlarge);
-    circleFittingTDFKernel.setArg(2, radiusLarge);
-    circleFittingTDFKernel.setArg(3, std::max(1.0f, radiusMin));
-    circleFittingTDFKernel.setArg(4, radiusMax);
-    circleFittingTDFKernel.setArg(5, radiusStep);
+    circleFittingTDFKernel.setArg(1, dataset);
+    circleFittingTDFKernel.setArg(2, TDFlarge);
+    circleFittingTDFKernel.setArg(3, radiusLarge);
+    circleFittingTDFKernel.setArg(4, std::max(1.0f, radiusMin));
+    circleFittingTDFKernel.setArg(5, radiusMax);
+    circleFittingTDFKernel.setArg(6, radiusStep);
 
     ocl.queue.enqueueNDRangeKernel(
             circleFittingTDFKernel,
@@ -2371,7 +2375,7 @@ void writeDataToDisk(TSFOutput * output, std::string storageDirectory) {
 
 void runCircleFittingAndNewCenterlineAlg(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * size, paramList &parameters, TSFOutput * output) {
     INIT_TIMER
-    Image3D vectorField, radius;
+    Image3D vectorField, radius,vectorFieldSmall;
     Image3D * TDF = new Image3D;
     const int totalSize = size->x*size->y*size->z;
 	const bool no3Dwrite = !getParamBool(parameters, "3d_write");
@@ -2385,7 +2389,7 @@ void runCircleFittingAndNewCenterlineAlg(OpenCL * ocl, cl::Image3D &dataset, SIP
     region[1] = size->y;
     region[2] = size->z;
 
-    runCircleFittingMethod(*ocl, dataset, *size, parameters, vectorField, *TDF, radius);
+    runCircleFittingMethod(*ocl, dataset, *size, parameters, vectorField, *TDF, radius,vectorFieldSmall);
     output->setTDF(TDF);
 
     Image3D * centerline = new Image3D;
@@ -2431,14 +2435,14 @@ public:
 std::vector<CrossSection *> createGraph(TubeSegmentation &TS, SIPL::int3 size) {
 	// Create vector
 	std::vector<CrossSection *> sections;
-	float threshold = 0.5f;
+	float threshold = 0.4f;
 
 	// Go through TS.TDF and add all with TDF above threshold
 	int counter = 0;
 	float thetaLimit = 0.5;
-	for(int z = 1; z < size.z-1; z++) {
-	for(int y = 1; y < size.y-1; y++) {
-	for(int x = 1; x < size.x-1; x++) {
+	for(int z = 5; z < size.z-5; z++) {
+	for(int y = 5; y < size.y-5; y++) {
+	for(int x = 5; x < size.x-5; x++) {
 		int3 pos(x,y,z);
 		float tdf = TS.TDF[POS(pos)];
 		if(tdf > threshold) {
@@ -2462,12 +2466,21 @@ std::vector<CrossSection *> createGraph(TubeSegmentation &TS, SIPL::int3 size) {
 		        float3 rpn = r_projected.normalize();
 		        float theta = acos((double)rn.dot(rpn));
 		        //std::cout << "theta: " << theta << std::endl;
+
 		        if((theta < thetaLimit && r.length() < maxD-0.5f)) {
 		        	//std::cout << SQR_MAG(n) << std::endl;
+		        	if(TS.radius[POS(pos)]<= 3) {
+		            //if(TS.TDF[POS(n)] > TS.TDF[POS(pos)]) {
+		            if(SQR_MAG_SMALL(n) < SQR_MAG_SMALL(pos)) {
+		                invalid = true;
+		                break;
+		            }
+		            } else {
 		            if(SQR_MAG(n) < SQR_MAG(pos)) {
 		            //if(TS.TDF[POS(n)] > TS.TDF[POS(pos)]) {
 		                invalid = true;
 		                break;
+		            }
 		            }
 		        }
 		    }}}
@@ -2489,7 +2502,7 @@ std::vector<CrossSection *> createGraph(TubeSegmentation &TS, SIPL::int3 size) {
 		// For each cross section c_j
 		for(CrossSection * c_j : sections) {
 			// If all criterias are ok: Add c_j as neighbor to c_i
-			if(c_i->pos.distance(c_j->pos) < 6 && !(c_i->pos == c_j->pos)) {
+			if(c_i->pos.distance(c_j->pos) < 4 && !(c_i->pos == c_j->pos)) {
 				float3 e1_i = c_i->direction;
 				float3 e1_j = c_j->direction;
 				int3 cint = c_i->pos - c_j->pos;
@@ -2847,7 +2860,7 @@ std::vector<Segment *> minimumSpanningTree(Segment * root, int3 size) {
 std::vector<Segment *> findOptimalSubtree(std::vector<Segment *> segments, int * depthFirstOrdering, int Ns) {
 
 	float * score = new float[Ns]();
-	float r = 1.0;
+	float r = 3.0;
 
 	// Stage 1 bottom up
 	for(int j = 0; j < Ns; j++) {
@@ -2911,6 +2924,7 @@ float calculateConnectionCost(CrossSection * a, CrossSection * b, TubeSegmentati
 	float cost = 0.0f;
 	int distance = ceil(a->pos.distance(b->pos));
 	float3 direction(b->pos.x-a->pos.x,b->pos.y-a->pos.y,b->pos.z-a->pos.z);
+	float maxIntensity = -1.0f;
 	for(int i = 0; i < distance; i++) {
 		float frac = (float)i/distance;
 		float3 n = a->pos + frac*direction;
@@ -2918,8 +2932,21 @@ float calculateConnectionCost(CrossSection * a, CrossSection * b, TubeSegmentati
 		cost += /*SQR_MAG(in) +*/ (1.0f-TS.TDF[POS(in)]);
         //float3 e1 = getTubeDirection(TS, in, size);
         //cost += (1-fabs(a->direction.dot(e1)))+(1-fabs(b->direction.dot(e1)));
+		if(TS.intensity[POS(in)] > maxIntensity) {
+			maxIntensity = TS.intensity[POS(in)];
+		}
 	}
-
+	/*
+	if(maxIntensity > 0.2 && maxIntensity < 0.3) {
+		cost = cost*2;
+	}
+	if(maxIntensity >= 0.3 && maxIntensity < 0.5) {
+		cost = cost*4;
+	}
+	if(maxIntensity >= 0.5) {
+		cost = cost*8;
+	}
+	*/
 	return cost;
 }
 
@@ -2945,13 +2972,15 @@ void createConnections(TubeSegmentation &TS, std::vector<Segment *> segments, in
 					if(acos(fabs(c_l->direction.dot(c))) > 1.05f)
 						continue;
 
+					/*
                     float rk = TS.radius[POS(c_k->pos)];
                     float rl = TS.radius[POS(c_l->pos)];
 
                     if(rk > 2 || rl > 2) {
-                        if(std::max(rk,rl) / std::min(rk,rl) > 2)
+                        if(std::max(rk,rl) / std::min(rk,rl) >= 2)
                             continue;
                     }
+                    */
 
 					float cost = calculateConnectionCost(c_k, c_l, TS, size);
 					if(cost < bestCost) {
@@ -3030,7 +3059,7 @@ SIPL::Volume<float3> * visualizeSegments(std::vector<Segment *> segments, int3 s
 
 void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * size, paramList &parameters, TSFOutput * output) {
     INIT_TIMER
-    Image3D vectorField, radius;
+    Image3D vectorField, radius, vectorFieldSmall;
     Image3D * TDF = new Image3D;
     const int totalSize = size->x*size->y*size->z;
 	const bool no3Dwrite = !getParamBool(parameters, "3d_write");
@@ -3044,7 +3073,7 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
     region[1] = size->y;
     region[2] = size->z;
 
-    runCircleFittingMethod(*ocl, dataset, *size, parameters, vectorField, *TDF, radius);
+    runCircleFittingMethod(*ocl, dataset, *size, parameters, vectorField, *TDF, radius, vectorFieldSmall);
 
 
     // Transfer from device to host
@@ -3052,6 +3081,9 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
     TS.Fx = new float[totalSize];
     TS.Fy = new float[totalSize];
     TS.Fz = new float[totalSize];
+    TS.FxSmall = new float[totalSize];
+    TS.FySmall = new float[totalSize];
+    TS.FzSmall = new float[totalSize];
     if(no3Dwrite || getParamBool(parameters, "32bit-vectors")) {
     	// 32 bit vector fields
         float * Fs = new float[totalSize*4];
@@ -3063,6 +3095,16 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
             TS.Fz[i] = Fs[i*4+2];
         }
         delete[] Fs;
+		float * FsSmall = new float[totalSize*4];
+        ocl->queue.enqueueReadImage(vectorFieldSmall, CL_TRUE, offset, region, 0, 0, FsSmall);
+#pragma omp parallel for
+        for(int i = 0; i < totalSize; i++) {
+            TS.FxSmall[i] = FsSmall[i*4];
+            TS.FySmall[i] = FsSmall[i*4+1];
+            TS.FzSmall[i] = FsSmall[i*4+2];
+        }
+        delete[] FsSmall;
+
     } else {
     	// 16 bit vector fields
         short * Fs = new short[totalSize*4];
@@ -3074,12 +3116,24 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
             TS.Fz[i] = MAX(-1.0f, Fs[i*4+2] / 32767.0f);
         }
         delete[] Fs;
+		short * FsSmall = new short[totalSize*4];
+        ocl->queue.enqueueReadImage(vectorFieldSmall, CL_TRUE, offset, region, 0, 0, FsSmall);
+#pragma omp parallel for
+        for(int i = 0; i < totalSize; i++) {
+            TS.FxSmall[i] = MAX(-1.0f, FsSmall[i*4] / 32767.0f);
+            TS.FySmall[i] = MAX(-1.0f, FsSmall[i*4+1] / 32767.0f);
+            TS.FzSmall[i] = MAX(-1.0f, FsSmall[i*4+2] / 32767.0f);
+        }
+        delete[] FsSmall;
+
     }
     TS.radius = new float[totalSize];
     TS.TDF = new float[totalSize];
+    TS.intensity = new float[totalSize];
     ocl->queue.enqueueReadImage(*TDF, CL_TRUE, offset, region, 0, 0, TS.TDF);
     output->setTDF(TS.TDF);
     ocl->queue.enqueueReadImage(radius, CL_TRUE, offset, region, 0, 0, TS.radius);
+    ocl->queue.enqueueReadImage(dataset, CL_TRUE, offset, region, 0, 0, TS.intensity);
 
     // Create pairs of voxels with high TDF
     std::vector<CrossSection *> crossSections = createGraph(TS, *size);
@@ -3095,15 +3149,7 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
     // Create segments from pairs
     std::vector<Segment *> segments = createSegments(*ocl, TS, crossSections, *size);
 
-    // Display segments
-	SIPL::Volume<bool> * segs = new SIPL::Volume<bool>(*size);
-    segs->fill(false);
-    for(Segment * s : segments) {
-		for(CrossSection * c : s->sections) {
-			segs->set(c->pos, true);
-		}
-    }
-    segs->showMIP();
+    visualizeSegments(segments, *size);
 
     // Create connections between segments
     std::cout << "creating connections..." << std::endl;
@@ -3151,7 +3197,12 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
     	if(value.x > 0 || value.y > 0) {
     		centerline[i] = 1;
     	}
+    	value.z = value.y;
+    	value.y = value.x;
+    	value.x = TS.intensity[i];
+    	v->set(i, value);
     }
+    v->show(0.3, 0.6);
     output->setCenterlineVoxels(centerline);
 
     Image3D * volume = new Image3D;
@@ -3179,10 +3230,10 @@ void runCircleFittingAndRidgeTraversal(OpenCL * ocl, Image3D &dataset, SIPL::int
     INIT_TIMER
     cl::Event startEvent, endEvent;
     cl_ulong start, end;
-    Image3D vectorField, radius;
+    Image3D vectorField, radius,vectorFieldSmall;
     Image3D * TDF = new Image3D;
     TubeSegmentation TS;
-    runCircleFittingMethod(*ocl, dataset, *size, parameters, vectorField, *TDF, radius);
+    runCircleFittingMethod(*ocl, dataset, *size, parameters, vectorField, *TDF, radius,vectorFieldSmall);
     output->setTDF(TDF);
     const int totalSize = size->x*size->y*size->z;
 	const bool no3Dwrite = !getParamBool(parameters, "3d_write");

@@ -20,10 +20,12 @@ using boost::unordered_map;
 
 typedef struct TubeSegmentation {
     float *Fx, *Fy, *Fz; // The GVF vector field
+    float *FxSmall, *FySmall, *FzSmall; // The GVF vector field
     float *TDF; // The TDF response
     float *radius;
     char *centerline;
     char *segmentation;
+    float *intensity;
 } TubeSegmentation;
 
 class TSFOutput {
