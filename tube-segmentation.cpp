@@ -2435,7 +2435,7 @@ public:
 std::vector<CrossSection *> createGraph(TubeSegmentation &TS, SIPL::int3 size) {
 	// Create vector
 	std::vector<CrossSection *> sections;
-	float threshold = 0.3f;
+	float threshold = 0.5f;
 
 	// Go through TS.TDF and add all with TDF above threshold
 	int counter = 0;
@@ -2447,6 +2447,7 @@ std::vector<CrossSection *> createGraph(TubeSegmentation &TS, SIPL::int3 size) {
 		float tdf = TS.TDF[POS(pos)];
 		if(tdf > threshold) {
 			int maxD = std::min(std::max((int)round(TS.radius[POS(pos)]), 1), 5);
+		    //std::cout << SQR_MAG(pos) << " " << SQR_MAG_SMALL(pos) << std::endl;
 			//std::cout << "radius" << TS.radius[POS(pos)] << std::endl;
 			//std::cout << "maxD "<< maxD <<std::endl;
 			float3 e1 = getTubeDirection(TS, pos, size);
@@ -2504,7 +2505,7 @@ std::vector<CrossSection *> createGraph(TubeSegmentation &TS, SIPL::int3 size) {
 		for(int j = 0; j < i; j++) {
 			CrossSection * c_j = sections[j];
 			// If all criterias are ok: Add c_j as neighbor to c_i
-			if(c_i->pos.distance(c_j->pos) < 3 && !(c_i->pos == c_j->pos)) {
+			if(c_i->pos.distance(c_j->pos) < 4 && !(c_i->pos == c_j->pos)) {
 				float3 e1_i = c_i->direction;
 				float3 e1_j = c_j->direction;
 				int3 cint = c_i->pos - c_j->pos;
@@ -2617,23 +2618,90 @@ void inverseGradientRegionGrowing(Segment * s, TubeSegmentation &TS, unordered_s
 			int3 in(round(n.x),round(n.y),round(n.z));
 			centerpoints.push_back(in);
 		}
+		segmentation.insert(POS(a->pos));//test
+		segmentation.insert(POS(b->pos));//test
 	}
+	/*
 
 	// Dilate the centerline
-	unordered_set<int> centerline;
+	std::vector<int3> dilatedCenterline;
 	for(int3 pos : centerpoints) {
 		for(int a = -1; a < 2; a++) {
 		for(int b = -1; b < 2; b++) {
 		for(int c = -1; c < 2; c++) {
 			int3 n = pos + int3(a,b,c);
-			centerline.insert(POS(n));
+			if(inBounds(n, size) && segmentation.find(POS(n)) == segmentation.end()) {
+				segmentation.insert(POS(n));
+				dilatedCenterline.push_back(n);
+			}
 		}}}
 	}
 
-	// TODO the rest of the inverse gradient region growing
+	std::queue<int3> queue;
+	for(int3 pos : dilatedCenterline) {
+		for(int a = -1; a < 2; a++) {
+		for(int b = -1; b < 2; b++) {
+		for(int c = -1; c < 2; c++) {
+			int3 n = pos + int3(a,b,c);
+			if(inBounds(n, size) && segmentation.find(POS(n)) == segmentation.end()) {
+				queue.push(n);
+			}
+		}}}
+	}
 
-	// Add all segmented voxels to segmentation
-	segmentation.insert(centerline.begin(), centerline.end());
+	while(!queue.empty()) {
+		int3 X = queue.front();
+		float FNXw = SQR_MAG(X);
+		queue.pop();
+		for(int a = -1; a < 2; a++) {
+		for(int b = -1; b < 2; b++) {
+		for(int c = -1; c < 2; c++) {
+			if(a == 0 && b == 0 && c == 0)
+				continue;
+
+			int3 Y = X + int3(a,b,c);
+			if(inBounds(Y, size) && segmentation.find(POS(Y)) == segmentation.end()) {
+
+				float3 FNY;
+				FNY.x = TS.Fx[POS(Y)];
+				FNY.y = TS.Fy[POS(Y)];
+				FNY.z = TS.Fz[POS(Y)];
+				float FNYw = FNY.length();
+				FNY = FNY.normalize();
+				if(FNYw > FNXw || FNXw < 0.1f) {
+
+					int3 Z;
+					float maxDotProduct = -2.0f;
+					for(int a2 = -1; a2 < 2; a2++) {
+					for(int b2 = -1; b2 < 2; b2++) {
+					for(int c2 = -1; c2 < 2; c2++) {
+						if(a2 == 0 && b2 == 0 && c2 == 0)
+							continue;
+						int3 Zc;
+						Zc.x = Y.x+a2;
+						Zc.y = Y.y+b2;
+						Zc.z = Y.z+c2;
+						float3 YZ;
+						YZ.x = Zc.x-Y.x;
+						YZ.y = Zc.y-Y.y;
+						YZ.z = Zc.z-Y.z;
+						YZ = YZ.normalize();
+						if(FNY.dot(YZ) > maxDotProduct) {
+							maxDotProduct = FNY.dot(YZ);
+							Z = Zc;
+						}
+					}}}
+
+					if(Z.x == X.x && Z.y == X.y && Z.z == X.z) {
+						segmentation.insert(POS(X));
+						queue.push(Y);
+					}
+				}
+			}
+		}}}
+	}
+	*/
+
 }
 
 std::vector<Segment *> createSegments(OpenCL &ocl, TubeSegmentation &TS, std::vector<CrossSection *> &crossSections, SIPL::int3 size) {
