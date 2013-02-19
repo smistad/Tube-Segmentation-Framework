@@ -1152,8 +1152,8 @@ __kernel void circleFittingTDF(
             float4 position = floatPos + radius*V_alpha.xyzz;
             float3 V = -read_imagef(vectorField, interpolationSampler, position).xyz;
             radiusSum += dot(V, V_alpha);
-            if(dot(normalize(V), normalize(V_alpha)) < 0.2f)
-            	negatives++;
+            //if(dot(normalize(V), normalize(V_alpha)) < 0.2f)
+            //	negatives++;
         }
         if(negatives > 0)
         	continue;
@@ -1189,6 +1189,7 @@ __kernel void circleFittingTDF(
 }
 
 #define SQR_MAG(pos) read_imagef(vectorField, sampler, pos).w
+#define SQR_MAG_SMALL(pos) length(read_imagef(vectorFieldSmall, sampler, pos).xyz)
 
 
 __kernel void dd(
@@ -1245,6 +1246,7 @@ __kernel void findCandidateCenterpoints2(
     __read_only image3d_t TDF,
     __read_only image3d_t radius,
     __read_only image3d_t vectorField,
+    __read_only image3d_t vectorFieldSmall,
     __write_only image3d_t centerpoints,
     __private int HP_SIZE,
     __private int sum,
@@ -1298,10 +1300,23 @@ __kernel void findCandidateCenterpoints2(
         const float3 r_projected = r-e1*dp;
         const float theta = acos(dot(normalize(r), normalize(r_projected)));
         if((theta < thetaLimit && length(r) < maxD)) {
-            if(SQR_MAG(n) < SQR_MAG(pos)) {
-                invalid = true;
-                break;
-            }    
+
+        	/*
+			if(radii <= 3) {
+			//if(read_imagef(TDF, sampler, n).x > read_imagef(TDF, sampler, pos).x) {
+			if(SQR_MAG_SMALL(n) < SQR_MAG_SMALL(pos)) {
+				invalid = true;
+				break;
+			}
+			} else {
+			*/
+			if(SQR_MAG(n) < SQR_MAG(pos)) {
+			//if(TS.TDF[POS(n)] > TS.TDF[POS(pos)]) {
+				invalid = true;
+				break;
+			//}
+			}
+
         }
     }}}
 

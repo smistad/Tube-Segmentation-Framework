@@ -1775,7 +1775,7 @@ if(getParamBool(parameters, "timing")) {
     return volume;
 }
 
-Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radius, Image3D &intensity) {
+Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radius, Image3D &intensity, Image3D &vectorFieldSmall) {
     const int totalSize = size.x*size.y*size.z;
 	const bool no3Dwrite = !getParamBool(parameters, "3d_write");
     const int cubeSize = getParam(parameters, "cube-size");
@@ -1856,6 +1856,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
         candidates2Kernel.setArg(0, TDF);
         candidates2Kernel.setArg(1, radius);
         candidates2Kernel.setArg(2, vectorField);
+        candidates2Kernel.setArg(3, vectorFieldSmall);
         Buffer centerpoints2 = Buffer(
                 ocl.context,
                 CL_MEM_READ_WRITE,
@@ -1869,9 +1870,9 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
                 NullRange
         );
 
-        candidates2Kernel.setArg(3, centerpoints2);
+        candidates2Kernel.setArg(4, centerpoints2);
         std::cout << "candidates: " << hp3.getSum() << std::endl;
-        hp3.traverse(candidates2Kernel, 4);
+        hp3.traverse(candidates2Kernel, 5);
         ocl.queue.enqueueCopyBufferToImage(
             centerpoints2,
             centerpointsImage2,
@@ -1946,12 +1947,13 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
         candidates2Kernel.setArg(0, TDF);
         candidates2Kernel.setArg(1, radius);
         candidates2Kernel.setArg(2, vectorField);
+        candidates2Kernel.setArg(3, vectorFieldSmall);
 
         HistogramPyramid3D hp3(ocl);
         hp3.create(centerpointsImage, size.x, size.y, size.z);
         std::cout << "candidates: " << hp3.getSum() << std::endl;
-        candidates2Kernel.setArg(3, centerpointsImage2);
-        hp3.traverse(candidates2Kernel, 4);
+        candidates2Kernel.setArg(4, centerpointsImage2);
+        hp3.traverse(candidates2Kernel, 5);
 
         Image3D centerpointsImage3 = Image3D(
                 ocl.context,
@@ -2391,9 +2393,11 @@ void runCircleFittingAndNewCenterlineAlg(OpenCL * ocl, cl::Image3D &dataset, SIP
 
     runCircleFittingMethod(*ocl, dataset, *size, parameters, vectorField, *TDF, radius,vectorFieldSmall);
     output->setTDF(TDF);
+    if(getParamBool(parameters, "tdf-only"))
+    	return;
 
     Image3D * centerline = new Image3D;
-    *centerline = runNewCenterlineAlg(*ocl, *size, parameters, vectorField, *TDF, radius, dataset);
+    *centerline = runNewCenterlineAlg(*ocl, *size, parameters, vectorField, *TDF, radius, dataset,vectorFieldSmall);
     output->setCenterlineVoxels(centerline);
 
     Image3D * segmentation = new Image3D;
