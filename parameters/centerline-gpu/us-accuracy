@@ -4,4 +4,4 @@ large-blur 10
 fmax 0.05
 cropping threshold
 cropping-threshold 100
-min-scan-lines 5
+min-scan-lines-threshold 5
