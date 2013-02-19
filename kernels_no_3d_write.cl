@@ -1484,8 +1484,8 @@ __kernel void circleFittingTDF(
             float4 position = floatPos + radius*V_alpha.xyzz;
             float3 V = -read_imagef(vectorField, interpolationSampler, position).xyz;
             radiusSum += dot(V, V_alpha);
-            if(dot(normalize(V), normalize(V_alpha)) < 0.2f)
-                negatives = true;
+            //if(dot(normalize(V), normalize(V_alpha)) < 0.2f)
+            //    negatives = true;
         }
         if(negatives)
         	continue;
