@@ -3186,6 +3186,7 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
             TS.Fz[i] = Fs[i*4+2];
         }
         delete[] Fs;
+        if(getParam(parameters, "radius-min") < 2.5) {
 		float * FsSmall = new float[totalSize*4];
         ocl->queue.enqueueReadImage(vectorFieldSmall, CL_TRUE, offset, region, 0, 0, FsSmall);
 #pragma omp parallel for
@@ -3195,6 +3196,7 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
             TS.FzSmall[i] = FsSmall[i*4+2];
         }
         delete[] FsSmall;
+        }
 
     } else {
     	// 16 bit vector fields
@@ -3207,6 +3209,7 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
             TS.Fz[i] = MAX(-1.0f, Fs[i*4+2] / 32767.0f);
         }
         delete[] Fs;
+        if(getParam(parameters, "radius-min") < 2.5) {
 		short * FsSmall = new short[totalSize*4];
         ocl->queue.enqueueReadImage(vectorFieldSmall, CL_TRUE, offset, region, 0, 0, FsSmall);
 #pragma omp parallel for
@@ -3216,6 +3219,7 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
             TS.FzSmall[i] = MAX(-1.0f, FsSmall[i*4+2] / 32767.0f);
         }
         delete[] FsSmall;
+        }
 
     }
     TS.radius = new float[totalSize];
