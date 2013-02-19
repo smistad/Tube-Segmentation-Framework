@@ -1856,7 +1856,6 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
         candidates2Kernel.setArg(0, TDF);
         candidates2Kernel.setArg(1, radius);
         candidates2Kernel.setArg(2, vectorField);
-        candidates2Kernel.setArg(3, vectorFieldSmall);
         Buffer centerpoints2 = Buffer(
                 ocl.context,
                 CL_MEM_READ_WRITE,
@@ -1870,9 +1869,9 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
                 NullRange
         );
 
-        candidates2Kernel.setArg(4, centerpoints2);
+        candidates2Kernel.setArg(3, centerpoints2);
         std::cout << "candidates: " << hp3.getSum() << std::endl;
-        hp3.traverse(candidates2Kernel, 5);
+        hp3.traverse(candidates2Kernel, 4);
         ocl.queue.enqueueCopyBufferToImage(
             centerpoints2,
             centerpointsImage2,
@@ -1947,13 +1946,12 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
         candidates2Kernel.setArg(0, TDF);
         candidates2Kernel.setArg(1, radius);
         candidates2Kernel.setArg(2, vectorField);
-        candidates2Kernel.setArg(3, vectorFieldSmall);
 
         HistogramPyramid3D hp3(ocl);
         hp3.create(centerpointsImage, size.x, size.y, size.z);
         std::cout << "candidates: " << hp3.getSum() << std::endl;
-        candidates2Kernel.setArg(4, centerpointsImage2);
-        hp3.traverse(candidates2Kernel, 5);
+        candidates2Kernel.setArg(3, centerpointsImage2);
+        hp3.traverse(candidates2Kernel, 4);
 
         Image3D centerpointsImage3 = Image3D(
                 ocl.context,

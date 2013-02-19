@@ -1246,7 +1246,6 @@ __kernel void findCandidateCenterpoints2(
     __read_only image3d_t TDF,
     __read_only image3d_t radius,
     __read_only image3d_t vectorField,
-    __read_only image3d_t vectorFieldSmall,
     __write_only image3d_t centerpoints,
     __private int HP_SIZE,
     __private int sum,
