@@ -1,5 +1,6 @@
 #include "tube-segmentation.hpp"
 #include "SIPL/Core.hpp"
+#include "tsf-config.h"
 
 int main(int argc, char ** argv) {
 
@@ -8,7 +9,7 @@ int main(int argc, char ** argv) {
     std::string filename = argv[1];
     TSFOutput * output;
     try {
-		output = run(filename, parameters);
+		output = run(filename, parameters, std::string(KERNELS_DIR));
     } catch(SIPL::SIPLException e) {
     	std::cout << e.what() << std::endl;
 

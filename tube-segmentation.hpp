@@ -66,6 +66,10 @@ private:
 	float* TDF;
 	OpenCL* ocl;
 };
+/*
+ * For debugging.
+ */
+void print(paramList parameters);
 
 cl::Image3D readDatasetAndTransfer(OpenCL &ocl, std::string, paramList &parameters, SIPL::int3 *, TSFOutput *);
 
@@ -76,6 +80,6 @@ void runCircleFittingAndNewCenterlineAlg(OpenCL *, cl::Image3D &dataset, SIPL::i
 void runCircleFittingAndTest(OpenCL *, cl::Image3D &dataset, SIPL::int3 * size, paramList &parameters, TSFOutput *);
 
 
-TSFOutput * run(std::string filename, paramList &parameters);
+TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_dir);
 
 #endif

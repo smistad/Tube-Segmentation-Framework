@@ -7,6 +7,7 @@
 #include <list>
 #include <cstdio>
 #include <limits>
+
 #ifdef CPP11
 #include <unordered_set>
 using std::unordered_set;
@@ -15,7 +16,7 @@ using std::unordered_set;
 using boost::unordered_set;
 #endif
 #include "histogram-pyramids.hpp"
-#include "tsf-config.h"
+//#include "tsf-config.h"
 
 //#define TIMING
 
@@ -44,8 +45,24 @@ using boost::unordered_set;
 
 #define MAX(a,b) a > b ? a : b
 
+void print(paramList parameters){
+	unordered_map<std::string, BoolParameter>::iterator bIt;
+	unordered_map<std::string, NumericParameter>::iterator nIt;
+	unordered_map<std::string, StringParameter>::iterator sIt;
 
-TSFOutput * run(std::string filename, paramList &parameters) {
+	for(bIt = parameters.bools.begin(); bIt != parameters.bools.end(); ++bIt){
+		std::cout << bIt->first << " = " << bIt->second.get() << std::endl;
+	}
+
+	for(nIt = parameters.numerics.begin(); nIt != parameters.numerics.end(); ++nIt){
+		std::cout << nIt->first << " = " << nIt->second.get() << std::endl;
+	}
+	for(sIt = parameters.strings.begin(); sIt != parameters.strings.end(); ++sIt){
+		std::cout << sIt->first << " = " << sIt->second.get() << std::endl;
+	}
+}
+
+TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_dir) {
 
     INIT_TIMER
     OpenCL * ocl = new OpenCL;
@@ -68,7 +85,7 @@ TSFOutput * run(std::string filename, paramList &parameters) {
 
     // Compile and create program
     if(!getParamBool(parameters, "buffers-only") && (int)devices[0].getInfo<CL_DEVICE_EXTENSIONS>().find("cl_khr_3d_image_writes") > -1) {
-    	std::string filename = std::string(KERNELS_DIR)+"/kernels.cl";
+    	std::string filename = kernel_dir+"/kernels.cl";
         ocl->program = buildProgramFromSource(ocl->context, filename.c_str());
         BoolParameter v = parameters.bools["3d_write"];
         v.set(true);
@@ -77,7 +94,7 @@ TSFOutput * run(std::string filename, paramList &parameters) {
         BoolParameter v = parameters.bools["3d_write"];
         v.set(false);
         parameters.bools["3d_write"] = v;
-        std::string filename = std::string(KERNELS_DIR)+"/kernels_no_3d_write.cl";
+        std::string filename = kernel_dir+"/kernels_no_3d_write.cl";
         ocl->program = buildProgramFromSource(ocl->context, filename.c_str());
         std::cout << "NOTE: Writing to 3D textures is not supported on the selected device." << std::endl;
     }
@@ -283,7 +300,7 @@ void tred2(float V[SIZE][SIZE], float d[SIZE], float e[SIZE]) {
   }
   V[SIZE-1][SIZE-1] = 1.0f;
   e[0] = 0.0f;
-} 
+}
 
 // Symmetric tridiagonal QL algorithm.
 
@@ -381,7 +398,7 @@ void tql2(float V[SIZE][SIZE], float d[SIZE], float e[SIZE]) {
     d[l] = d[l] + f;
     e[l] = 0.0f;
   }
-  
+
   // Sort eigenvalues and corresponding vectors.
 
   for (int i = 0; i < SIZE-1; i++) {
@@ -533,7 +550,7 @@ float3 getTubeDirection(TubeSegmentation &T, int3 pos, int3 size) {
     float3 Fx = gradient(T, pos,0,1,size);
     float3 Fy = gradient(T, pos,1,2,size);
     float3 Fz = gradient(T, pos,2,3,size);
-    
+
     float Hessian[3][3] = {
         {Fx.x, Fy.x, Fz.x},
         {Fy.x, Fy.y, Fz.y},
@@ -552,7 +569,7 @@ void doEigen(TubeSegmentation &T, int3 pos, int3 size, float3 * lambda, float3 *
     float3 Fx = gradient(T, pos,0,1,size);
     float3 Fy = gradient(T, pos,1,2,size);
     float3 Fz = gradient(T, pos,2,3,size);
-    
+
     float Hessian[3][3] = {
         {Fx.x, Fy.x, Fz.x},
         {Fy.x, Fy.y, Fz.y},
@@ -592,10 +609,10 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList &parame
 
     // Create queue
     std::priority_queue<point, std::vector<point>, PointComparison> queue;
-    
+
     START_TIMER
     // Collect all valid start points
-    #pragma omp parallel for 
+    #pragma omp parallel for
     for(int z = 2; z < size.z-2; z++) {
         for(int y = 2; y < size.y-2; y++) {
             for(int x = 2; x < size.x-2; x++) {
@@ -710,10 +727,10 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList &parame
                                 continue;
 
                             if(T.radius[POS(n)] >= 1.5f) {
-                                if(M(n.x,n.y,n.z) > M(maxPoint.x,maxPoint.y,maxPoint.z)) 
+                                if(M(n.x,n.y,n.z) > M(maxPoint.x,maxPoint.y,maxPoint.z))
                                 maxPoint = n;
                             } else {
-                                if(T.TDF[LPOS(n.x,n.y,n.z)]*M(n.x,n.y,n.z) > T.TDF[POS(maxPoint)]*M(maxPoint.x,maxPoint.y,maxPoint.z)) 
+                                if(T.TDF[LPOS(n.x,n.y,n.z)]*M(n.x,n.y,n.z) > T.TDF[POS(maxPoint)]*M(maxPoint.x,maxPoint.y,maxPoint.z))
                                 maxPoint = n;
                             }
 
@@ -768,7 +785,7 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList &parame
 
 
                         float maintain_dir = sign(dot(e1,t_i));
-                        float3 vec_sum; 
+                        float3 vec_sum;
                         vec_sum.x = maintain_dir*e1.x + t_i.x + t_i_1.x;
                         vec_sum.y = maintain_dir*e1.y + t_i.y + t_i_1.y;
                         vec_sum.z = maintain_dir*e1.z + t_i.z + t_i_1.z;
@@ -785,7 +802,7 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList &parame
                         // Create centerline point
                         CenterlinePoint p;
                         p.pos = position;
-                        p.next = &(stack.top()); // add previous 
+                        p.next = &(stack.top()); // add previous
                         if(T.radius[POS(p.pos)] > 3.0f) {
                             p.large = true;
                         } else {
@@ -870,7 +887,7 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList &parame
     for(it = centerlineDistances.begin(); it != centerlineDistances.end(); it++) {
         if(it->second > centerlineDistances[max])
             max = it->first;
-        if(it->second > TreeMin) 
+        if(it->second > TreeMin)
             trees.push_back(it->first);
     }
     std::list<int>::iterator it2;
@@ -901,7 +918,7 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList &parame
             }
             if(!valid)
                 returnCenterlines[i] = 0;
-                    
+
         }
     }
     STOP_TIMER("finding largest tree")
@@ -1031,7 +1048,7 @@ if(getParamBool(parameters, "timing")) {
         // Create auxillary buffer
         Buffer vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(float)*totalSize);
         vectorField = Image3D(ocl.context, CL_MEM_READ_ONLY, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
- 
+
         // Run create vector field
         createVectorFieldKernel.setArg(0, blurredVolume);
         createVectorFieldKernel.setArg(1, vectorFieldBuffer);
@@ -1047,8 +1064,8 @@ if(getParamBool(parameters, "timing")) {
 
         // Copy buffer contents to image
         ocl.queue.enqueueCopyBufferToImage(
-                vectorFieldBuffer, 
-                vectorField, 
+                vectorFieldBuffer,
+                vectorField,
                 0,
                 offset,
                 region
@@ -1062,7 +1079,7 @@ if(getParamBool(parameters, "timing")) {
             std::cout << "NOTE: Using 16 bit vectors" << std::endl;
             vectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
         }
-     
+
         // Run create vector field
         createVectorFieldKernel.setArg(0, blurredVolume);
         createVectorFieldKernel.setArg(1, vectorField);
@@ -1078,7 +1095,7 @@ if(getParamBool(parameters, "timing")) {
 
     }
     vectorFieldSmall = vectorField;
-       
+
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
@@ -1139,7 +1156,7 @@ if(getParamBool(parameters, "timing")) {
     std::cout << "RUNTIME of TDF small: " << (end-start)*1.0e-6 << " ms" << std::endl;
 }
     /* Large Airways */
-    
+
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
 }
@@ -1252,8 +1269,8 @@ if(getParamBool(parameters, "timing")) {
                 NDRange(4,4,4)
         );
 
-    } 
-    
+    }
+
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
@@ -1270,7 +1287,7 @@ if(getParamBool(parameters, "timing")) {
     Kernel GVFIterationKernel = Kernel(ocl.program, "GVF3DIteration");
     Kernel GVFFinishKernel = Kernel(ocl.program, "GVF3DFinish");
 
-    std::cout << "Running GVF with " << GVFIterations << " iterations " << std::endl; 
+    std::cout << "Running GVF with " << GVFIterations << " iterations " << std::endl;
     if(no3Dwrite) {
         // Create auxillary buffers
         Buffer vectorFieldBuffer = Buffer(
@@ -1332,7 +1349,7 @@ if(getParamBool(parameters, "timing")) {
 
         // Copy buffer contents to image
         ocl.queue.enqueueCopyBufferToImage(
-                vectorFieldBuffer1, 
+                vectorFieldBuffer1,
                 vectorField, 
                 0,
                 offset,
@@ -1342,7 +1359,7 @@ if(getParamBool(parameters, "timing")) {
 
     } else {
         Image3D vectorField1;
-        Image3D initVectorField; 
+        Image3D initVectorField;
         if(getParamBool(parameters, "32bit-vectors")) {
             vectorField1 = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
             initVectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RG, CL_FLOAT), size.x, size.y, size.z);
@@ -1473,6 +1490,7 @@ if(getParamBool(parameters, "timing")) {
 
 }
 
+
 Image3D runSphereSegmentation(OpenCL ocl, Image3D &centerline, Image3D &radius, SIPL::int3 size, paramList parameters) {
 	const bool no3Dwrite = !getParamBool(parameters, "3d_write");
 	if(no3Dwrite) {
@@ -1589,8 +1607,8 @@ Image3D runInverseGradientSegmentation(OpenCL &ocl, Image3D &centerline, Image3D
     int stopGrowing = 0;
     Buffer stop = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(int));
     ocl.queue.enqueueWriteBuffer(stop, CL_FALSE, 0, sizeof(int), &stopGrowing);
-    
-    growKernel.setArg(1, vectorField);	
+
+    growKernel.setArg(1, vectorField);
     growKernel.setArg(3, stop);
 
     int i = 0;
@@ -1602,10 +1620,10 @@ Image3D runInverseGradientSegmentation(OpenCL &ocl, Image3D &centerline, Image3D
                 sizeof(char)*totalSize
         );
         ocl.queue.enqueueCopyImageToBuffer(
-                volume, 
-                volume2, 
-                offset, 
-                region, 
+                volume,
+                volume2,
+                offset,
+                region,
                 0
         );
         initGrowKernel.setArg(0, volume);
@@ -1696,7 +1714,7 @@ Image3D runInverseGradientSegmentation(OpenCL &ocl, Image3D &centerline, Image3D
         );
         dilateKernel.setArg(0, volume);
         dilateKernel.setArg(1, volumeBuffer);
-       
+
         ocl.queue.enqueueNDRangeKernel(
             dilateKernel,
             NullRange,
@@ -1713,7 +1731,7 @@ Image3D runInverseGradientSegmentation(OpenCL &ocl, Image3D &centerline, Image3D
 
         erodeKernel.setArg(0, volume);
         erodeKernel.setArg(1, volumeBuffer);
-       
+
         ocl.queue.enqueueNDRangeKernel(
             erodeKernel,
             NullRange,
@@ -1729,9 +1747,9 @@ Image3D runInverseGradientSegmentation(OpenCL &ocl, Image3D &centerline, Image3D
         );
     } else {
         Image3D volume2 = Image3D(
-                ocl.context, 
-                CL_MEM_READ_WRITE, 
-                ImageFormat(CL_R, CL_SIGNED_INT8), 
+                ocl.context,
+                CL_MEM_READ_WRITE,
+                ImageFormat(CL_R, CL_SIGNED_INT8),
                 size.x, size.y, size.z
         );
 
@@ -1746,7 +1764,7 @@ Image3D runInverseGradientSegmentation(OpenCL &ocl, Image3D &centerline, Image3D
 
         dilateKernel.setArg(0, volume);
         dilateKernel.setArg(1, volume2);
-       
+
         ocl.queue.enqueueNDRangeKernel(
             dilateKernel,
             NullRange,
@@ -1756,7 +1774,7 @@ Image3D runInverseGradientSegmentation(OpenCL &ocl, Image3D &centerline, Image3D
 
         erodeKernel.setArg(0, volume2);
         erodeKernel.setArg(1, volume);
-       
+
         ocl.queue.enqueueNDRangeKernel(
             erodeKernel,
             NullRange,
@@ -1914,7 +1932,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
         std::cout << "number of vertices detected " << sum << std::endl;
 
         // Run createPositions kernel
-        vertices = hp.createPositionBuffer(); 
+        vertices = hp.createPositionBuffer();
     } else {
         Kernel init3DImage(ocl.program, "init3DImage");
         init3DImage.setArg(0, centerpointsImage2);
@@ -1989,7 +2007,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
         std::cout << "number of vertices detected " << sum << std::endl;
 
         // Run createPositions kernel
-        vertices = hp.createPositionBuffer(); 
+        vertices = hp.createPositionBuffer();
 
     }
     if(sum < 8 || sum >= 16384) {
@@ -2002,7 +2020,7 @@ if(getParamBool(parameters, "timing")) {
     startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
     endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
     std::cout << "RUNTIME centerpoint extraction: " << (end-start)*1.0e-6 << " ms" << std::endl;
-} 
+}
 
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
@@ -2106,7 +2124,7 @@ if(getParamBool(parameters, "timing")) {
     startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
     endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
     std::cout << "RUNTIME linking: " << (end-start)*1.0e-6 << " ms" << std::endl;
-} 
+}
 
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
@@ -2151,7 +2169,7 @@ if(getParamBool(parameters, "timing")) {
     startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
     endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
     std::cout << "RUNTIME HP creation and traversal: " << (end-start)*1.0e-6 << " ms" << std::endl;
-} 
+}
 
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
@@ -2219,7 +2237,7 @@ if(getParamBool(parameters, "timing")) {
     startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
     endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
     std::cout << "RUNTIME graph component labeling: " << (end-start)*1.0e-6 << " ms" << std::endl;
-} 
+}
 
 
 if(getParamBool(parameters, "timing")) {
@@ -2249,7 +2267,7 @@ if(getParamBool(parameters, "timing")) {
             NDRange(sum),
             NullRange
     );
-    Image3D centerlines;    
+    Image3D centerlines;
     Kernel RSTKernel(ocl.program, "removeSmallTrees");
     RSTKernel.setArg(0, edges);
     RSTKernel.setArg(1, vertices);
@@ -2360,7 +2378,7 @@ if(getParamBool(parameters, "timing")) {
     startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
     endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
     std::cout << "RUNTIME of removing small trees: " << (end-start)*1.0e-6 << " ms" << std::endl;
-} 
+}
     return centerlines;
 }
 
@@ -2742,7 +2760,7 @@ std::vector<Segment *> createSegments(OpenCL &ocl, TubeSegmentation &TS, std::ve
 			}
 		}
 		visited.insert(c->label);
-        labels.push_back(list); 
+        labels.push_back(list);
 	}
 
 	std::cout << "finished graph component labeling" << std::endl;
