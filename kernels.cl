@@ -1136,6 +1136,7 @@ __kernel void circleFittingTDF(
         float radiusSum = 0.0f;
         int samples = 32;
         int stride = 1;
+        int negatives = 0;
         /*
         if(radius < 3) {
             samples = 8;
@@ -1151,7 +1152,11 @@ __kernel void circleFittingTDF(
             float4 position = floatPos + radius*V_alpha.xyzz;
             float3 V = -read_imagef(vectorField, interpolationSampler, position).xyz;
             radiusSum += dot(V, V_alpha);
+            //if(dot(normalize(V), normalize(V_alpha)) < 0.2f)
+            //	negatives++;
         }
+        if(negatives > 0)
+        	continue;
         radiusSum /= samples;
         if(radiusSum > maxSum) {
             maxSum = radiusSum;
@@ -1161,12 +1166,30 @@ __kernel void circleFittingTDF(
         }
     }
 
-    // Store result
+    int samples = 32;
+    int negatives = 0;
+	int stride = 1;
+	for(int j = 0; j < samples; j++) {
+		float3 V_alpha = cosValues[j*stride]*e3 + sinValues[j*stride]*e2;
+		float4 position = floatPos + maxRadius*V_alpha.xyzz;
+		float3 V = -read_imagef(vectorField, interpolationSampler, position).xyz;
+		if(dot(normalize(V), normalize(V_alpha)) < 0.2f)
+			negatives++;
+	}
+	/*
+	if(negatives > 0 || read_imagef(dataset, sampler, pos).x > 0.4f) {
+		maxSum = 0;
+		maxRadius = 0;
+	}
+	*/
+
+	// Store result
     T[LPOS(pos)] = maxSum;
     Radius[LPOS(pos)] = maxRadius;
 }
 
 #define SQR_MAG(pos) read_imagef(vectorField, sampler, pos).w
+#define SQR_MAG_SMALL(pos) length(read_imagef(vectorFieldSmall, sampler, pos).xyz)
 
 
 __kernel void dd(
@@ -1276,10 +1299,23 @@ __kernel void findCandidateCenterpoints2(
         const float3 r_projected = r-e1*dp;
         const float theta = acos(dot(normalize(r), normalize(r_projected)));
         if((theta < thetaLimit && length(r) < maxD)) {
-            if(SQR_MAG(n) < SQR_MAG(pos)) {
-                invalid = true;
-                break;
-            }    
+
+        	/*
+			if(radii <= 3) {
+			//if(read_imagef(TDF, sampler, n).x > read_imagef(TDF, sampler, pos).x) {
+			if(SQR_MAG_SMALL(n) < SQR_MAG_SMALL(pos)) {
+				invalid = true;
+				break;
+			}
+			} else {
+			*/
+			if(SQR_MAG(n) < SQR_MAG(pos)) {
+			//if(TS.TDF[POS(n)] > TS.TDF[POS(pos)]) {
+				invalid = true;
+				break;
+			//}
+			}
+
         }
     }}}
 

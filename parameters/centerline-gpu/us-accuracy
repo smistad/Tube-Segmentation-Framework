@@ -1,7 +1,10 @@
 mode white
 radius-min 5
-large-blur 10
+large-blur 5
 fmax 0.05
 cropping threshold
 cropping-threshold 100
-min-scan-lines-lung 6
+min-scan-lines-threshold 5
+minimum 0
+maximum 150
+no-segmentation

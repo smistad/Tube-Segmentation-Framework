@@ -1464,10 +1464,12 @@ __kernel void circleFittingTDF(
     float maxSum = 0.0f;
     float maxRadius = 0.0f;
     const float4 floatPos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
-    for(float radius = rMin; radius <= rMax; radius += rStep) {
-        float radiusSum = 0.0f;
         int samples = 32;
         int stride = 1;
+    for(float radius = rMin; radius <= rMax; radius += rStep) {
+        bool negatives = false;
+        float radiusSum = 0.0f;
+        /*
         if(radius < 3) {
             samples = 8;
             stride = 4;
@@ -1475,13 +1477,18 @@ __kernel void circleFittingTDF(
             samples = 16;
             stride = 2;
         }
+        */
 
-        for(int j = 0; j < samples; j++) {
+        for(int j = 0; j < samples && !negatives; j++) {
             float3 V_alpha = cosValues[j*stride]*e3 + sinValues[j*stride]*e2;
             float4 position = floatPos + radius*V_alpha.xyzz;
             float3 V = -read_imagef(vectorField, interpolationSampler, position).xyz;
             radiusSum += dot(V, V_alpha);
+            //if(dot(normalize(V), normalize(V_alpha)) < 0.2f)
+            //    negatives = true;
         }
+        if(negatives)
+        	continue;
         radiusSum /= samples;
         if(radiusSum > maxSum) {
             maxSum = radiusSum;
@@ -1804,5 +1811,4 @@ void eigen_decomposition(float A[SIZE][SIZE], float V[SIZE][SIZE], float d[SIZE]
   tred2(V, d, e);
   tql2(V, d, e);
 }
-
 

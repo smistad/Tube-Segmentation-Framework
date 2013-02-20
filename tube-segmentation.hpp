@@ -20,10 +20,12 @@ using boost::unordered_map;
 
 typedef struct TubeSegmentation {
     float *Fx, *Fy, *Fz; // The GVF vector field
+    float *FxSmall, *FySmall, *FzSmall; // The GVF vector field
     float *TDF; // The TDF response
     float *radius;
     char *centerline;
     char *segmentation;
+    float *intensity;
 } TubeSegmentation;
 
 class TSFOutput {
@@ -74,6 +76,8 @@ cl::Image3D readDatasetAndTransfer(OpenCL &ocl, std::string, paramList &paramete
 void runCircleFittingAndRidgeTraversal(OpenCL *, cl::Image3D &dataset, SIPL::int3 * size, paramList &parameters, TSFOutput *);
 
 void runCircleFittingAndNewCenterlineAlg(OpenCL *, cl::Image3D &dataset, SIPL::int3 * size, paramList &parameters, TSFOutput *);
+
+void runCircleFittingAndTest(OpenCL *, cl::Image3D &dataset, SIPL::int3 * size, paramList &parameters, TSFOutput *);
 
 
 TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_dir);
