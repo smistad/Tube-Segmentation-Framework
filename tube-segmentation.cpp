@@ -2788,7 +2788,8 @@ std::vector<CrossSection *> createGraph(TubeSegmentation &TS, SIPL::int3 size) {
 	}
 
 	std::vector<CrossSection *> sectionPairs;
-	for(CrossSection * c_i : sections) {
+	for(int i = 0; i < sections.size(); i++) {
+		CrossSection * c_i = sections[i];
 		if(c_i->neighbors.size()>0) {
 			sectionPairs.push_back(c_i);
 		}
@@ -2823,7 +2824,8 @@ bool segmentCompare(Segment * a, Segment * b) {
 
 bool segmentInSegmentation(Segment * s, unordered_set<int> &segmentation, int3 size) {
 	bool in = false;
-	for(CrossSection * c : s->sections) {
+	for(int i = 0; i < s->sections.size(); i++) {
+		CrossSection * c = s->sections[i];
 		if(segmentation.find(POS(c->pos)) != segmentation.end()) {
 			in = true;
 			break;
@@ -2953,7 +2955,8 @@ std::vector<Segment *> createSegments(OpenCL &ocl, TubeSegmentation &TS, std::ve
 	unordered_set<int> visited;
     int labelCounter = 0;
     std::vector<std::vector<CrossSection *> > labels;
-	for(CrossSection * c : crossSections) {
+	for(int i = 0; i < crossSections.size(); i++) {
+		CrossSection * c = crossSections[i];
 		// Do a bfs on c
 		// Check to see if point has been processed before doing a BFS
 		if(visited.find(c->label) != visited.end())
@@ -2974,7 +2977,9 @@ std::vector<Segment *> createSegments(OpenCL &ocl, TubeSegmentation &TS, std::ve
 				// Change label of neighbors if not
 				current->label = c->label;
 				// Add neighbors to stack
-				for(CrossSection * n : current->neighbors) {
+
+				for(int j = 0; j < current->neighbors.size(); j++) {
+					CrossSection * n = current->neighbors[j];
 					if(n->label != c->label)
 						stack.push(n);
 				}
@@ -2992,7 +2997,9 @@ std::vector<Segment *> createSegments(OpenCL &ocl, TubeSegmentation &TS, std::ve
 
 
     // For each label
-    for(std::vector<CrossSection *> list : labels) {
+
+	for(int i = 0; i < labels.size(); i++) {
+		std::vector<CrossSection *> list = labels[i];
         // Do floyd warshall on all pairs
         int totalSize = list.size();
         float * dist = new float[totalSize*totalSize];
@@ -3012,7 +3019,8 @@ std::vector<Segment *> createSegments(OpenCL &ocl, TubeSegmentation &TS, std::ve
 			pred[DPOS(u,v)] = -1;
 		}
 		dist[DPOS(U->index,U->index)] = 0;
-		for(CrossSection * V : U->neighbors) {
+		for(int j = 0; j < U->neighbors.size(); j++) {
+			CrossSection * V = U->neighbors[j];
 			// TODO calculate more advanced weight
 			dist[DPOS(U->index,V->index)] = ceil(U->pos.distance(V->pos)) - calculateBenefit(U, V, TS, size); //(1-V->TDF);
 			pred[DPOS(U->index,V->index)] = U->index;
@@ -3038,8 +3046,10 @@ std::vector<Segment *> createSegments(OpenCL &ocl, TubeSegmentation &TS, std::ve
 
 
 
-	for(CrossSection * S : list) { // Source
-		for(CrossSection * T : list) { // Target
+	for(int s = 0; s < list.size(); s++) { // Source
+		CrossSection * S = list[s];
+		for(int t = 0; t < list.size(); t++) { // Target
+			CrossSection * T = list[t];
 			if(S->label == T->label && S->index != T->index) {
 				Segment * segment = new Segment;
 				// add all cross sections in segment
@@ -3076,7 +3086,8 @@ std::vector<Segment *> createSegments(OpenCL &ocl, TubeSegmentation &TS, std::ve
 	// Go through sorted vector and do a region growing
 	std::vector<Segment *> filteredSegments;
 	int counter = 0;
-	for(Segment * s : segments) {
+	for(int i = 0; i < segments.size(); i++) {
+		Segment * s = segments[i];
 		if(!segmentInSegmentation(s, segmentation, size)) {
 			//std::cout << "adding segment with benefit: " << s->benefit << std::endl;
 			// Do region growing and Add all segmented voxels to a set
@@ -3107,7 +3118,8 @@ void DFS(Segment * current, int * ordering, int &counter, unordered_set<int> &vi
 	ordering[counter] = current->index;
 	//std::cout << counter << ": " << current->index << std::endl;
 	counter++;
-	for(Connection * edge : current->connections) {
+	for(int i = 0; i < current->connections.size(); i++) {
+		Connection * edge = current->connections[i];
 		DFS(edge->target, ordering, counter, visited);
 	}
 	visited.insert(current->index);
@@ -3152,7 +3164,8 @@ std::vector<Segment *> minimumSpanningTree(Segment * root, int3 size) {
 	visited.insert(root->index);
 
 	// Add all connections of the root to the queue
-	for(Connection * c : root->connections) {
+	for(int i = 0; i < root->connections.size(); i++) {
+		Connection * c = root->connections[i];
 		queue.push(c);
 	}
 	// Remove connections from root
@@ -3171,7 +3184,8 @@ std::vector<Segment *> minimumSpanningTree(Segment * root, int3 size) {
 		if(visited.find(c->target->index) != visited.end())
 			continue;
 
-		for(Connection * cn : c->target->connections) {
+		for(int i = 0; i < c->target->connections.size(); i++) {
+			Connection * cn = c->target->connections[i];
 			if(visited.find(cn->target->index) == visited.end())
 				queue.push(cn);
 		}
@@ -3200,7 +3214,8 @@ std::vector<Segment *> findOptimalSubtree(std::vector<Segment *> segments, int *
 				<< segments[mj]->benefit << " cost: " << segments[mj]->cost <<
 				" children: " << segments[mj]->connections.size() << std::endl;*/
 		// For all children of mj
-		for(Connection * c : segments[mj]->connections) {
+		for(int n = 0; n < segments[mj]->connections.size(); n++) {
+			Connection * c = segments[mj]->connections[n];
 			int k = c->target->index; //child
 			if(score[k] >= 0)
 				score[mj] += score[k];
@@ -3217,7 +3232,8 @@ std::vector<Segment *> findOptimalSubtree(std::vector<Segment *> segments, int *
 		int mj = depthFirstOrdering[j];
 		if(v[mj]) {
 			// For all children of mj
-			for(Connection * c : segments[mj]->connections) {
+			for(int n = 0; n < segments[mj]->connections.size(); n++) {
+				Connection * c = segments[mj]->connections[n];
 				int k = c->target->index; //child
 				if(score[k] >= 0)
 					v[k] = true;
@@ -3234,7 +3250,8 @@ std::vector<Segment *> findOptimalSubtree(std::vector<Segment *> segments, int *
 
 			// for all children, check if they are true in v, if not remove connections
 			std::vector<Connection *> connections;
-			for(Connection * c : segments[i]->connections) {
+			for(int n = 0; n < segments[i]->connections.size(); n++) {
+				Connection * c = segments[i]->connections[n];
 				int k = c->target->index; //child
 				if(v[k]) {
 					// keep connection
@@ -3290,8 +3307,10 @@ void createConnections(TubeSegmentation &TS, std::vector<Segment *> segments, in
 			float bestCost = 999999999.0f;
 			CrossSection * c_k_best, * c_l_best;
 			bool found = false;
-			for(CrossSection * c_k : s_k->sections) {
-				for(CrossSection * c_l : s_l->sections) {
+			for(int i = 0; i < s_k->sections.size(); i++){
+				CrossSection * c_k = s_k->sections[i];
+				for(int j = 0; j < s_l->sections.size(); j++){
+					CrossSection * c_l = s_l->sections[j];
 					if(c_k->pos.distance(c_l->pos) > 20)
 						continue;
 
@@ -3550,7 +3569,8 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
     }
     v->show(0.3, 0.6);
 	#else
-	for(Segment * s : segments) {
+    for(int j = 0; j < segments.size(); j++) {
+    	Segment * s = segments[j];
     	for(int i = 0; i < s->sections.size()-1; i++) {
     		CrossSection * a = s->sections[i];
     		CrossSection * b = s->sections[i+1];
@@ -3563,7 +3583,8 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
 				centerline[in.x+in.y*size->x+in.z*size->x*size->y] = 1;
 			}
 		}
-		for(Connection * c : s->connections) {
+    	for(int i = 0; i < s->connections.size(); i++) {
+    		Connection * c = s->connections[i];
 			CrossSection * a = c->source_section;
 			CrossSection * b = c->target_section;
 			int distance = ceil(a->pos.distance(b->pos));
