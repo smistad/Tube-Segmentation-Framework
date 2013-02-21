@@ -1326,6 +1326,77 @@ __kernel void findCandidateCenterpoints2(
     }
 }
 
+__kernel void GVF3DIteration_one_component(
+		__read_only image3d_t init_vector_field,
+		__read_only image3d_t read_vector_field,
+		__write_only image3d_t write_vector_field
+	) {
+    int4 writePos = {
+        get_global_id(0),
+        get_global_id(1),
+        get_global_id(2),
+        0
+    };
+    // Enforce mirror boundary conditions
+    int4 size = {get_global_size(0), get_global_size(1), get_global_size(2), 0};
+    int4 pos = writePos;
+    pos = select(pos, (int4)(2,2,2,0), pos == (int4)(0,0,0,0));
+    pos = select(pos, size-3, pos >= size-1);
+
+    float2 init_vector = read_imagef(init_vector_field, sampler, pos).xy;
+    float v = read_imagef(read_vector_field, sampler, pos).x;
+    float fx1 = read_imagef(read_vector_field, sampler, pos + (int4)(1,0,0,0)).x;
+    float fx_1 = read_imagef(read_vector_field, sampler, pos - (int4)(1,0,0,0)).x;
+    float fy1 = read_imagef(read_vector_field, sampler, pos + (int4)(0,1,0,0)).x;
+    float fy_1 = read_imagef(read_vector_field, sampler, pos - (int4)(0,1,0,0)).x;
+    float fz1 = read_imagef(read_vector_field, sampler, pos + (int4)(0,0,1,0)).x;
+    float fz_1 = read_imagef(read_vector_field, sampler, pos - (int4)(0,0,1,0)).x;
+
+    // Update the vector field: Calculate Laplacian using a 3D central difference scheme
+    float laplacian = -6*v + fx1 + fx_1 + fy1 + fy_1 + fz1 + fz_1;
+
+    v += mu * laplacian - (v - init_vector.x)*init_vector.y;
+
+    write_imagef(write_vector_field, writePos, v);
+}
+
+__kernel void GVF3DInit_one_component(
+		__read_only image3d_t initVectorField,
+		__write_only image3d_t vectorField,
+		__write_only image3d_t newInitVectorField,
+		__private int component // 1 == x, 2 == y, 3 == z
+	) {
+    const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
+    float4 value = read_imagef(initVectorField, sampler, pos);
+    float sqrMag = value.x*value.x+value.y*value.y+value.z*value.z;
+    float componentValue;
+    if(component == 1) {
+    	componentValue = value.x;
+    } else if(component == 2) {
+    	componentValue = value.y;
+    } else {
+    	componentValue = value.z;
+    }
+    write_imagef(vectorField, pos, componentValue);
+    write_imagef(newInitVectorField, pos, (float2)(componentValue,sqrMag));
+}
+
+__kernel void GVF3DFinish_one_component(
+		__read_only image3d_t vectorFieldX,
+		__read_only image3d_t vectorFieldY,
+		__read_only image3d_t vectorFieldZ,
+		__write_only image3d_t vectorField2,
+	) {
+    const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
+    float4 v;
+    v.x = read_imagef(vectorFieldX, sampler, pos).x;
+    v.y = read_imagef(vectorFieldY, sampler, pos).x;
+    v.z = read_imagef(vectorFieldZ, sampler, pos).x;
+    v.w = 0;
+    v.w = length(v) > 0.0f ? length(v) : 1.0f;
+    write_imagef(vectorField2, pos, v);
+}
+
 __kernel void GVF3DIteration(__read_only image3d_t init_vector_field, __read_only image3d_t read_vector_field, __write_only image3d_t write_vector_field, __private float mu) {
     int4 writePos = {
         get_global_id(0),
