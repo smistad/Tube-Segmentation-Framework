@@ -953,7 +953,7 @@ float * createBlurMask(float sigma, int * maskSizePointer) {
     return mask;
 }
 
-Image3D & runFastGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, SIPL::int3 &size) {
+void runFastGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, SIPL::int3 &size) {
 
     const int GVFIterations = getParam(parameters, "gvf-iterations");
     const bool no3Dwrite = !getParamBool(parameters, "3d_write");
@@ -1044,7 +1044,7 @@ Image3D & runFastGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, S
 
 
     } else {
-        Image3D vectorField1;
+        Image3D vectorField1, vectorField2;
         Image3D initVectorField;
         if(getParamBool(parameters, "32bit-vectors")) {
             vectorField1 = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
@@ -1096,7 +1096,7 @@ Image3D & runFastGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, S
         );
     }
 }
-Image3D & runLowMemoryGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, SIPL::int3 &size) {
+void runLowMemoryGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, SIPL::int3 &size) {
 
     const int GVFIterations = getParam(parameters, "gvf-iterations");
     const bool no3Dwrite = !getParamBool(parameters, "3d_write");
@@ -1187,8 +1187,6 @@ Image3D & runLowMemoryGVF(OpenCL &ocl, Image3D &vectorField, paramList &paramete
 
 
     } else {
-
-
         Image3D vectorFieldX, vectorFieldY, vectorFieldZ;
         for(int component = 1; component < 4; component++) {
         	Image3D initVectorField, vectorField1, vectorField2;
@@ -1213,6 +1211,7 @@ Image3D & runLowMemoryGVF(OpenCL &ocl, Image3D &vectorField, paramList &paramete
 					NDRange(size.x,size.y,size.z),
 					NDRange(4,4,4)
 			);
+
 			// Run iterations
 			GVFIterationKernel.setArg(0, initVectorField);
 			GVFIterationKernel.setArg(3, MU);
@@ -1232,6 +1231,7 @@ Image3D & runLowMemoryGVF(OpenCL &ocl, Image3D &vectorField, paramList &paramete
 					NDRange(4,4,4)
 				);
 			}
+			std::cout << "finished" << std::endl;
 			if(component == 1) {
 				vectorFieldX = vectorField1;
 			} else if(component == 2) {
@@ -1239,6 +1239,7 @@ Image3D & runLowMemoryGVF(OpenCL &ocl, Image3D &vectorField, paramList &paramete
 			} else {
 				vectorFieldZ = vectorField1;
 			}
+			ocl.queue.finish();
         }
 
         // Copy vector fields to image
@@ -1257,14 +1258,14 @@ Image3D & runLowMemoryGVF(OpenCL &ocl, Image3D &vectorField, paramList &paramete
 }
 
 
-Image3D & runGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, SIPL::int3 size, bool useLessMemory) {
+void runGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, SIPL::int3 &size, bool useLessMemory) {
 
 	if(useLessMemory) {
 		std::cout << "NOTE: Running slow GVF that uses less memory." << std::endl;
-		return runLowMemoryGVF(ocl,vectorField,parameters,size);
+		runLowMemoryGVF(ocl,vectorField,parameters,size);
 	} else {
 		std::cout << "NOTE: Running fast GVF." << std::endl;
-		return runFastGVF(ocl,vectorField,parameters,size);
+		runFastGVF(ocl,vectorField,parameters,size);
 	}
 }
 
@@ -1595,7 +1596,15 @@ if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
 }
 
-	vectorField = runGVF(ocl, vectorField, parameters, size, false);
+	try {
+		runGVF(ocl, vectorField, parameters, size, false);
+	} catch(cl::Error e) {
+		if(e.err() == -4 || e.err() == -5) {
+			std::cout << "NOTE: Ran out of memory. Trying slower GVF instead." << std::endl;
+			// Most likely ran out of memory. Try slower GVF which uses less memory.
+			runGVF(ocl, vectorField, parameters, size, true);
+		}
+	}
 
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
