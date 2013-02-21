@@ -1,11 +1,13 @@
 #include "tube-segmentation.hpp"
 #include "SIPL/Types.hpp"
+#include "SIPL/Core.hpp"
 #include <boost/iostreams/device/mapped_file.hpp>
 #include <queue>
 #include <stack>
 #include <list>
 #include <cstdio>
 #include <limits>
+
 #ifdef CPP11
 #include <unordered_set>
 using std::unordered_set;
@@ -14,7 +16,7 @@ using std::unordered_set;
 using boost::unordered_set;
 #endif
 #include "histogram-pyramids.hpp"
-#include "tsf-config.h"
+//#include "tsf-config.h"
 
 //#define TIMING
 
@@ -43,8 +45,24 @@ using boost::unordered_set;
 
 #define MAX(a,b) a > b ? a : b
 
+void print(paramList parameters){
+	unordered_map<std::string, BoolParameter>::iterator bIt;
+	unordered_map<std::string, NumericParameter>::iterator nIt;
+	unordered_map<std::string, StringParameter>::iterator sIt;
 
-TSFOutput * run(std::string filename, paramList &parameters) {
+	for(bIt = parameters.bools.begin(); bIt != parameters.bools.end(); ++bIt){
+		std::cout << bIt->first << " = " << bIt->second.get() << std::endl;
+	}
+
+	for(nIt = parameters.numerics.begin(); nIt != parameters.numerics.end(); ++nIt){
+		std::cout << nIt->first << " = " << nIt->second.get() << std::endl;
+	}
+	for(sIt = parameters.strings.begin(); sIt != parameters.strings.end(); ++sIt){
+		std::cout << sIt->first << " = " << sIt->second.get() << std::endl;
+	}
+}
+
+TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_dir) {
 
     INIT_TIMER
     OpenCL * ocl = new OpenCL;
@@ -67,7 +85,7 @@ TSFOutput * run(std::string filename, paramList &parameters) {
 
     // Compile and create program
     if(!getParamBool(parameters, "buffers-only") && (int)devices[0].getInfo<CL_DEVICE_EXTENSIONS>().find("cl_khr_3d_image_writes") > -1) {
-    	std::string filename = std::string(KERNELS_DIR)+"/kernels.cl";
+    	std::string filename = kernel_dir+"/kernels.cl";
         ocl->program = buildProgramFromSource(ocl->context, filename.c_str());
         BoolParameter v = parameters.bools["3d_write"];
         v.set(true);
@@ -76,7 +94,7 @@ TSFOutput * run(std::string filename, paramList &parameters) {
         BoolParameter v = parameters.bools["3d_write"];
         v.set(false);
         parameters.bools["3d_write"] = v;
-        std::string filename = std::string(KERNELS_DIR)+"/kernels_no_3d_write.cl";
+        std::string filename = kernel_dir+"/kernels_no_3d_write.cl";
         ocl->program = buildProgramFromSource(ocl->context, filename.c_str());
         std::cout << "NOTE: Writing to 3D textures is not supported on the selected device." << std::endl;
     }
@@ -91,8 +109,10 @@ TSFOutput * run(std::string filename, paramList &parameters) {
         // Run specified method on dataset
         if(getParamStr(parameters, "centerline-method") == "ridge") {
             runCircleFittingAndRidgeTraversal(ocl, dataset, size, parameters, output);
-        } else {
+        } else if(getParamStr(parameters, "centerline-method") == "gpu") {
             runCircleFittingAndNewCenterlineAlg(ocl, dataset, size, parameters, output);
+        } else if(getParamStr(parameters, "centerline-method") == "test") {
+            runCircleFittingAndTest(ocl, dataset, size, parameters, output);
         }
     } catch(cl::Error e) {
     	std::string str = "OpenCL error: " + std::string(getCLErrorString(e.err()));
@@ -156,7 +176,8 @@ bool inBounds(SIPL::int3 pos, SIPL::int3 size) {
 
 #define LPOS(a,b,c) (a)+(b)*(size.x)+(c)*(size.x*size.y)
 #define M(a,b,c) 1-sqrt(pow(T.Fx[a+b*size.x+c*size.x*size.y],2.0f) + pow(T.Fy[a+b*size.x+c*size.x*size.y],2.0f) + pow(T.Fz[a+b*size.x+c*size.x*size.y],2.0f))
-#define SQR_MAG(pos) sqrt(pow(T.Fx[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f) + pow(T.Fy[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f) + pow(T.Fz[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f))
+#define SQR_MAG(pos) sqrt(pow(TS.Fx[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f) + pow(TS.Fy[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f) + pow(TS.Fz[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f))
+#define SQR_MAG_SMALL(pos) sqrt(pow(TS.FxSmall[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f) + pow(TS.FySmall[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f) + pow(TS.FzSmall[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f))
 
 #define SIZE 3
 
@@ -279,7 +300,7 @@ void tred2(float V[SIZE][SIZE], float d[SIZE], float e[SIZE]) {
   }
   V[SIZE-1][SIZE-1] = 1.0f;
   e[0] = 0.0f;
-} 
+}
 
 // Symmetric tridiagonal QL algorithm.
 
@@ -377,7 +398,7 @@ void tql2(float V[SIZE][SIZE], float d[SIZE], float e[SIZE]) {
     d[l] = d[l] + f;
     e[l] = 0.0f;
   }
-  
+
   // Sort eigenvalues and corresponding vectors.
 
   for (int i = 0; i < SIZE-1; i++) {
@@ -529,7 +550,7 @@ float3 getTubeDirection(TubeSegmentation &T, int3 pos, int3 size) {
     float3 Fx = gradient(T, pos,0,1,size);
     float3 Fy = gradient(T, pos,1,2,size);
     float3 Fz = gradient(T, pos,2,3,size);
-    
+
     float Hessian[3][3] = {
         {Fx.x, Fy.x, Fz.x},
         {Fy.x, Fy.y, Fz.y},
@@ -548,7 +569,7 @@ void doEigen(TubeSegmentation &T, int3 pos, int3 size, float3 * lambda, float3 *
     float3 Fx = gradient(T, pos,0,1,size);
     float3 Fy = gradient(T, pos,1,2,size);
     float3 Fz = gradient(T, pos,2,3,size);
-    
+
     float Hessian[3][3] = {
         {Fx.x, Fy.x, Fz.x},
         {Fy.x, Fy.y, Fz.y},
@@ -588,10 +609,10 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList &parame
 
     // Create queue
     std::priority_queue<point, std::vector<point>, PointComparison> queue;
-    
+
     START_TIMER
     // Collect all valid start points
-    #pragma omp parallel for 
+    #pragma omp parallel for
     for(int z = 2; z < size.z-2; z++) {
         for(int y = 2; y < size.y-2; y++) {
             for(int x = 2; x < size.x-2; x++) {
@@ -706,10 +727,10 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList &parame
                                 continue;
 
                             if(T.radius[POS(n)] >= 1.5f) {
-                                if(M(n.x,n.y,n.z) > M(maxPoint.x,maxPoint.y,maxPoint.z)) 
+                                if(M(n.x,n.y,n.z) > M(maxPoint.x,maxPoint.y,maxPoint.z))
                                 maxPoint = n;
                             } else {
-                                if(T.TDF[LPOS(n.x,n.y,n.z)]*M(n.x,n.y,n.z) > T.TDF[POS(maxPoint)]*M(maxPoint.x,maxPoint.y,maxPoint.z)) 
+                                if(T.TDF[LPOS(n.x,n.y,n.z)]*M(n.x,n.y,n.z) > T.TDF[POS(maxPoint)]*M(maxPoint.x,maxPoint.y,maxPoint.z))
                                 maxPoint = n;
                             }
 
@@ -764,7 +785,7 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList &parame
 
 
                         float maintain_dir = sign(dot(e1,t_i));
-                        float3 vec_sum; 
+                        float3 vec_sum;
                         vec_sum.x = maintain_dir*e1.x + t_i.x + t_i_1.x;
                         vec_sum.y = maintain_dir*e1.y + t_i.y + t_i_1.y;
                         vec_sum.z = maintain_dir*e1.z + t_i.z + t_i_1.z;
@@ -781,7 +802,7 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList &parame
                         // Create centerline point
                         CenterlinePoint p;
                         p.pos = position;
-                        p.next = &(stack.top()); // add previous 
+                        p.next = &(stack.top()); // add previous
                         if(T.radius[POS(p.pos)] > 3.0f) {
                             p.large = true;
                         } else {
@@ -866,7 +887,7 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList &parame
     for(it = centerlineDistances.begin(); it != centerlineDistances.end(); it++) {
         if(it->second > centerlineDistances[max])
             max = it->first;
-        if(it->second > TreeMin) 
+        if(it->second > TreeMin)
             trees.push_back(it->first);
     }
     std::list<int>::iterator it2;
@@ -897,7 +918,7 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList &parame
             }
             if(!valid)
                 returnCenterlines[i] = 0;
-                    
+
         }
     }
     STOP_TIMER("finding largest tree")
@@ -932,7 +953,7 @@ float * createBlurMask(float sigma, int * maskSizePointer) {
     return mask;
 }
 
-void runCircleFittingMethod(OpenCL &ocl, Image3D &dataset, SIPL::int3 size, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radiusImage) {
+void runCircleFittingMethod(OpenCL &ocl, Image3D &dataset, SIPL::int3 size, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radiusImage, Image3D &vectorFieldSmall) {
     // Set up parameters
     const int GVFIterations = getParam(parameters, "gvf-iterations");
     const float radiusMin = getParam(parameters, "radius-min");
@@ -1027,7 +1048,7 @@ if(getParamBool(parameters, "timing")) {
         // Create auxillary buffer
         Buffer vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(float)*totalSize);
         vectorField = Image3D(ocl.context, CL_MEM_READ_ONLY, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
- 
+
         // Run create vector field
         createVectorFieldKernel.setArg(0, blurredVolume);
         createVectorFieldKernel.setArg(1, vectorFieldBuffer);
@@ -1043,8 +1064,8 @@ if(getParamBool(parameters, "timing")) {
 
         // Copy buffer contents to image
         ocl.queue.enqueueCopyBufferToImage(
-                vectorFieldBuffer, 
-                vectorField, 
+                vectorFieldBuffer,
+                vectorField,
                 0,
                 offset,
                 region
@@ -1058,7 +1079,7 @@ if(getParamBool(parameters, "timing")) {
             std::cout << "NOTE: Using 16 bit vectors" << std::endl;
             vectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
         }
-     
+
         // Run create vector field
         createVectorFieldKernel.setArg(0, blurredVolume);
         createVectorFieldKernel.setArg(1, vectorField);
@@ -1073,7 +1094,8 @@ if(getParamBool(parameters, "timing")) {
         );
 
     }
-       
+    vectorFieldSmall = vectorField;
+
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
@@ -1134,7 +1156,7 @@ if(getParamBool(parameters, "timing")) {
     std::cout << "RUNTIME of TDF small: " << (end-start)*1.0e-6 << " ms" << std::endl;
 }
     /* Large Airways */
-    
+
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
 }
@@ -1247,8 +1269,8 @@ if(getParamBool(parameters, "timing")) {
                 NDRange(4,4,4)
         );
 
-    } 
-    
+    }
+
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
@@ -1265,7 +1287,7 @@ if(getParamBool(parameters, "timing")) {
     Kernel GVFIterationKernel = Kernel(ocl.program, "GVF3DIteration");
     Kernel GVFFinishKernel = Kernel(ocl.program, "GVF3DFinish");
 
-    std::cout << "Running GVF with " << GVFIterations << " iterations " << std::endl; 
+    std::cout << "Running GVF with " << GVFIterations << " iterations " << std::endl;
     if(no3Dwrite) {
         // Create auxillary buffers
         Buffer vectorFieldBuffer = Buffer(
@@ -1327,7 +1349,7 @@ if(getParamBool(parameters, "timing")) {
 
         // Copy buffer contents to image
         ocl.queue.enqueueCopyBufferToImage(
-                vectorFieldBuffer1, 
+                vectorFieldBuffer1,
                 vectorField, 
                 0,
                 offset,
@@ -1337,7 +1359,7 @@ if(getParamBool(parameters, "timing")) {
 
     } else {
         Image3D vectorField1;
-        Image3D initVectorField; 
+        Image3D initVectorField;
         if(getParamBool(parameters, "32bit-vectors")) {
             vectorField1 = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
             initVectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RG, CL_FLOAT), size.x, size.y, size.z);
@@ -1401,6 +1423,7 @@ if(getParamBool(parameters, "timing")) {
     // Run circle fitting TDF kernel on GVF result
     Buffer TDFlarge = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
     Buffer radiusLarge = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
+
     circleFittingTDFKernel.setArg(0, vectorField);
     circleFittingTDFKernel.setArg(1, TDFlarge);
     circleFittingTDFKernel.setArg(2, radiusLarge);
@@ -1414,6 +1437,7 @@ if(getParamBool(parameters, "timing")) {
             NDRange(size.x,size.y,size.z),
             NDRange(4,4,4)
     );
+
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
@@ -1465,6 +1489,7 @@ if(getParamBool(parameters, "timing")) {
 }
 
 }
+
 
 Image3D runSphereSegmentation(OpenCL ocl, Image3D &centerline, Image3D &radius, SIPL::int3 size, paramList parameters) {
 	const bool no3Dwrite = !getParamBool(parameters, "3d_write");
@@ -1582,8 +1607,8 @@ Image3D runInverseGradientSegmentation(OpenCL &ocl, Image3D &centerline, Image3D
     int stopGrowing = 0;
     Buffer stop = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(int));
     ocl.queue.enqueueWriteBuffer(stop, CL_FALSE, 0, sizeof(int), &stopGrowing);
-    
-    growKernel.setArg(1, vectorField);	
+
+    growKernel.setArg(1, vectorField);
     growKernel.setArg(3, stop);
 
     int i = 0;
@@ -1595,10 +1620,10 @@ Image3D runInverseGradientSegmentation(OpenCL &ocl, Image3D &centerline, Image3D
                 sizeof(char)*totalSize
         );
         ocl.queue.enqueueCopyImageToBuffer(
-                volume, 
-                volume2, 
-                offset, 
-                region, 
+                volume,
+                volume2,
+                offset,
+                region,
                 0
         );
         initGrowKernel.setArg(0, volume);
@@ -1689,7 +1714,7 @@ Image3D runInverseGradientSegmentation(OpenCL &ocl, Image3D &centerline, Image3D
         );
         dilateKernel.setArg(0, volume);
         dilateKernel.setArg(1, volumeBuffer);
-       
+
         ocl.queue.enqueueNDRangeKernel(
             dilateKernel,
             NullRange,
@@ -1706,7 +1731,7 @@ Image3D runInverseGradientSegmentation(OpenCL &ocl, Image3D &centerline, Image3D
 
         erodeKernel.setArg(0, volume);
         erodeKernel.setArg(1, volumeBuffer);
-       
+
         ocl.queue.enqueueNDRangeKernel(
             erodeKernel,
             NullRange,
@@ -1722,9 +1747,9 @@ Image3D runInverseGradientSegmentation(OpenCL &ocl, Image3D &centerline, Image3D
         );
     } else {
         Image3D volume2 = Image3D(
-                ocl.context, 
-                CL_MEM_READ_WRITE, 
-                ImageFormat(CL_R, CL_SIGNED_INT8), 
+                ocl.context,
+                CL_MEM_READ_WRITE,
+                ImageFormat(CL_R, CL_SIGNED_INT8),
                 size.x, size.y, size.z
         );
 
@@ -1739,7 +1764,7 @@ Image3D runInverseGradientSegmentation(OpenCL &ocl, Image3D &centerline, Image3D
 
         dilateKernel.setArg(0, volume);
         dilateKernel.setArg(1, volume2);
-       
+
         ocl.queue.enqueueNDRangeKernel(
             dilateKernel,
             NullRange,
@@ -1749,7 +1774,7 @@ Image3D runInverseGradientSegmentation(OpenCL &ocl, Image3D &centerline, Image3D
 
         erodeKernel.setArg(0, volume2);
         erodeKernel.setArg(1, volume);
-       
+
         ocl.queue.enqueueNDRangeKernel(
             erodeKernel,
             NullRange,
@@ -1768,7 +1793,7 @@ if(getParamBool(parameters, "timing")) {
     return volume;
 }
 
-Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radius, Image3D &intensity) {
+Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radius, Image3D &intensity, Image3D &vectorFieldSmall) {
     const int totalSize = size.x*size.y*size.z;
 	const bool no3Dwrite = !getParamBool(parameters, "3d_write");
     const int cubeSize = getParam(parameters, "cube-size");
@@ -1907,7 +1932,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
         std::cout << "number of vertices detected " << sum << std::endl;
 
         // Run createPositions kernel
-        vertices = hp.createPositionBuffer(); 
+        vertices = hp.createPositionBuffer();
     } else {
         Kernel init3DImage(ocl.program, "init3DImage");
         init3DImage.setArg(0, centerpointsImage2);
@@ -1982,7 +2007,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
         std::cout << "number of vertices detected " << sum << std::endl;
 
         // Run createPositions kernel
-        vertices = hp.createPositionBuffer(); 
+        vertices = hp.createPositionBuffer();
 
     }
     if(sum < 8 || sum >= 16384) {
@@ -1995,7 +2020,7 @@ if(getParamBool(parameters, "timing")) {
     startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
     endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
     std::cout << "RUNTIME centerpoint extraction: " << (end-start)*1.0e-6 << " ms" << std::endl;
-} 
+}
 
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
@@ -2099,7 +2124,7 @@ if(getParamBool(parameters, "timing")) {
     startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
     endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
     std::cout << "RUNTIME linking: " << (end-start)*1.0e-6 << " ms" << std::endl;
-} 
+}
 
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
@@ -2144,7 +2169,7 @@ if(getParamBool(parameters, "timing")) {
     startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
     endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
     std::cout << "RUNTIME HP creation and traversal: " << (end-start)*1.0e-6 << " ms" << std::endl;
-} 
+}
 
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
@@ -2212,7 +2237,7 @@ if(getParamBool(parameters, "timing")) {
     startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
     endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
     std::cout << "RUNTIME graph component labeling: " << (end-start)*1.0e-6 << " ms" << std::endl;
-} 
+}
 
 
 if(getParamBool(parameters, "timing")) {
@@ -2242,7 +2267,7 @@ if(getParamBool(parameters, "timing")) {
             NDRange(sum),
             NullRange
     );
-    Image3D centerlines;    
+    Image3D centerlines;
     Kernel RSTKernel(ocl.program, "removeSmallTrees");
     RSTKernel.setArg(0, edges);
     RSTKernel.setArg(1, vertices);
@@ -2353,7 +2378,7 @@ if(getParamBool(parameters, "timing")) {
     startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
     endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
     std::cout << "RUNTIME of removing small trees: " << (end-start)*1.0e-6 << " ms" << std::endl;
-} 
+}
     return centerlines;
 }
 
@@ -2368,7 +2393,7 @@ void writeDataToDisk(TSFOutput * output, std::string storageDirectory) {
 
 void runCircleFittingAndNewCenterlineAlg(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * size, paramList &parameters, TSFOutput * output) {
     INIT_TIMER
-    Image3D vectorField, radius;
+    Image3D vectorField, radius,vectorFieldSmall;
     Image3D * TDF = new Image3D;
     const int totalSize = size->x*size->y*size->z;
 	const bool no3Dwrite = !getParamBool(parameters, "3d_write");
@@ -2382,11 +2407,13 @@ void runCircleFittingAndNewCenterlineAlg(OpenCL * ocl, cl::Image3D &dataset, SIP
     region[1] = size->y;
     region[2] = size->z;
 
-    runCircleFittingMethod(*ocl, dataset, *size, parameters, vectorField, *TDF, radius);
+    runCircleFittingMethod(*ocl, dataset, *size, parameters, vectorField, *TDF, radius,vectorFieldSmall);
     output->setTDF(TDF);
+    if(getParamBool(parameters, "tdf-only"))
+    	return;
 
     Image3D * centerline = new Image3D;
-    *centerline = runNewCenterlineAlg(*ocl, *size, parameters, vectorField, *TDF, radius, dataset);
+    *centerline = runNewCenterlineAlg(*ocl, *size, parameters, vectorField, *TDF, radius, dataset,vectorFieldSmall);
     output->setCenterlineVoxels(centerline);
 
     Image3D * segmentation = new Image3D;
@@ -2405,15 +2432,921 @@ void runCircleFittingAndNewCenterlineAlg(OpenCL * ocl, cl::Image3D &dataset, SIP
 
 }
 
+class CrossSection {
+public:
+	int3 pos;
+	float TDF;
+	std::vector<CrossSection *> neighbors;
+	int label;
+	int index;
+	float3 direction;
+};
+
+class CrossSectionCompare {
+private:
+	float * dist;
+public:
+	CrossSectionCompare(float * dist) { this->dist = dist; };
+	bool operator() (const CrossSection * a, const CrossSection * b) {
+		return dist[a->index] > dist[b->index];
+	};
+};
+
+std::vector<CrossSection *> createGraph(TubeSegmentation &TS, SIPL::int3 size) {
+	// Create vector
+	std::vector<CrossSection *> sections;
+	float threshold = 0.5f;
+
+	// Go through TS.TDF and add all with TDF above threshold
+	int counter = 0;
+	float thetaLimit = 0.5;
+	for(int z = 1; z < size.z-1; z++) {
+	for(int y = 1; y < size.y-1; y++) {
+	for(int x = 1; x < size.x-1; x++) {
+		int3 pos(x,y,z);
+		float tdf = TS.TDF[POS(pos)];
+		if(tdf > threshold) {
+			int maxD = std::min(std::max((int)round(TS.radius[POS(pos)]), 1), 5);
+		    //std::cout << SQR_MAG(pos) << " " << SQR_MAG_SMALL(pos) << std::endl;
+			//std::cout << "radius" << TS.radius[POS(pos)] << std::endl;
+			//std::cout << "maxD "<< maxD <<std::endl;
+			float3 e1 = getTubeDirection(TS, pos, size);
+			bool invalid = false;
+		    for(int a = -maxD; a <= maxD; a++) {
+		    for(int b = -maxD; b <= maxD; b++) {
+		    for(int c = -maxD; c <= maxD; c++) {
+		        if(a == 0 && b == 0 && c == 0)
+		            continue;
+		        const int3 n = pos + int3(a,b,c);
+		        if(!inBounds(n, size))
+		        	continue;
+		        float3 r(a,b,c);
+		        const float dp = e1.dot(r);
+		        float3 r_projected = float3(r.x-e1.x*dp,r.y-e1.y*dp,r.z-e1.z*dp);
+		        float3 rn = r.normalize();
+		        float3 rpn = r_projected.normalize();
+		        float theta = acos((double)rn.dot(rpn));
+		        //std::cout << "theta: " << theta << std::endl;
+
+		        if((theta < thetaLimit && r.length() < maxD-0.5f)) {
+		        	//std::cout << SQR_MAG(n) << std::endl;
+		        	if(TS.radius[POS(pos)]<= 3) {
+		            //if(TS.TDF[POS(n)] > TS.TDF[POS(pos)]) {
+		            if(SQR_MAG_SMALL(n) < SQR_MAG_SMALL(pos)) {
+		                invalid = true;
+		                break;
+		            }
+		            } else {
+		            if(SQR_MAG(n) < SQR_MAG(pos)) {
+		            //if(TS.TDF[POS(n)] > TS.TDF[POS(pos)]) {
+		                invalid = true;
+		                break;
+		            }
+		            }
+		        }
+		    }}}
+		    if(!invalid) {
+				CrossSection * cs = new CrossSection;
+				cs->pos = pos;
+				cs->TDF = tdf;
+				cs->label = -1;//counter;
+				cs->direction = e1;
+				counter++;
+				sections.push_back(cs);
+		    }
+		}
+	}}}
+
+
+	// For each cross section c_i
+	for(int i = 0; i < sections.size(); i++) {
+		CrossSection * c_i = sections[i];
+		// For each cross section c_j
+		for(int j = 0; j < i; j++) {
+			CrossSection * c_j = sections[j];
+			// If all criterias are ok: Add c_j as neighbor to c_i
+			if(c_i->pos.distance(c_j->pos) < 4 && !(c_i->pos == c_j->pos)) {
+				float3 e1_i = c_i->direction;
+				float3 e1_j = c_j->direction;
+				int3 cint = c_i->pos - c_j->pos;
+				float3 c = cint.normalize();
+
+				if(acos((double)fabs(e1_i.dot(e1_j))) > 1.05) // 60 degrees
+					continue;
+
+				if(acos((double)fabs(e1_i.dot(c))) > 1.05)
+					continue;
+
+				if(acos((double)fabs(e1_j.dot(c))) > 1.05)
+					continue;
+
+				int distance = ceil(c_i->pos.distance(c_j->pos));
+				float3 direction(c_j->pos.x-c_i->pos.x,c_j->pos.y-c_i->pos.y,c_j->pos.z-c_i->pos.z);
+				bool invalid = false;
+				for(int i = 0; i < distance; i++) {
+					float frac = (float)i/distance;
+					float3 n = c_i->pos + frac*direction;
+					int3 in(round(n.x),round(n.y),round(n.z));
+					//float3 e1 = getTubeDirection(TS, in, size);
+					//cost += (1-fabs(a->direction.dot(e1)))+(1-fabs(b->direction.dot(e1)));
+					if(TS.intensity[POS(in)] > 0.5f) {
+						invalid = true;
+						break;
+					}
+				}
+				//if(invalid)
+				//	continue;
+
+
+				c_i->neighbors.push_back(c_j);
+				c_j->neighbors.push_back(c_i);
+				//sectionPairs.push_back(c_i);
+			}
+			// If no pair is found, dont add it
+		}
+	}
+
+	std::vector<CrossSection *> sectionPairs;
+	for(CrossSection * c_i : sections) {
+		if(c_i->neighbors.size()>0) {
+			sectionPairs.push_back(c_i);
+		}
+	}
+
+	return sectionPairs;
+}
+
+class Connection;
+
+class Segment {
+public:
+	std::vector<CrossSection *> sections;
+	std::vector<Connection *> connections;
+	float benefit;
+	float cost;
+	int index;
+};
+
+class Connection {
+public:
+	Segment * source;
+	Segment * target;
+	CrossSection * source_section;
+	CrossSection * target_section;
+	float cost;
+};
+
+bool segmentCompare(Segment * a, Segment * b) {
+	return a->benefit > b->benefit;
+}
+
+bool segmentInSegmentation(Segment * s, unordered_set<int> &segmentation, int3 size) {
+	bool in = false;
+	for(CrossSection * c : s->sections) {
+		if(segmentation.find(POS(c->pos)) != segmentation.end()) {
+			in = true;
+			break;
+		}
+	}
+	return in;
+}
+
+float calculateBenefit(CrossSection * a, CrossSection * b, TubeSegmentation &TS, int3 size) {
+	float benefit = 0.0f;
+	int distance = ceil(a->pos.distance(b->pos));
+	float3 direction(b->pos.x-a->pos.x,b->pos.y-a->pos.y,b->pos.z-a->pos.z);
+	for(int i = 0; i < distance; i++) {
+		float frac = (float)i/distance;
+		float3 n = a->pos + frac*direction;
+		int3 in(round(n.x),round(n.y),round(n.z));
+		benefit += (TS.TDF[POS(in)]);
+	}
+
+	return benefit;
+}
+
+void inverseGradientRegionGrowing(Segment * s, TubeSegmentation &TS, unordered_set<int> &segmentation, int3 size) {
+    std::vector<int3> centerpoints;
+	for(int c = 0; c < s->sections.size()-1; c++) {
+		CrossSection * a = s->sections[c];
+		CrossSection * b = s->sections[c+1];
+		int distance = ceil(a->pos.distance(b->pos));
+		float3 direction(b->pos.x-a->pos.x,b->pos.y-a->pos.y,b->pos.z-a->pos.z);
+		for(int i = 0; i < distance; i++) {
+			float frac = (float)i/distance;
+			float3 n = a->pos + frac*direction;
+			int3 in(round(n.x),round(n.y),round(n.z));
+			centerpoints.push_back(in);
+		}
+		segmentation.insert(POS(a->pos));//test
+		segmentation.insert(POS(b->pos));//test
+	}
+	/*
+
+	// Dilate the centerline
+	std::vector<int3> dilatedCenterline;
+	for(int3 pos : centerpoints) {
+		for(int a = -1; a < 2; a++) {
+		for(int b = -1; b < 2; b++) {
+		for(int c = -1; c < 2; c++) {
+			int3 n = pos + int3(a,b,c);
+			if(inBounds(n, size) && segmentation.find(POS(n)) == segmentation.end()) {
+				segmentation.insert(POS(n));
+				dilatedCenterline.push_back(n);
+			}
+		}}}
+	}
+
+	std::queue<int3> queue;
+	for(int3 pos : dilatedCenterline) {
+		for(int a = -1; a < 2; a++) {
+		for(int b = -1; b < 2; b++) {
+		for(int c = -1; c < 2; c++) {
+			int3 n = pos + int3(a,b,c);
+			if(inBounds(n, size) && segmentation.find(POS(n)) == segmentation.end()) {
+				queue.push(n);
+			}
+		}}}
+	}
+
+	while(!queue.empty()) {
+		int3 X = queue.front();
+		float FNXw = SQR_MAG(X);
+		queue.pop();
+		for(int a = -1; a < 2; a++) {
+		for(int b = -1; b < 2; b++) {
+		for(int c = -1; c < 2; c++) {
+			if(a == 0 && b == 0 && c == 0)
+				continue;
+
+			int3 Y = X + int3(a,b,c);
+			if(inBounds(Y, size) && segmentation.find(POS(Y)) == segmentation.end()) {
+
+				float3 FNY;
+				FNY.x = TS.Fx[POS(Y)];
+				FNY.y = TS.Fy[POS(Y)];
+				FNY.z = TS.Fz[POS(Y)];
+				float FNYw = FNY.length();
+				FNY = FNY.normalize();
+				if(FNYw > FNXw || FNXw < 0.1f) {
+
+					int3 Z;
+					float maxDotProduct = -2.0f;
+					for(int a2 = -1; a2 < 2; a2++) {
+					for(int b2 = -1; b2 < 2; b2++) {
+					for(int c2 = -1; c2 < 2; c2++) {
+						if(a2 == 0 && b2 == 0 && c2 == 0)
+							continue;
+						int3 Zc;
+						Zc.x = Y.x+a2;
+						Zc.y = Y.y+b2;
+						Zc.z = Y.z+c2;
+						float3 YZ;
+						YZ.x = Zc.x-Y.x;
+						YZ.y = Zc.y-Y.y;
+						YZ.z = Zc.z-Y.z;
+						YZ = YZ.normalize();
+						if(FNY.dot(YZ) > maxDotProduct) {
+							maxDotProduct = FNY.dot(YZ);
+							Z = Zc;
+						}
+					}}}
+
+					if(Z.x == X.x && Z.y == X.y && Z.z == X.z) {
+						segmentation.insert(POS(X));
+						queue.push(Y);
+					}
+				}
+			}
+		}}}
+	}
+	*/
+
+}
+
+std::vector<Segment *> createSegments(OpenCL &ocl, TubeSegmentation &TS, std::vector<CrossSection *> &crossSections, SIPL::int3 size) {
+	// Create segment vector
+	std::vector<Segment *> segments;
+
+	// Do a graph component labeling
+	unordered_set<int> visited;
+    int labelCounter = 0;
+    std::vector<std::vector<CrossSection *> > labels;
+	for(CrossSection * c : crossSections) {
+		// Do a bfs on c
+		// Check to see if point has been processed before doing a BFS
+		if(visited.find(c->label) != visited.end())
+			continue;
+
+        c->label = labelCounter;
+        labelCounter++;
+        std::vector<CrossSection *> list;
+
+		std::stack<CrossSection *> stack;
+		stack.push(c);
+		while(!stack.empty()) {
+			CrossSection * current = stack.top();
+			stack.pop();
+			// Check label of neighbors to see if they have been added
+			if(current->label != c->label || c->pos == current->pos) {
+                list.push_back(current);
+				// Change label of neighbors if not
+				current->label = c->label;
+				// Add neighbors to stack
+				for(CrossSection * n : current->neighbors) {
+					if(n->label != c->label)
+						stack.push(n);
+				}
+			}
+		}
+		visited.insert(c->label);
+        labels.push_back(list);
+	}
+
+	std::cout << "finished graph component labeling" << std::endl;
+
+	// Do a floyd warshall all pairs shortest path
+	int totalSize = crossSections.size();
+	std::cout << "number of cross sections is " << totalSize << std::endl;
+
+
+    // For each label
+    for(std::vector<CrossSection *> list : labels) {
+        // Do floyd warshall on all pairs
+        int totalSize = list.size();
+        float * dist = new float[totalSize*totalSize];
+        int * pred = new int[totalSize*totalSize];
+
+        for(int u = 0; u < totalSize; u++) {
+            CrossSection * U = list[u];
+            U->index = u;
+        }
+        #define DPOS(U, V) V+U*totalSize
+	// For each cross section U
+	for(int u = 0; u < totalSize; u++) {
+		CrossSection * U = list[u];
+		// For each cross section V
+		for(int v = 0; v < totalSize; v++) {
+			dist[DPOS(u,v)] = 99999999;
+			pred[DPOS(u,v)] = -1;
+		}
+		dist[DPOS(U->index,U->index)] = 0;
+		for(CrossSection * V : U->neighbors) {
+			// TODO calculate more advanced weight
+			dist[DPOS(U->index,V->index)] = ceil(U->pos.distance(V->pos)) - calculateBenefit(U, V, TS, size); //(1-V->TDF);
+			pred[DPOS(U->index,V->index)] = U->index;
+		}
+	}
+	for(int t = 0; t < totalSize; t++) {
+		//CrossSection * T = crossSections[t];
+		//std::cout << "processing t=" << t << std::endl;
+		// For each cross section U
+		for(int u = 0; u < totalSize; u++) {
+			//CrossSection * U = crossSections[u];
+			// For each cross section V
+			for(int v = 0; v < totalSize; v++) {
+				//CrossSection * V = crossSections[v];
+				float newLength = dist[DPOS(u, t)] + dist[DPOS(t,v)];
+				if(newLength < dist[DPOS(u,v)]) {
+					dist[DPOS(u,v)] = newLength;
+					pred[DPOS(u,v)] = pred[DPOS(t,v)];
+				}
+			}
+		}
+}
+
+
+
+	for(CrossSection * S : list) { // Source
+		for(CrossSection * T : list) { // Target
+			if(S->label == T->label && S->index != T->index) {
+				Segment * segment = new Segment;
+				// add all cross sections in segment
+				float benefit = 0.0f;
+				segment->sections.push_back(T);
+				int current = T->index;
+				while(current != S->index) {
+					CrossSection * C = list[current];
+					segment->sections.push_back(C);
+					current = pred[DPOS(S->index,current)];// get predecessor
+					benefit += calculateBenefit(C, list[current], TS, size);
+				}
+				segment->sections.push_back(list[current]);
+				segment->benefit = benefit;
+				segments.push_back(segment);
+			}
+		}
+	}
+
+        delete[] dist;
+        delete[] pred;
+
+    }
+	std::cout << "finished performing floyd warshall" << std::endl;
+
+	std::cout << "finished creating segments" << std::endl;
+	std::cout << "total number of segments is " << segments.size() << std::endl;
+
+
+	// Sort the segment vector on benefit
+	std::sort(segments.begin(), segments.end(), segmentCompare);
+	unordered_set<int> segmentation;
+
+	// Go through sorted vector and do a region growing
+	std::vector<Segment *> filteredSegments;
+	int counter = 0;
+	for(Segment * s : segments) {
+		if(!segmentInSegmentation(s, segmentation, size)) {
+			//std::cout << "adding segment with benefit: " << s->benefit << std::endl;
+			// Do region growing and Add all segmented voxels to a set
+			inverseGradientRegionGrowing(s, TS, segmentation, size);
+			filteredSegments.push_back(s);
+			s->index = counter;
+			counter++;
+		}
+	}
+
+	std::cout << "total number of segments after remove overlapping segments " << filteredSegments.size() << std::endl;
+
+	return filteredSegments;
+}
+
+int selectRoot(std::vector<Segment *> segments) {
+	int root = 0;
+	for(int i = 1; i < segments.size(); i++) {
+		if(segments[i]->benefit > segments[root]->benefit)
+			root = i;
+	}
+	return root;
+}
+
+void DFS(Segment * current, int * ordering, int &counter, unordered_set<int> &visited) {
+	if(visited.find(current->index) != visited.end())
+		return;
+	ordering[counter] = current->index;
+	//std::cout << counter << ": " << current->index << std::endl;
+	counter++;
+	for(Connection * edge : current->connections) {
+		DFS(edge->target, ordering, counter, visited);
+	}
+	visited.insert(current->index);
+}
+
+int * createDepthFirstOrdering(std::vector<Segment *> segments, int root, int &Ns) {
+	int * ordering = new int[segments.size()];
+	int counter = 0;
+
+	// Give imdexes to segments
+	for(int i = 0; i < segments.size(); i++) {
+		segments[i]->index = i;
+	}
+
+	unordered_set<int> visited;
+
+	DFS(segments[root], ordering, counter, visited);
+
+	Ns = counter;
+	int * reversedOrdering = new int[Ns];
+	for(int i = 0; i < Ns; i++) {
+		reversedOrdering[i] = ordering[Ns-i-1];
+	}
+
+	delete[] ordering;
+	return reversedOrdering;
+}
+
+class ConnectionComparator {
+public:
+	bool operator()(Connection * a, Connection *b) const {
+		return a->cost > b->cost;
+	}
+};
+
+std::vector<Segment *> minimumSpanningTree(Segment * root, int3 size) {
+	// Need a priority queue on Connection objects based on the cost
+	std::priority_queue<Connection *, std::vector<Connection *>, ConnectionComparator> queue;
+	std::vector<Segment *> result;
+	unordered_set<int> visited;
+	result.push_back(root);
+	visited.insert(root->index);
+
+	// Add all connections of the root to the queue
+	for(Connection * c : root->connections) {
+		queue.push(c);
+	}
+	// Remove connections from root
+	root->connections = std::vector<Connection *>();
+
+	while(!queue.empty()) {
+	// Select minimum connection
+	// Check if target is already added
+	// if not, add all of its connection to the queue
+	// add this connection to the source
+	// Add target segment and clear its connections
+	// Also add cost to the segment object
+		Connection * c = queue.top();
+		//std::cout << c->cost << std::endl;
+		queue.pop();
+		if(visited.find(c->target->index) != visited.end())
+			continue;
+
+		for(Connection * cn : c->target->connections) {
+			if(visited.find(cn->target->index) == visited.end())
+				queue.push(cn);
+		}
+
+		c->source->connections.push_back(c);
+		// c->target->connections.clear(); doest his delete the objects?
+		c->target->connections = std::vector<Connection *>();
+		c->target->cost = c->cost;
+		result.push_back(c->target);
+		visited.insert(c->target->index);
+	}
+
+	return result;
+}
+
+std::vector<Segment *> findOptimalSubtree(std::vector<Segment *> segments, int * depthFirstOrdering, int Ns) {
+
+	float * score = new float[Ns]();
+	float r = 2.0;
+
+	// Stage 1 bottom up
+	for(int j = 0; j < Ns; j++) {
+		int mj = depthFirstOrdering[j];
+		score[mj] = segments[mj]->benefit - r * segments[mj]->cost;
+		/*std::cout << "cross sections: " << segments[mj]->sections.size() << " benefit: "
+				<< segments[mj]->benefit << " cost: " << segments[mj]->cost <<
+				" children: " << segments[mj]->connections.size() << std::endl;*/
+		// For all children of mj
+		for(Connection * c : segments[mj]->connections) {
+			int k = c->target->index; //child
+			if(score[k] >= 0)
+				score[mj] += score[k];
+		}
+	}
+
+	// Stage 2 top down
+	bool * v = new bool[Ns];
+	for(int i = 1; i < Ns; i++)
+		v[i] = false;
+	v[0] = true;
+
+	for(int j = Ns-1; j >= 0; j--) {
+		int mj = depthFirstOrdering[j];
+		if(v[mj]) {
+			// For all children of mj
+			for(Connection * c : segments[mj]->connections) {
+				int k = c->target->index; //child
+				if(score[k] >= 0)
+					v[k] = true;
+			}
+		}
+	}
+
+	delete[] score;
+
+	std::vector<Segment *> finalSegments;
+	for(int i = 0; i < Ns; i++) {
+		if(v[i]) {
+			finalSegments.push_back(segments[i]);
+
+			// for all children, check if they are true in v, if not remove connections
+			std::vector<Connection *> connections;
+			for(Connection * c : segments[i]->connections) {
+				int k = c->target->index; //child
+				if(v[k]) {
+					// keep connection
+					connections.push_back(c);
+				} else {
+					delete c;
+				}
+			}
+			segments[i]->connections = connections;
+		}
+	}
+	delete[] v;
+	return finalSegments;
+}
+
+float calculateConnectionCost(CrossSection * a, CrossSection * b, TubeSegmentation &TS, int3 size) {
+	float cost = 0.0f;
+	int distance = ceil(a->pos.distance(b->pos));
+	float3 direction(b->pos.x-a->pos.x,b->pos.y-a->pos.y,b->pos.z-a->pos.z);
+	float maxIntensity = -1.0f;
+	for(int i = 0; i < distance; i++) {
+		float frac = (float)i/distance;
+		float3 n = a->pos + frac*direction;
+		int3 in(round(n.x),round(n.y),round(n.z));
+		cost += /*SQR_MAG(in) +*/ (1.0f-TS.TDF[POS(in)]);
+        //float3 e1 = getTubeDirection(TS, in, size);
+        //cost += (1-fabs(a->direction.dot(e1)))+(1-fabs(b->direction.dot(e1)));
+		if(TS.intensity[POS(in)] > maxIntensity) {
+			maxIntensity = TS.intensity[POS(in)];
+		}
+	}
+	/*
+	if(maxIntensity > 0.2 && maxIntensity < 0.3) {
+		cost = cost*2;
+	}
+	if(maxIntensity >= 0.3 && maxIntensity < 0.5) {
+		cost = cost*4;
+	}
+	if(maxIntensity >= 0.5) {
+		cost = cost*8;
+	}
+	*/
+	return cost;
+}
+
+void createConnections(TubeSegmentation &TS, std::vector<Segment *> segments, int3 size) {
+	// For all pairs of segments
+	for(int k = 0; k < segments.size(); k++) {
+		Segment * s_k = segments[k];
+		for(int l = 0; l < k; l++) {
+			Segment * s_l = segments[l];
+			// For each C_k, cross sections in S_k, calculate costs and select the one with least cost
+			float bestCost = 999999999.0f;
+			CrossSection * c_k_best, * c_l_best;
+			bool found = false;
+			for(CrossSection * c_k : s_k->sections) {
+				for(CrossSection * c_l : s_l->sections) {
+					if(c_k->pos.distance(c_l->pos) > 20)
+						continue;
+
+					float3 c(c_k->pos.x-c_l->pos.x, c_k->pos.y-c_l->pos.y,c_k->pos.z-c_l->pos.z);
+					c = c.normalize();
+					if(acos(fabs(c_k->direction.dot(c))) > 1.05f)
+						continue;
+					if(acos(fabs(c_l->direction.dot(c))) > 1.05f)
+						continue;
+
+					/*
+                    float rk = TS.radius[POS(c_k->pos)];
+                    float rl = TS.radius[POS(c_l->pos)];
+
+                    if(rk > 2 || rl > 2) {
+                        if(std::max(rk,rl) / std::min(rk,rl) >= 2)
+                            continue;
+                    }
+                    */
+
+					float cost = calculateConnectionCost(c_k, c_l, TS, size);
+					if(cost < bestCost) {
+						bestCost = cost;
+						c_k_best = c_k;
+						c_l_best = c_l;
+						found = true;
+					}
+				}
+			}
+
+
+			// See if they are allowed to connect
+			if(found) {
+				/*if(bestCost < 2) {
+					std::cout << bestCost << std::endl;
+					std::cout << "labels: " << c_k_best->label << " " << c_l_best->label << std::endl;
+					std::cout << "distance: " << c_k_best->pos.distance(c_l_best->pos) << std::endl;
+				}*/
+				// If so, create connection object and add to segemnt
+				Connection * c = new Connection;
+				c->cost = bestCost;
+				c->source = s_k;
+				c->source_section = c_k_best;
+				c->target = s_l;
+				c->target_section = c_l_best;
+				s_k->connections.push_back(c);
+				Connection * c2 = new Connection;
+				c2->cost = bestCost;
+				c2->source = s_l;
+				c2->source_section = c_l_best;
+				c2->target = s_k;
+				c2->target_section = c_k_best;
+				s_l->connections.push_back(c2);
+			}
+		}
+	}
+}
+
+SIPL::Volume<float3> * visualizeSegments(std::vector<Segment *> segments, int3 size) {
+	SIPL::Volume<float3> * connections = new SIPL::Volume<float3>(size);
+    for(Segment * s : segments) {
+    	for(int i = 0; i < s->sections.size()-1; i++) {
+    		CrossSection * a = s->sections[i];
+    		CrossSection * b = s->sections[i+1];
+			int distance = ceil(a->pos.distance(b->pos));
+			float3 direction(b->pos.x-a->pos.x,b->pos.y-a->pos.y,b->pos.z-a->pos.z);
+			for(int i = 0; i < distance; i++) {
+				float frac = (float)i/distance;
+				float3 n = a->pos + frac*direction;
+				int3 in(round(n.x),round(n.y),round(n.z));
+				float3 v = connections->get(in);
+				v.x = 1.0f;
+				connections->set(in, v);
+			}
+		}
+		for(Connection * c : s->connections) {
+			CrossSection * a = c->source_section;
+			CrossSection * b = c->target_section;
+			int distance = ceil(a->pos.distance(b->pos));
+			float3 direction(b->pos.x-a->pos.x,b->pos.y-a->pos.y,b->pos.z-a->pos.z);
+			for(int i = 0; i < distance; i++) {
+				float frac = (float)i/distance;
+				float3 n = a->pos + frac*direction;
+				int3 in(round(n.x),round(n.y),round(n.z));
+				float3 v = connections->get(in);
+				v.y = 1.0f;
+				connections->set(in, v);
+			}
+
+		}
+    }
+    connections->showMIP();
+    return connections;
+}
+
+void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * size, paramList &parameters, TSFOutput * output) {
+    INIT_TIMER
+    Image3D vectorField, radius, vectorFieldSmall;
+    Image3D * TDF = new Image3D;
+    const int totalSize = size->x*size->y*size->z;
+	const bool no3Dwrite = !getParamBool(parameters, "3d_write");
+
+    cl::size_t<3> offset;
+    offset[0] = 0;
+    offset[1] = 0;
+    offset[2] = 0;
+    cl::size_t<3> region;
+    region[0] = size->x;
+    region[1] = size->y;
+    region[2] = size->z;
+
+    runCircleFittingMethod(*ocl, dataset, *size, parameters, vectorField, *TDF, radius, vectorFieldSmall);
+
+
+    // Transfer from device to host
+    TubeSegmentation TS;
+    TS.Fx = new float[totalSize];
+    TS.Fy = new float[totalSize];
+    TS.Fz = new float[totalSize];
+    TS.FxSmall = new float[totalSize];
+    TS.FySmall = new float[totalSize];
+    TS.FzSmall = new float[totalSize];
+    if(no3Dwrite || getParamBool(parameters, "32bit-vectors")) {
+    	// 32 bit vector fields
+        float * Fs = new float[totalSize*4];
+        ocl->queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
+#pragma omp parallel for
+        for(int i = 0; i < totalSize; i++) {
+            TS.Fx[i] = Fs[i*4];
+            TS.Fy[i] = Fs[i*4+1];
+            TS.Fz[i] = Fs[i*4+2];
+        }
+        delete[] Fs;
+        if(getParam(parameters, "radius-min") < 2.5) {
+		float * FsSmall = new float[totalSize*4];
+        ocl->queue.enqueueReadImage(vectorFieldSmall, CL_TRUE, offset, region, 0, 0, FsSmall);
+#pragma omp parallel for
+        for(int i = 0; i < totalSize; i++) {
+            TS.FxSmall[i] = FsSmall[i*4];
+            TS.FySmall[i] = FsSmall[i*4+1];
+            TS.FzSmall[i] = FsSmall[i*4+2];
+        }
+        delete[] FsSmall;
+        }
+
+    } else {
+    	// 16 bit vector fields
+        short * Fs = new short[totalSize*4];
+        ocl->queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
+#pragma omp parallel for
+        for(int i = 0; i < totalSize; i++) {
+            TS.Fx[i] = MAX(-1.0f, Fs[i*4] / 32767.0f);
+            TS.Fy[i] = MAX(-1.0f, Fs[i*4+1] / 32767.0f);;
+            TS.Fz[i] = MAX(-1.0f, Fs[i*4+2] / 32767.0f);
+        }
+        delete[] Fs;
+        if(getParam(parameters, "radius-min") < 2.5) {
+		short * FsSmall = new short[totalSize*4];
+        ocl->queue.enqueueReadImage(vectorFieldSmall, CL_TRUE, offset, region, 0, 0, FsSmall);
+#pragma omp parallel for
+        for(int i = 0; i < totalSize; i++) {
+            TS.FxSmall[i] = MAX(-1.0f, FsSmall[i*4] / 32767.0f);
+            TS.FySmall[i] = MAX(-1.0f, FsSmall[i*4+1] / 32767.0f);
+            TS.FzSmall[i] = MAX(-1.0f, FsSmall[i*4+2] / 32767.0f);
+        }
+        delete[] FsSmall;
+        }
+
+    }
+    TS.radius = new float[totalSize];
+    TS.TDF = new float[totalSize];
+    TS.intensity = new float[totalSize];
+    ocl->queue.enqueueReadImage(*TDF, CL_TRUE, offset, region, 0, 0, TS.TDF);
+    output->setTDF(TS.TDF);
+    ocl->queue.enqueueReadImage(radius, CL_TRUE, offset, region, 0, 0, TS.radius);
+    ocl->queue.enqueueReadImage(dataset, CL_TRUE, offset, region, 0, 0, TS.intensity);
+
+    // Create pairs of voxels with high TDF
+    std::vector<CrossSection *> crossSections = createGraph(TS, *size);
+
+    // Display pairs
+    SIPL::Volume<bool> * pairs = new SIPL::Volume<bool>(*size);
+    pairs->fill(false);
+    for(CrossSection * c : crossSections) {
+    	pairs->set(c->pos, true);
+    }
+    pairs->showMIP();
+
+    // Create segments from pairs
+    std::vector<Segment *> segments = createSegments(*ocl, TS, crossSections, *size);
+
+    visualizeSegments(segments, *size);
+
+    // Create connections between segments
+    std::cout << "creating connections..." << std::endl;
+    std::cout << "number of segments is " << segments.size() << std::endl;
+    createConnections(TS, segments, *size);
+    std::cout << "finished creating connections." << std::endl;
+    std::cout << "number of segments is " << segments.size() << std::endl;
+
+    // Display connections, in a separate color for instance
+    visualizeSegments(segments, *size);
+
+    // Do minimum spanning tree on segments, where each segment is a node and the connetions are edges
+    // must also select a root segment
+    std::cout << "running minimum spanning tree" << std::endl;
+    int root = selectRoot(segments);
+    segments = minimumSpanningTree(segments[root], *size);
+    std::cout << "finished running minimum spanning tree" << std::endl;
+    std::cout << "number of segments is " << segments.size() << std::endl;
+
+    // Visualize
+    visualizeSegments(segments, *size);
+
+    // Display which connections have been retained and which are removed
+
+    // create depth first ordering
+    std::cout << "creating depth first ordering..." << std::endl;
+    int Ns;
+    int * depthFirstOrderingOfSegments = createDepthFirstOrdering(segments, root, Ns);
+    std::cout << "finished creating depth first ordering" << std::endl;
+    std::cout << "Ns is " << Ns << std::endl;
+    std::cout << "root is " << root << std::endl;
+
+	// have to take into account that not all segments are part of the final tree, for instance, return Ns
+    // Do the dynamic programming algorithm for locating the best subtree
+    std::cout << "finding optimal subtree..." << std::endl;
+    std::vector<Segment *> finalSegments = findOptimalSubtree(segments, depthFirstOrderingOfSegments, Ns);
+    std::cout << "finished." << std::endl;
+    std::cout << "number of segments is " << finalSegments.size() << std::endl;
+
+    // TODO Display final segments and the connections
+    SIPL::Volume<float3> * v = visualizeSegments(finalSegments, *size);
+    char * centerline = new char[totalSize]();
+    for(int i = 0; i < totalSize; i++) {
+    	float3 value = v->get(i);
+    	if(value.x > 0 || value.y > 0) {
+    		centerline[i] = 1;
+    	}
+    	value.z = value.y;
+    	value.y = value.x;
+    	value.x = TS.intensity[i];
+    	v->set(i, value);
+    }
+    v->show(0.3, 0.6);
+    output->setCenterlineVoxels(centerline);
+
+    Image3D * volume = new Image3D;
+    if(!getParamBool(parameters, "no-segmentation")) {
+        *volume = Image3D(ocl->context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, ImageFormat(CL_R, CL_SIGNED_INT8), size->x, size->y, size->z, 0, 0, centerline);
+		if(!getParamBool(parameters, "sphere-segmentation")) {
+			*volume = runInverseGradientSegmentation(*ocl, *volume, vectorField, *size, parameters);
+    	} else {
+			*volume = runSphereSegmentation(*ocl,*volume, radius, *size, parameters);
+    	}
+		output->setSegmentation(volume);
+    }
+
+
+
+	if(getParamStr(parameters, "storage-dir") != "off") {
+        writeDataToDisk(output, getParamStr(parameters, "storage-dir"));
+    }
+
+}
+
+
 void runCircleFittingAndRidgeTraversal(OpenCL * ocl, Image3D &dataset, SIPL::int3 * size, paramList &parameters, TSFOutput * output) {
     
     INIT_TIMER
     cl::Event startEvent, endEvent;
     cl_ulong start, end;
-    Image3D vectorField, radius;
+    Image3D vectorField, radius,vectorFieldSmall;
     Image3D * TDF = new Image3D;
     TubeSegmentation TS;
-    runCircleFittingMethod(*ocl, dataset, *size, parameters, vectorField, *TDF, radius);
+    runCircleFittingMethod(*ocl, dataset, *size, parameters, vectorField, *TDF, radius,vectorFieldSmall);
     output->setTDF(TDF);
     const int totalSize = size->x*size->y*size->z;
 	const bool no3Dwrite = !getParamBool(parameters, "3d_write");
