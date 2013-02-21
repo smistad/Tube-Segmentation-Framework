@@ -1504,7 +1504,7 @@ __kernel void circleFittingTDF(
 }
 
 __kernel void GVF3DIteration_one_component(
-		__read_only image3d_t init_vector_field,
+		__global float * init_vector_field,
 		__global float const * restrict read_vector_field,
 		__global float * write_vector_field,
 		__private float mu
@@ -1522,7 +1522,7 @@ __kernel void GVF3DIteration_one_component(
     pos = select(pos, size-3, pos >= size-1);
     int offset = pos.x+pos.y*size.x+pos.z*size.x*size.y;
 
-    float2 init_vector = read_imagef(init_vector_field, sampler, pos).xy;
+    float2 init_vector = vload2(offset, init_vector_field);
     float v = read_vector_field[offset];
     float fx1 = read_vector_field[offset+1];
     float fx_1 = read_vector_field[offset-1];
@@ -1536,7 +1536,7 @@ __kernel void GVF3DIteration_one_component(
 
     v += mu * laplacian - (v - init_vector.x)*init_vector.y;
 
-    write_vector_field[offset] = v;
+    write_vector_field[writePos.x+writePos.y*size.x+writePos.z*size.x*size.y] = v;
 }
 
 __kernel void GVF3DInit_one_component(

@@ -1109,56 +1109,79 @@ void runLowMemoryGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, S
 
     std::cout << "Running GVF with " << GVFIterations << " iterations " << std::endl;
     if(no3Dwrite) {
-        // Create auxillary buffers
-        Buffer vectorFieldBuffer = Buffer(
+    	Buffer vectorFieldX, vectorFieldY, vectorFieldZ;
+        for(int component = 1; component < 4; component++) {
+
+        	Buffer vectorField1 = Buffer(
                 ocl.context,
                 CL_MEM_READ_WRITE,
-                3*sizeof(float)*totalSize
-        );
-        Buffer vectorFieldBuffer1 = Buffer(
+                sizeof(float)*totalSize
+			);
+			Buffer vectorField2 = Buffer(
                 ocl.context,
                 CL_MEM_READ_WRITE,
-                3*sizeof(float)*totalSize
-        );
+                sizeof(float)*totalSize
+			);
+			Buffer initVectorField = Buffer(
+                ocl.context,
+                CL_MEM_READ_WRITE,
+                2*sizeof(float)*totalSize
+			);
 
-        GVFInitKernel.setArg(0, vectorField);
-        GVFInitKernel.setArg(1, vectorFieldBuffer);
-        ocl.queue.enqueueNDRangeKernel(
-                GVFInitKernel,
-                NullRange,
-                NDRange(size.x,size.y,size.z),
-                NullRange
-        );
+			GVFInitKernel.setArg(0, vectorField);
+			GVFInitKernel.setArg(1, vectorField1);
+			GVFInitKernel.setArg(2, initVectorField);
+			GVFInitKernel.setArg(3, component);
+			ocl.queue.enqueueNDRangeKernel(
+					GVFInitKernel,
+					NullRange,
+					NDRange(size.x,size.y,size.z),
+					NullRange
+			);
 
-        // Run iterations
-        GVFIterationKernel.setArg(0, vectorField);
-        GVFIterationKernel.setArg(3, MU);
+			// Run iterations
+			GVFIterationKernel.setArg(0, initVectorField);
+			GVFIterationKernel.setArg(3, MU);
 
-        for(int i = 0; i < GVFIterations; i++) {
-            if(i % 2 == 0) {
-                GVFIterationKernel.setArg(1, vectorFieldBuffer);
-                GVFIterationKernel.setArg(2, vectorFieldBuffer1);
-            } else {
-                GVFIterationKernel.setArg(1, vectorFieldBuffer1);
-                GVFIterationKernel.setArg(2, vectorFieldBuffer);
-            }
-                ocl.queue.enqueueNDRangeKernel(
-                        GVFIterationKernel,
-                        NullRange,
-                        NDRange(size.x,size.y,size.z),
-                        NullRange
-                );
+			for(int i = 0; i < GVFIterations; i++) {
+				if(i % 2 == 0) {
+					GVFIterationKernel.setArg(1, vectorField1);
+					GVFIterationKernel.setArg(2, vectorField2);
+				} else {
+					GVFIterationKernel.setArg(1, vectorField2);
+					GVFIterationKernel.setArg(2, vectorField1);
+				}
+					ocl.queue.enqueueNDRangeKernel(
+							GVFIterationKernel,
+							NullRange,
+							NDRange(size.x,size.y,size.z),
+							NullRange
+					);
+			}
+			if(component == 1) {
+				vectorFieldX = vectorField1;
+			} else if(component == 2) {
+				vectorFieldY = vectorField1;
+			} else {
+				vectorFieldZ = vectorField1;
+			}
+			ocl.queue.finish();
+			std::cout << "finished component " << component << std::endl;
         }
 
-        vectorFieldBuffer1 = Buffer(
+
+        Buffer vectorFieldBuffer = Buffer(
                 ocl.context,
                 CL_MEM_WRITE_ONLY,
                 4*sizeof(float)*totalSize
         );
 
         // Copy vector field to image
-        GVFFinishKernel.setArg(0, vectorFieldBuffer);
-        GVFFinishKernel.setArg(1, vectorFieldBuffer1);
+
+        GVFFinishKernel.setArg(0, vectorFieldX);
+        GVFFinishKernel.setArg(1, vectorFieldY);
+        GVFFinishKernel.setArg(2, vectorFieldZ);
+        GVFFinishKernel.setArg(3, vectorFieldBuffer);
 
         ocl.queue.enqueueNDRangeKernel(
                 GVFFinishKernel,
@@ -1178,13 +1201,12 @@ void runLowMemoryGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, S
 
         // Copy buffer contents to image
         ocl.queue.enqueueCopyBufferToImage(
-                vectorFieldBuffer1,
+                vectorFieldBuffer,
                 vectorField,
                 0,
                 offset,
                 region
         );
-
 
     } else {
         Image3D vectorFieldX, vectorFieldY, vectorFieldZ;
