@@ -1503,6 +1503,81 @@ __kernel void circleFittingTDF(
     Radius[LPOS(pos)] = maxRadius;
 }
 
+__kernel void GVF3DIteration_one_component(
+		__read_only image3d_t init_vector_field,
+		__global float const * restrict read_vector_field,
+		__global float * write_vector_field,
+		__private float mu
+	) {
+    int4 writePos = {
+        get_global_id(0),
+        get_global_id(1),
+        get_global_id(2),
+        0
+    };
+    // Enforce mirror boundary conditions
+    int4 size = {get_global_size(0), get_global_size(1), get_global_size(2), 0};
+    int4 pos = writePos;
+    pos = select(pos, (int4)(2,2,2,0), pos == (int4)(0,0,0,0));
+    pos = select(pos, size-3, pos >= size-1);
+    int offset = pos.x+pos.y*size.x+pos.z*size.x*size.y;
+
+    float2 init_vector = read_imagef(init_vector_field, sampler, pos).xy;
+    float v = read_vector_field[offset];
+    float fx1 = read_vector_field[offset+1];
+    float fx_1 = read_vector_field[offset-1];
+    float fy1 = read_vector_field[offset+size.x];
+    float fy_1 = read_vector_field[offset-size.x];
+    float fz1 = read_vector_field[offset+size.x*size.y];
+    float fz_1 = read_vector_field[offset-size.x*size.y];
+
+    // Update the vector field: Calculate Laplacian using a 3D central difference scheme
+    float laplacian = -6*v + fx1 + fx_1 + fy1 + fy_1 + fz1 + fz_1;
+
+    v += mu * laplacian - (v - init_vector.x)*init_vector.y;
+
+    write_vector_field[offset] = v;
+}
+
+__kernel void GVF3DInit_one_component(
+		__read_only image3d_t initVectorField,
+		__global float * vectorField,
+		__global float * newInitVectorField,
+		__private int component // 1 == x, 2 == y, 3 == z
+	) {
+    const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
+    float4 value = read_imagef(initVectorField, sampler, pos);
+    float sqrMag = value.x*value.x+value.y*value.y+value.z*value.z;
+    float componentValue;
+    if(component == 1) {
+    	componentValue = value.x;
+    } else if(component == 2) {
+    	componentValue = value.y;
+    } else {
+    	componentValue = value.z;
+    }
+    int offset = pos.x+pos.y*get_global_size(0)+pos.z*get_global_size(0)*get_global_size(1);
+    vectorField[offset] = componentValue;
+    vstore2((float2)(componentValue, sqrMag), offset, newInitVectorField);
+}
+
+__kernel void GVF3DFinish_one_component(
+		__global float const * restrict vectorFieldX,
+		__global float const * restrict vectorFieldY,
+		__global float const * restrict vectorFieldZ,
+		__global float * vectorField2
+	) {
+    const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
+    int offset = pos.x+pos.y*get_global_size(0)+pos.z*get_global_size(0)*get_global_size(1);
+    float4 v;
+    v.x = vectorFieldX[offset];
+    v.y = vectorFieldY[offset];
+    v.z = vectorFieldZ[offset];
+    v.w = 0;
+    v.w = length(v) > 0.0f ? length(v) : 1.0f;
+    vstore4(v, offset, vectorField2);
+}
+
 __kernel void GVF3DIteration(__read_only image3d_t init_vector_field, __global float const * restrict read_vector_field, __global float * write_vector_field, __private float mu) {
     int4 writePos = {
         get_global_id(0),
