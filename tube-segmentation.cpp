@@ -1231,7 +1231,6 @@ void runLowMemoryGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, S
 					NDRange(4,4,4)
 				);
 			}
-			std::cout << "finished" << std::endl;
 			if(component == 1) {
 				vectorFieldX = vectorField1;
 			} else if(component == 2) {
@@ -1240,6 +1239,7 @@ void runLowMemoryGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, S
 				vectorFieldZ = vectorField1;
 			}
 			ocl.queue.finish();
+			std::cout << "finished component " << component << std::endl;
         }
 
         // Copy vector fields to image
