@@ -138,6 +138,7 @@ paramList initParameters(std::string parameter_dir) {
 
 paramList setParameter(paramList parameters, string name, string value) {
 	if(parameters.bools.count(name) > 0) {
+		std::cout << name << " set to " << value << std::endl;
 		BoolParameter v = parameters.bools[name];
 		bool boolValue = (value == "true") ? true : false;
 		v.set(boolValue);
@@ -195,16 +196,12 @@ paramList getParameters(int argc, char ** argv) {
         string token = argv[i];
         if(token.substr(0,2) == "--") {
             // Check to see if the parameter has a value
-            string nextToken;
+            string nextToken = "";
             if(i+1 < argc) {
                 nextToken = argv[i+1];
-                if(nextToken.substr(0,2) == "--") {
-                	nextToken = "";
-                } else {
+                if(nextToken.substr(0,2) != "--") {
 					i++;
                 }
-            } else {
-            	nextToken = "";
             }
             if(token.substr(2) == "parameters")
 				parameters = setParameter(parameters, token.substr(2), nextToken);
@@ -219,16 +216,12 @@ paramList getParameters(int argc, char ** argv) {
         string token = argv[i];
         if(token.substr(0,2) == "--") {
             // Check to see if the parameter has a value
-            string nextToken;
+            string nextToken = "true";
             if(i+1 < argc) {
                 nextToken = argv[i+1];
-                if(nextToken.substr(0,2) == "--") {
-                	nextToken = "";
-                } else {
+                if(nextToken.substr(0,2) != "--") {
 					i++;
                 }
-            } else {
-                nextToken = "";
             }
 			parameters = setParameter(parameters, token.substr(2), nextToken);
         }
