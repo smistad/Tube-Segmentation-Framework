@@ -1,6 +1,8 @@
 #include "tube-segmentation.hpp"
 #include "SIPL/Types.hpp"
+#ifdef USE_SIPL_VISUALIZATION
 #include "SIPL/Core.hpp"
+#endif
 #include <boost/iostreams/device/mapped_file.hpp>
 #include <queue>
 #include <stack>
@@ -3348,6 +3350,8 @@ void createConnections(TubeSegmentation &TS, std::vector<Segment *> segments, in
 	}
 }
 
+
+#ifdef USE_SIPL_VISUALIZATION
 SIPL::Volume<float3> * visualizeSegments(std::vector<Segment *> segments, int3 size) {
 	SIPL::Volume<float3> * connections = new SIPL::Volume<float3>(size);
     for(Segment * s : segments) {
@@ -3384,6 +3388,7 @@ SIPL::Volume<float3> * visualizeSegments(std::vector<Segment *> segments, int3 s
     connections->showMIP();
     return connections;
 }
+#endif
 
 void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * size, paramList &parameters, TSFOutput * output) {
     INIT_TIMER
@@ -3471,17 +3476,21 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
     std::vector<CrossSection *> crossSections = createGraph(TS, *size);
 
     // Display pairs
+	#ifdef USE_SIPL_VISUALIZATION
     SIPL::Volume<bool> * pairs = new SIPL::Volume<bool>(*size);
     pairs->fill(false);
     for(CrossSection * c : crossSections) {
     	pairs->set(c->pos, true);
     }
     pairs->showMIP();
+	#endif
 
     // Create segments from pairs
     std::vector<Segment *> segments = createSegments(*ocl, TS, crossSections, *size);
 
+	#ifdef USE_SIPL_VISUALIZATION
     visualizeSegments(segments, *size);
+	#endif
 
     // Create connections between segments
     std::cout << "creating connections..." << std::endl;
@@ -3491,7 +3500,9 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
     std::cout << "number of segments is " << segments.size() << std::endl;
 
     // Display connections, in a separate color for instance
+	#ifdef USE_SIPL_VISUALIZATION
     visualizeSegments(segments, *size);
+	#endif
 
     // Do minimum spanning tree on segments, where each segment is a node and the connetions are edges
     // must also select a root segment
@@ -3502,7 +3513,9 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
     std::cout << "number of segments is " << segments.size() << std::endl;
 
     // Visualize
+	#ifdef USE_SIPL_VISUALIZATION
     visualizeSegments(segments, *size);
+	#endif
 
     // Display which connections have been retained and which are removed
 
@@ -3522,8 +3535,9 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
     std::cout << "number of segments is " << finalSegments.size() << std::endl;
 
     // TODO Display final segments and the connections
-    SIPL::Volume<float3> * v = visualizeSegments(finalSegments, *size);
     char * centerline = new char[totalSize]();
+	#ifdef USE_SIPL_VISUALIZATION
+    SIPL::Volume<float3> * v = visualizeSegments(finalSegments, *size);
     for(int i = 0; i < totalSize; i++) {
     	float3 value = v->get(i);
     	if(value.x > 0 || value.y > 0) {
@@ -3535,6 +3549,35 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
     	v->set(i, value);
     }
     v->show(0.3, 0.6);
+	#else
+	for(Segment * s : segments) {
+    	for(int i = 0; i < s->sections.size()-1; i++) {
+    		CrossSection * a = s->sections[i];
+    		CrossSection * b = s->sections[i+1];
+			int distance = ceil(a->pos.distance(b->pos));
+			float3 direction(b->pos.x-a->pos.x,b->pos.y-a->pos.y,b->pos.z-a->pos.z);
+			for(int i = 0; i < distance; i++) {
+				float frac = (float)i/distance;
+				float3 n = a->pos + frac*direction;
+				int3 in(round(n.x),round(n.y),round(n.z));
+				centerline[in.x+in.y*size->x+in.z*size->x*size->y] = 1;
+			}
+		}
+		for(Connection * c : s->connections) {
+			CrossSection * a = c->source_section;
+			CrossSection * b = c->target_section;
+			int distance = ceil(a->pos.distance(b->pos));
+			float3 direction(b->pos.x-a->pos.x,b->pos.y-a->pos.y,b->pos.z-a->pos.z);
+			for(int i = 0; i < distance; i++) {
+				float frac = (float)i/distance;
+				float3 n = a->pos + frac*direction;
+				int3 in(round(n.x),round(n.y),round(n.z));
+				centerline[in.x+in.y*size->x+in.z*size->x*size->y] = 1;
+			}
+
+		}
+    }
+	#endif
     output->setCenterlineVoxels(centerline);
 
     Image3D * volume = new Image3D;
