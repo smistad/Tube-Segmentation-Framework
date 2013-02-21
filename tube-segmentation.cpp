@@ -1096,12 +1096,174 @@ Image3D & runFastGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, S
         );
     }
 }
+Image3D & runLowMemoryGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, SIPL::int3 &size) {
+
+    const int GVFIterations = getParam(parameters, "gvf-iterations");
+    const bool no3Dwrite = !getParamBool(parameters, "3d_write");
+    const float MU = getParam(parameters, "gvf-mu");
+    const int totalSize = size.x*size.y*size.z;
+
+    Kernel GVFInitKernel = Kernel(ocl.program, "GVF3DInit_one_component");
+    Kernel GVFIterationKernel = Kernel(ocl.program, "GVF3DIteration_one_component");
+    Kernel GVFFinishKernel = Kernel(ocl.program, "GVF3DFinish_one_component");
+
+    std::cout << "Running GVF with " << GVFIterations << " iterations " << std::endl;
+    if(no3Dwrite) {
+        // Create auxillary buffers
+        Buffer vectorFieldBuffer = Buffer(
+                ocl.context,
+                CL_MEM_READ_WRITE,
+                3*sizeof(float)*totalSize
+        );
+        Buffer vectorFieldBuffer1 = Buffer(
+                ocl.context,
+                CL_MEM_READ_WRITE,
+                3*sizeof(float)*totalSize
+        );
+
+        GVFInitKernel.setArg(0, vectorField);
+        GVFInitKernel.setArg(1, vectorFieldBuffer);
+        ocl.queue.enqueueNDRangeKernel(
+                GVFInitKernel,
+                NullRange,
+                NDRange(size.x,size.y,size.z),
+                NullRange
+        );
+
+        // Run iterations
+        GVFIterationKernel.setArg(0, vectorField);
+        GVFIterationKernel.setArg(3, MU);
+
+        for(int i = 0; i < GVFIterations; i++) {
+            if(i % 2 == 0) {
+                GVFIterationKernel.setArg(1, vectorFieldBuffer);
+                GVFIterationKernel.setArg(2, vectorFieldBuffer1);
+            } else {
+                GVFIterationKernel.setArg(1, vectorFieldBuffer1);
+                GVFIterationKernel.setArg(2, vectorFieldBuffer);
+            }
+                ocl.queue.enqueueNDRangeKernel(
+                        GVFIterationKernel,
+                        NullRange,
+                        NDRange(size.x,size.y,size.z),
+                        NullRange
+                );
+        }
+
+        vectorFieldBuffer1 = Buffer(
+                ocl.context,
+                CL_MEM_WRITE_ONLY,
+                4*sizeof(float)*totalSize
+        );
+
+        // Copy vector field to image
+        GVFFinishKernel.setArg(0, vectorFieldBuffer);
+        GVFFinishKernel.setArg(1, vectorFieldBuffer1);
+
+        ocl.queue.enqueueNDRangeKernel(
+                GVFFinishKernel,
+                NullRange,
+                NDRange(size.x,size.y,size.z),
+                NullRange
+        );
+
+		cl::size_t<3> offset;
+		offset[0] = 0;
+		offset[1] = 0;
+		offset[2] = 0;
+		cl::size_t<3> region;
+		region[0] = size.x;
+		region[1] = size.y;
+		region[2] = size.z;
+
+        // Copy buffer contents to image
+        ocl.queue.enqueueCopyBufferToImage(
+                vectorFieldBuffer1,
+                vectorField,
+                0,
+                offset,
+                region
+        );
+
+
+    } else {
+
+
+        Image3D vectorFieldX, vectorFieldY, vectorFieldZ;
+        for(int component = 1; component < 4; component++) {
+        	Image3D initVectorField, vectorField1, vectorField2;
+        	if(getParamBool(parameters, "32bit-vectors")) {
+				vectorField1 = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_FLOAT), size.x, size.y, size.z);
+				vectorField2 = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_FLOAT), size.x, size.y, size.z);
+				initVectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RG, CL_FLOAT), size.x, size.y, size.z);
+			} else {
+				vectorField1 = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_SNORM_INT16), size.x, size.y, size.z);
+				vectorField2 = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_SNORM_INT16), size.x, size.y, size.z);
+				initVectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RG, CL_SNORM_INT16), size.x, size.y, size.z);
+			}
+
+			// init vectorField from image
+			GVFInitKernel.setArg(0, vectorField);
+			GVFInitKernel.setArg(1, vectorField1);
+			GVFInitKernel.setArg(2, initVectorField);
+			GVFInitKernel.setArg(3, component);
+			ocl.queue.enqueueNDRangeKernel(
+					GVFInitKernel,
+					NullRange,
+					NDRange(size.x,size.y,size.z),
+					NDRange(4,4,4)
+			);
+			// Run iterations
+			GVFIterationKernel.setArg(0, initVectorField);
+			GVFIterationKernel.setArg(3, MU);
+
+			for(int i = 0; i < GVFIterations; i++) {
+				if(i % 2 == 0) {
+					GVFIterationKernel.setArg(1, vectorField1);
+					GVFIterationKernel.setArg(2, vectorField2);
+				} else {
+					GVFIterationKernel.setArg(1, vectorField2);
+					GVFIterationKernel.setArg(2, vectorField1);
+				}
+				ocl.queue.enqueueNDRangeKernel(
+					GVFIterationKernel,
+					NullRange,
+					NDRange(size.x,size.y,size.z),
+					NDRange(4,4,4)
+				);
+			}
+			if(component == 1) {
+				vectorFieldX = vectorField1;
+			} else if(component == 2) {
+				vectorFieldY = vectorField1;
+			} else {
+				vectorFieldZ = vectorField1;
+			}
+        }
+
+        // Copy vector fields to image
+        GVFFinishKernel.setArg(0, vectorFieldX);
+        GVFFinishKernel.setArg(1, vectorFieldY);
+        GVFFinishKernel.setArg(2, vectorFieldZ);
+        GVFFinishKernel.setArg(3, vectorField);
+
+        ocl.queue.enqueueNDRangeKernel(
+                GVFFinishKernel,
+                NullRange,
+                NDRange(size.x,size.y,size.z),
+                NDRange(4,4,4)
+        );
+    }
+}
+
 
 Image3D & runGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, SIPL::int3 size, bool useLessMemory) {
 
 	if(useLessMemory) {
-		//return runLowMemoryGVF(ocl,vectorField,parameters);
+		std::cout << "NOTE: Running slow GVF that uses less memory." << std::endl;
+		return runLowMemoryGVF(ocl,vectorField,parameters,size);
 	} else {
+		std::cout << "NOTE: Running fast GVF." << std::endl;
 		return runFastGVF(ocl,vectorField,parameters,size);
 	}
 }
