@@ -138,7 +138,6 @@ paramList initParameters(std::string parameter_dir) {
 
 paramList setParameter(paramList parameters, string name, string value) {
 	if(parameters.bools.count(name) > 0) {
-		std::cout << name << " set to " << value << std::endl;
 		BoolParameter v = parameters.bools[name];
 		bool boolValue = (value == "true") ? true : false;
 		v.set(boolValue);
