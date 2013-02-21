@@ -2014,6 +2014,24 @@ if(getParamBool(parameters, "timing")) {
     return volume;
 }
 
+void writeToVtkFile(paramList &parameters, std::vector<int3> vertices, std::vector<SIPL::int2> edges) {
+	// Write to file
+	std::ofstream file;
+	file.open(getParamStr(parameters, "centerline-vtk-file").c_str());
+	file << "# vtk DataFile Version 3.0\nvtk output\nASCII\n";
+	file << "DATASET POLYDATA\nPOINTS " << vertices.size() << " int\n";
+	for(int i = 0; i < vertices.size(); i++) {
+		file << vertices[i].x << " " << vertices[i].y << " " << vertices[i].z << "\n";
+	}
+
+	file << "\nLINES " << edges.size() << " " << edges.size()*3 << "\n";
+	for(int i = 0; i < edges.size(); i++) {
+		file << "2 " << edges[i].x << " " << edges[i].y << "\n";
+	}
+
+	file.close();
+}
+
 Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radius, Image3D &intensity, Image3D &vectorFieldSmall) {
     const int totalSize = size.x*size.y*size.z;
 	const bool no3Dwrite = !getParamBool(parameters, "3d_write");
@@ -2572,23 +2590,19 @@ if(getParamBool(parameters, "timing")) {
     	ocl.queue.enqueueReadBuffer(edges, CL_FALSE, 0, sum2*2*sizeof(int), edgesArray);
 
     	ocl.queue.finish();
-
-
-    	// Write to file
-    	std::ofstream file;
-    	file.open(getParamStr(parameters, "centerline-vtk-file").c_str());
-    	file << "# vtk DataFile Version 3.0\nvtk output\nASCII\n";
-    	file << "DATASET POLYDATA\nPOINTS " << sum << " int\n";
-    	for(int i = 0; i < sum; i++) {
-    		file << verticesArray[i*3] << " " << verticesArray[i*3+1] << " " << verticesArray[i*3+2] << "\n";
+    	std::vector<int3> vertices;
+    	for(int i = 0; i < sum*3; i++) {
+    		int3 v(verticesArray[i*3],verticesArray[i*3+1],verticesArray[i*3+2]);
+    		vertices.push_back(v);
+    	}
+    	std::vector<SIPL::int2> edges;
+    	for(int i = 0; i < sum2*2; i++) {
+    		SIPL::int2 v(edgesArray[i*2],edgesArray[i*2+1]);
+    		edges.push_back(v);
     	}
 
-    	file << "\nLINES " << sum2 << " " << sum2*3 << "\n";
-    	for(int i = 0; i < sum2; i++) {
-    		file << "2 " << edgesArray[i*2] << " " << edgesArray[i*2+1] << "\n";
-    	}
+    	writeToVtkFile(parameters, vertices, edges);
 
-    	file.close();
     	delete[] verticesArray;
     	delete[] edgesArray;
     }
@@ -2864,7 +2878,6 @@ void inverseGradientRegionGrowing(Segment * s, TubeSegmentation &TS, unordered_s
 		segmentation.insert(POS(a->pos));//test
 		segmentation.insert(POS(b->pos));//test
 	}
-	/*
 
 	// Dilate the centerline
 	std::vector<int3> dilatedCenterline;
@@ -2879,6 +2892,7 @@ void inverseGradientRegionGrowing(Segment * s, TubeSegmentation &TS, unordered_s
 			}
 		}}}
 	}
+	/*
 
 	std::queue<int3> queue;
 	for(int3 pos : dilatedCenterline) {
@@ -3554,26 +3568,28 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
     std::cout << "number of segments is " << finalSegments.size() << std::endl;
 
     // TODO Display final segments and the connections
-    char * centerline = new char[totalSize]();
 	#ifdef USE_SIPL_VISUALIZATION
-    SIPL::Volume<float3> * v = visualizeSegments(finalSegments, *size);
-    for(int i = 0; i < totalSize; i++) {
-    	float3 value = v->get(i);
-    	if(value.x > 0 || value.y > 0) {
-    		centerline[i] = 1;
-    	}
-    	value.z = value.y;
-    	value.y = value.x;
-    	value.x = TS.intensity[i];
-    	v->set(i, value);
-    }
-    v->show(0.3, 0.6);
-	#else
+    visualizeSegments(finalSegments, *size);
+	#endif
+
+    char * centerline = new char[totalSize]();
+    std::vector<int3> vertices;
+    std::vector<SIPL::int2> edges;
+    int counter = 0;
     for(int j = 0; j < segments.size(); j++) {
     	Segment * s = segments[j];
     	for(int i = 0; i < s->sections.size()-1; i++) {
     		CrossSection * a = s->sections[i];
     		CrossSection * b = s->sections[i+1];
+    		vertices.push_back(a->pos);
+    		vertices.push_back(b->pos);
+    		// TODO: NB there are some cases in which a == b here. FIXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+    		//std::cout << a->index << " " << b->index << std::endl;
+    		a->index = counter;
+    		b->index = counter+1;
+    		//std::cout << a->index << " " << b->index << std::endl;
+    		counter += 2;
+    		edges.push_back(SIPL::int2(a->index, b->index));
 			int distance = ceil(a->pos.distance(b->pos));
 			float3 direction(b->pos.x-a->pos.x,b->pos.y-a->pos.y,b->pos.z-a->pos.z);
 			for(int i = 0; i < distance; i++) {
@@ -3587,6 +3603,7 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
     		Connection * c = s->connections[i];
 			CrossSection * a = c->source_section;
 			CrossSection * b = c->target_section;
+    		edges.push_back(SIPL::int2(a->index, b->index));
 			int distance = ceil(a->pos.distance(b->pos));
 			float3 direction(b->pos.x-a->pos.x,b->pos.y-a->pos.y,b->pos.z-a->pos.z);
 			for(int i = 0; i < distance; i++) {
@@ -3598,8 +3615,11 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
 
 		}
     }
-	#endif
     output->setCenterlineVoxels(centerline);
+    if(getParamStr(parameters, "centerline-vtk-file") != "off") {
+    	writeToVtkFile(parameters, vertices, edges);
+    }
+
 
     Image3D * volume = new Image3D;
     if(!getParamBool(parameters, "no-segmentation")) {
