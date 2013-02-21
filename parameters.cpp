@@ -218,7 +218,9 @@ paramList getParameters(int argc, char ** argv) {
             string nextToken = "true";
             if(i+1 < argc) {
                 nextToken = argv[i+1];
-                if(nextToken.substr(0,2) != "--") {
+                if(nextToken.substr(0,2) == "--") {
+                	nextToken = "true";
+                } else {
 					i++;
                 }
             }
