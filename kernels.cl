@@ -1329,7 +1329,8 @@ __kernel void findCandidateCenterpoints2(
 __kernel void GVF3DIteration_one_component(
 		__read_only image3d_t init_vector_field,
 		__read_only image3d_t read_vector_field,
-		__write_only image3d_t write_vector_field
+		__write_only image3d_t write_vector_field,
+		__private float mu
 	) {
     int4 writePos = {
         get_global_id(0),
@@ -1378,14 +1379,14 @@ __kernel void GVF3DInit_one_component(
     	componentValue = value.z;
     }
     write_imagef(vectorField, pos, componentValue);
-    write_imagef(newInitVectorField, pos, (float2)(componentValue,sqrMag));
+    write_imagef(newInitVectorField, pos, (float4)(componentValue,sqrMag,0,0));
 }
 
 __kernel void GVF3DFinish_one_component(
 		__read_only image3d_t vectorFieldX,
 		__read_only image3d_t vectorFieldY,
 		__read_only image3d_t vectorFieldZ,
-		__write_only image3d_t vectorField2,
+		__write_only image3d_t vectorField2
 	) {
     const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
     float4 v;
