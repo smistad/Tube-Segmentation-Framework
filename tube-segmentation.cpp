@@ -3479,7 +3479,7 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
     TS.FxSmall = new float[totalSize];
     TS.FySmall = new float[totalSize];
     TS.FzSmall = new float[totalSize];
-    if(no3Dwrite || getParamBool(parameters, "32bit-vectors")) {
+    if((no3Dwrite && !getParamBool(parameters, "16bit-vectors")) || getParamBool(parameters, "32bit-vectors")) {
     	// 32 bit vector fields
         float * Fs = new float[totalSize*4];
         ocl->queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
@@ -3528,11 +3528,11 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
     }
     TS.radius = new float[totalSize];
     TS.TDF = new float[totalSize];
-    TS.intensity = new float[totalSize];
+    //TS.intensity = new float[totalSize];
     ocl->queue.enqueueReadImage(*TDF, CL_TRUE, offset, region, 0, 0, TS.TDF);
     output->setTDF(TS.TDF);
     ocl->queue.enqueueReadImage(radius, CL_TRUE, offset, region, 0, 0, TS.radius);
-    ocl->queue.enqueueReadImage(dataset, CL_TRUE, offset, region, 0, 0, TS.intensity);
+    //ocl->queue.enqueueReadImage(dataset, CL_TRUE, offset, region, 0, 0, TS.intensity);
 
     // Create pairs of voxels with high TDF
     std::vector<CrossSection *> crossSections = createGraph(TS, *size);
@@ -3605,8 +3605,8 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
     std::vector<int3> vertices;
     std::vector<SIPL::int2> edges;
     int counter = 0;
-    for(int j = 0; j < segments.size(); j++) {
-    	Segment * s = segments[j];
+    for(int j = 0; j < finalSegments.size(); j++) {
+    	Segment * s = finalSegments[j];
     	for(int i = 0; i < s->sections.size()-1; i++) {
     		CrossSection * a = s->sections[i];
     		CrossSection * b = s->sections[i+1];
