@@ -1250,9 +1250,12 @@ __kernel void cropDatasetThreshold(
 __kernel void cropDatasetLung(
         __read_only image3d_t volume,
         __global short * scanLinesInside,
-        __private int sliceDirection
+        __private int sliceDirection,
+        __private int type
     ) {
     short HUlimit = -150;
+    if(type == 2)
+    	HUlimit += 1024;
     int Wlimit = 30;
     int Blimit = 30;
     int sliceNr = get_global_id(0);
@@ -1292,7 +1295,13 @@ __kernel void cropDatasetLung(
                 pos.z = sliceNr;
             }
 
-            if(read_imagei(volume, sampler, pos).x > HUlimit) {
+            short HU;
+            if(type == 1) {
+				HU = read_imagei(volume, sampler, pos).x;
+            }else{
+				HU = read_imageui(volume, sampler, pos).x;
+            }
+            if(HU > HUlimit) {
                 if(currentWcount == Wlimit) {
                     detectedWhiteAreas++;
                     currentBcount = 0;

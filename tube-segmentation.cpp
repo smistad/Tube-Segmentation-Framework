@@ -3905,6 +3905,19 @@ Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &par
         data = (void *)file->data();
         ocl.queue.enqueueWriteImage(dataset, CL_FALSE, offset, region2, 0, 0, data);
         getLimits<unsigned short>(parameters, data, totalSize, &minimum, &maximum);
+
+        if(getParamStr(parameters, "parameters") == "airway") {
+        	// If parameter preset is airway and the volume loaded is unsigned;
+        	// Change min and max to be unsigned as well, and change Threshold in cropping
+			char * str;
+        	float min = atof(parameters.strings["minimum"].get().c_str())+1024.0f;
+        	sprintf(str, "%f", min);
+        	parameters.strings["minimum"].set(str);
+			float max = atof(parameters.strings["maximum"].get().c_str())+1024.0f;
+        	sprintf(str, "%f", max);
+        	parameters.strings["maximum"].set(str);
+        }
+
     } else if(typeName == "MET_CHAR") {
         type = 1;
         file->open(rawFilename, size->x*size->y*size->z*sizeof(char));
@@ -3971,6 +3984,7 @@ Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &par
 			cropDatasetKernel = Kernel(ocl.program, "cropDatasetLung");
 			minScanLines = getParam(parameters, "min-scan-lines-lung");
 			cropping_start_z = "middle";
+			cropDatasetKernel.setArg(3, type);
         } else if(cropping == "threshold") {
         	cropDatasetKernel = Kernel(ocl.program, "cropDatasetThreshold");
 			minScanLines = getParam(parameters, "min-scan-lines-threshold");
