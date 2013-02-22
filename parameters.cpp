@@ -98,8 +98,9 @@ paramList initParameters(std::string parameter_dir) {
 		string defaultValue = line.substr(0,pos);
 
 		if(type == "bool") {
-			string description = line.substr(pos+2, line.length()-(pos+2)-1);
-			BoolParameter v = BoolParameter(defaultValue == "true", description);
+			string description = line.substr(pos+2, line.find("\"", pos+2)-(pos+2));
+			string group = line.substr(line.find("\"", pos+2)+2, line.length()-line.find("\"", pos+2)-1);
+			BoolParameter v = BoolParameter(defaultValue == "true", description, group);
 			parameters.bools[name] = v;
 		} else if(type == "num") {
 			line = line.substr(pos+1);
@@ -112,8 +113,9 @@ paramList initParameters(std::string parameter_dir) {
 			float step = stringToFloat(line);
 
 			int descriptionStart = line.find("\"");
-			string description = line.substr(descriptionStart+1, line.length()-(descriptionStart+1)-1);
-			NumericParameter v = NumericParameter(stringToFloat(defaultValue), min, max, step, description);
+			string description = line.substr(descriptionStart+1, line.find("\"", descriptionStart+1)-(descriptionStart+1));
+			string group = line.substr(line.find("\"", descriptionStart+1)+2, line.length()-(line.find("\"", descriptionStart+1)+1));
+			NumericParameter v = NumericParameter(stringToFloat(defaultValue), min, max, step, description, group);
 			parameters.numerics[name] = v;
 		} else if(type == "str") {
 			vector<string> list ;
@@ -122,8 +124,9 @@ paramList initParameters(std::string parameter_dir) {
 				list = split(line.substr(pos+1, descriptionStart-(pos+1)), " ");
 			}
 
-			string description = line.substr(descriptionStart+1, line.length()-(descriptionStart+1)-1);
-			StringParameter v = StringParameter(defaultValue, list, description);
+			string description = line.substr(descriptionStart+1, line.find("\"", descriptionStart+1)-(descriptionStart+1));
+			string group = line.substr(line.find("\"", descriptionStart+1)+2, line.length()-(line.find("\"", descriptionStart+1)+1));
+			StringParameter v = StringParameter(defaultValue, list, description, group);
 			parameters.strings[name] = v;
 		} else {
 	    	std::string str = "Could not parse parameter of type: " + std::string(type);
@@ -231,9 +234,10 @@ paramList getParameters(int argc, char ** argv) {
 	return parameters;
 }
 
-BoolParameter::BoolParameter(bool defaultValue, string description) {
+BoolParameter::BoolParameter(bool defaultValue, string description, string group) {
 	this->value = defaultValue;
 	this->description = description;
+	this->group = group;
 }
 
 bool BoolParameter::get() {
@@ -244,12 +248,13 @@ void BoolParameter::set(bool value) {
 	this->value = value;
 }
 
-NumericParameter::NumericParameter(float defaultValue, float min, float max, float step, string description) {
+NumericParameter::NumericParameter(float defaultValue, float min, float max, float step, string description, string group) {
 	this->min = min;
 	this->max = max;
 	this->step = step;
 	this->set(defaultValue);
 	this->description = description;
+	this->group = group;
 }
 
 float NumericParameter::get() {
@@ -268,10 +273,11 @@ bool NumericParameter::validate(float value) {
 	return (value >= min) && (value <= max) && ((float)ceil((value-min)/step) - (float)(value-min)/step < 0.0001);
 }
 
-StringParameter::StringParameter(string defaultValue, vector<string> possibilities, string description) {
+StringParameter::StringParameter(string defaultValue, vector<string> possibilities, string description, string group) {
 	this->possibilities = possibilities;
 	this->set(defaultValue);
 	this->description = description;
+	this->group = group;
 }
 
 string StringParameter::get() {
@@ -341,6 +347,33 @@ std::string NumericParameter::getDescription() const {
 std::string StringParameter::getDescription() const {
 	return description;
 }
+
+std::string BoolParameter::getGroup() const {
+	return group;
+}
+
+void BoolParameter::setGroup(std::string group) {
+	this->group = group;
+}
+
+std::string NumericParameter::getGroup() const {
+	return group;
+}
+
+void NumericParameter::setGroup(std::string group) {
+	this->group = group;
+}
+
+std::string StringParameter::getGroup() const {
+	return group;
+}
+
+void StringParameter::setGroup(std::string group) {
+	this->group = group;
+}
+
+
+
 
 
 

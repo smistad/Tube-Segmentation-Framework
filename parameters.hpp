@@ -20,19 +20,22 @@ using boost::tuple;
 class BoolParameter {
 public:
 	BoolParameter() {};
-	BoolParameter(bool defaultValue, std::string description);
+	BoolParameter(bool defaultValue, std::string description, std::string group);
 	bool get();
 	void set(bool value);
 	std::string getDescription() const;
+	std::string getGroup() const;
+	void setGroup(std::string group);
 private:
 	bool value;
 	std::string description;
+	std::string group;
 };
 
 class NumericParameter {
 public:
 	NumericParameter() {};
-	NumericParameter(float defaultValue, float min, float max, float step, std::string description);
+	NumericParameter(float defaultValue, float min, float max, float step, std::string description, std::string group);
 	float get();
 	void set(float value);
 	bool validate(float value);
@@ -43,27 +46,33 @@ public:
 	float getStep() const;
 	void setStep(float step);
 	std::string getDescription() const;
+	std::string getGroup() const;
+	void setGroup(std::string group);
 private:
 	float value;
 	float min;
 	float max;
 	float step;
 	std::string description;
+	std::string group;
 };
 
 class StringParameter {
 public:
 	StringParameter() {};
-	StringParameter(std::string defaultValue, std::vector<std::string> possibilities, std::string description);
+	StringParameter(std::string defaultValue, std::vector<std::string> possibilities, std::string description, std::string group);
 	std::string get();
 	void set(std::string value);
 	bool validate(std::string value);
 	std::vector<std::string> getPossibilities() const;
 	std::string getDescription() const;
+	std::string getGroup() const;
+	void setGroup(std::string group);
 private:
 	std::string value;
 	std::vector<std::string> possibilities;
 	std::string description;
+	std::string group;
 };
 typedef struct paramList {
 	unordered_map<std::string, BoolParameter> bools;
