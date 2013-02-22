@@ -2909,7 +2909,8 @@ void inverseGradientRegionGrowing(Segment * s, TubeSegmentation &TS, unordered_s
 
 	// Dilate the centerline
 	std::vector<int3> dilatedCenterline;
-	for(int3 pos : centerpoints) {
+	for(int i = 0; i < centerpoints.size(); i++) {
+		int3 pos = centerpoints[i];
 		for(int a = -1; a < 2; a++) {
 		for(int b = -1; b < 2; b++) {
 		for(int c = -1; c < 2; c++) {
