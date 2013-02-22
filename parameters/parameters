@@ -1,40 +1,40 @@
-# name type default (valid values)/range description
-device str gpu gpu cpu "Which type of processor to use"
-mode str white black white "Extract black or white tubular structures"
-display bool false "Display results"
-centerline-method str gpu test gpu ridge "Centerline extraction method"
-gvf-iterations num 250 0 2000 50 "Number of GVF iterations"
-radius-min num 0.5 0.5 50.0 0.5 "Minimum radius of tubular structures"
-radius-max num 15.0 2.0 50.0 1.0 "Maximum radius of tubular structures"
-radius-step num 1.0 0.0 5.0 0.5 "Step size of radius"
-fmax num 0.2 0.01 0.9 0.01 "Maximum gradient length (for contrast invariance)"
-gvf-mu num 0.05 0.0 0.05 0.01 "Mu regularization constant of GVF"
-small-blur num 0.0 0.0 5.0 0.5 "Std. Dev. of Gaussian blur for small tubular structures"
-large-blur num 1.0 0.0 15.0 0.5 "Std. Dev. of Gaussian blur for large tubular structures"
-tdf-high num 0.5 0.1 1.0 0.1 "TDF response threshold"
-min-distance num 5 0 100 1 "Minimum length for accepting centerlines (ridge traversal)"
-m-low num 0.05 0.0 0.2 0.01 "Threshold of vector field magnitude (ridge traversal)"
-tdf-low num 0.5 0.0 1.0 0.1 "TDF response lower threshold (ridge traversal)"
-max-below-tdf-low num 0 0 5 1 "Number of allowed voxels below TDF lower threshold (ridge traversal)"
-min-mean-tdf num 0.5 0.1 1.0 0.01 "Minimum mean TDF response along centerline"
-min-tree-length num 5 0 1000 5 "Minimum centerline tree length"
-timing bool false "Timing of application"
-cube-size num 4 0 10 1 "Grid size of (parallel centerline extraction)"
-max-distance num 25.0 0.0 50.0 1.0 "Max distance for connecting two centerpoints (parallel centerline extraction)"
-centerpoints-only bool false "Extract centerpoints only (parallel centerline extraction)"
-tdf-only bool false "Generate TDF response only"
-no-segmentation bool false "Don't perform segmentation"
-centerline-vtk-file str off "Filepath to centerline VTK file (ommit to skip)"
-sphere-segmentation bool false "Do a simple sphere segmentation"
-minimum str off "Minimum intensity value"
-maximum str off "Maximum intensity value"
-cropping str no no lung threshold "Cropping method"
-min-scan-lines-threshold num 10 0 1024 1 "Minimum nr. of scan lines (threshold cropping)"
-min-scan-lines-lung num 200 0 1024 1 "Minimum nr. of scan lines (lung cropping)"
-cropping-threshold num 0 0 3000 10 "Cropping threshold"
-cropping-start-z str end end middle "Where to start cropping in the z direction"
-buffers-only bool false "Use OpenCL buffers instead of 3D textures"
-storage-dir str off "Directory of where to store results (ommit to skip)"
-32bit-vectors bool false "Force the use of 32 bit vectors"
-16bit-vectors bool false "Force the use of 16 bit vectors"
-parameters str none none airway us-doppler us-accuracy vascusynth mr-angio aaa "Which parameter preset to use"
+# name type default (valid values)/range description group
+device str gpu gpu cpu "Which type of processor to use" general
+mode str white black white "Extract black or white tubular structures" general
+display bool false "Display results" advanced
+centerline-method str gpu test gpu ridge "Centerline extraction method" general
+gvf-iterations num 250 0 2000 50 "Number of GVF iterations" gradient-vector-flow
+radius-min num 0.5 0.5 50.0 0.5 "Minimum radius of tubular structures" tube-detection-filter
+radius-max num 15.0 2.0 50.0 1.0 "Maximum radius of tubular structures" tube-detection-filter
+radius-step num 1.0 0.0 5.0 0.5 "Step size of radius" tube-detection-filter
+fmax num 0.2 0.01 0.9 0.01 "Maximum gradient length (for contrast invariance)" general
+gvf-mu num 0.05 0.0 0.05 0.01 "Mu regularization constant of GVF" gradient-vector-flow
+small-blur num 0.0 0.0 5.0 0.5 "Std. Dev. of Gaussian blur for small tubular structures" general
+large-blur num 1.0 0.0 15.0 0.5 "Std. Dev. of Gaussian blur for large tubular structures" general
+tdf-high num 0.5 0.1 1.0 0.1 "TDF response threshold" centerline-general
+min-distance num 5 0 100 1 "Minimum length for accepting centerlines (ridge traversal)" centerline-ridge
+m-low num 0.05 0.0 0.2 0.01 "Threshold of vector field magnitude (ridge traversal)" centerline-ridge
+tdf-low num 0.5 0.0 1.0 0.1 "TDF response lower threshold (ridge traversal)" centerline-ridge
+max-below-tdf-low num 0 0 5 1 "Number of allowed voxels below TDF lower threshold (ridge traversal)" centerline-ridge
+min-mean-tdf num 0.5 0.1 1.0 0.01 "Minimum mean TDF response along centerline" centerline-general
+min-tree-length num 5 0 1000 5 "Minimum centerline tree length" centerline-general
+timing bool false "Timing of application" advanced
+cube-size num 4 0 10 1 "Grid size of (parallel centerline extraction)" centerline-gpu
+max-distance num 25.0 0.0 50.0 1.0 "Max distance for connecting two centerpoints (parallel centerline extraction)" centerline-gpu
+centerpoints-only bool false "Extract centerpoints only (parallel centerline extraction)" centerline-gpu
+tdf-only bool false "Generate TDF response only" tube-detection-filter
+no-segmentation bool false "Don't perform segmentation" general
+centerline-vtk-file str off "Filepath to centerline VTK file (ommit to skip)" storage
+sphere-segmentation bool false "Do a simple sphere segmentation" general
+minimum str off "Minimum intensity value" general
+maximum str off "Maximum intensity value" general
+cropping str no no lung threshold "Cropping method" cropping
+min-scan-lines-threshold num 10 0 1024 1 "Minimum nr. of scan lines (threshold cropping)" cropping
+min-scan-lines-lung num 200 0 1024 1 "Minimum nr. of scan lines (lung cropping)" cropping
+cropping-threshold num 0 0 3000 10 "Cropping threshold" cropping
+cropping-start-z str end end middle "Where to start cropping in the z direction" cropping
+buffers-only bool false "Use OpenCL buffers instead of 3D textures" advanced
+storage-dir str off "Directory of where to store results (ommit to skip)" storage
+32bit-vectors bool false "Force the use of 32 bit vectors" advanced
+16bit-vectors bool false "Force the use of 16 bit vectors" advanced
+parameters str none none airway us-doppler us-accuracy vascusynth mr-angio aaa "Which parameter preset to use" preset
