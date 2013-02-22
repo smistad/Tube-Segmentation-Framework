@@ -1016,6 +1016,7 @@ void runFastGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, SIPL::
                         NullRange
                 );
         }
+        ocl.queue.finish();
 
         vectorFieldBuffer1 = Buffer(
                 ocl.context,
@@ -1131,11 +1132,6 @@ void runLowMemoryGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, S
                 CL_MEM_READ_WRITE,
                 vectorFieldSize*totalSize
 			);
-			Buffer vectorField2 = Buffer(
-                ocl.context,
-                CL_MEM_READ_WRITE,
-                vectorFieldSize*totalSize
-			);
 			Buffer initVectorField = Buffer(
                 ocl.context,
                 CL_MEM_READ_WRITE,
@@ -1151,6 +1147,13 @@ void runLowMemoryGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, S
 					NullRange,
 					NDRange(size.x,size.y,size.z),
 					NullRange
+			);
+			ocl.queue.finish();
+
+			Buffer vectorField2 = Buffer(
+                ocl.context,
+                CL_MEM_READ_WRITE,
+                vectorFieldSize*totalSize
 			);
 
 			// Run iterations
