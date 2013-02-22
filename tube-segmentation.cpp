@@ -93,12 +93,17 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
         v.set(true);
         parameters.bools["3d_write"] = v;
     } else {
+        std::cout << "NOTE: Writing to 3D textures is not supported on the selected device." << std::endl;
         BoolParameter v = parameters.bools["3d_write"];
         v.set(false);
         parameters.bools["3d_write"] = v;
         std::string filename = kernel_dir+"/kernels_no_3d_write.cl";
-        ocl->program = buildProgramFromSource(ocl->context, filename.c_str());
-        std::cout << "NOTE: Writing to 3D textures is not supported on the selected device." << std::endl;
+        std::string buildOptions = "";
+        if(getParamBool(parameters, "16bit-vectors")) {
+        	buildOptions = "-D VECTORS_16BIT";
+        	std::cout << "NOTE: Forcing the use of 16 bit buffers. This is slow, but uses half the memory." << std::endl;
+        }
+        ocl->program = buildProgramFromSource(ocl->context, filename, buildOptions);
     }
 
     START_TIMER
@@ -1111,23 +1116,27 @@ void runLowMemoryGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, S
 
     std::cout << "Running GVF with " << GVFIterations << " iterations " << std::endl;
     if(no3Dwrite) {
+    	int vectorFieldSize = sizeof(float);
+    	if(getParamBool(parameters, "16bit-vectors")) {
+    		vectorFieldSize = sizeof(short);
+    	}
     	Buffer vectorFieldX, vectorFieldY, vectorFieldZ;
         for(int component = 1; component < 4; component++) {
 
         	Buffer vectorField1 = Buffer(
                 ocl.context,
                 CL_MEM_READ_WRITE,
-                sizeof(float)*totalSize
+                vectorFieldSize*totalSize
 			);
 			Buffer vectorField2 = Buffer(
                 ocl.context,
                 CL_MEM_READ_WRITE,
-                sizeof(float)*totalSize
+                vectorFieldSize*totalSize
 			);
 			Buffer initVectorField = Buffer(
                 ocl.context,
                 CL_MEM_READ_WRITE,
-                2*sizeof(float)*totalSize
+                2*vectorFieldSize*totalSize
 			);
 
 			GVFInitKernel.setArg(0, vectorField);
@@ -1175,7 +1184,7 @@ void runLowMemoryGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, S
         Buffer vectorFieldBuffer = Buffer(
                 ocl.context,
                 CL_MEM_WRITE_ONLY,
-                4*sizeof(float)*totalSize
+                4*vectorFieldSize*totalSize
         );
 
         // Copy vector field to image
@@ -1384,8 +1393,14 @@ if(getParamBool(parameters, "timing")) {
 }
     if(no3Dwrite) {
         // Create auxillary buffer
-        Buffer vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(float)*totalSize);
-        vectorField = Image3D(ocl.context, CL_MEM_READ_ONLY, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
+        Buffer vectorFieldBuffer;
+        if(getParamBool(parameters, "16bit-vectors")) {
+			vectorField = Image3D(ocl.context, CL_MEM_READ_ONLY, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
+			vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(short)*totalSize);
+        } else {
+			vectorField = Image3D(ocl.context, CL_MEM_READ_ONLY, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
+			vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(float)*totalSize);
+        }
 
         // Run create vector field
         createVectorFieldKernel.setArg(0, blurredVolume);
@@ -1561,8 +1576,15 @@ if(getParamBool(parameters, "timing")) {
 }
    if(no3Dwrite) {
         // Create auxillary buffer
-        Buffer vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(float)*totalSize);
-        vectorField = Image3D(ocl.context, CL_MEM_READ_ONLY, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
+        Buffer vectorFieldBuffer;
+		if(getParamBool(parameters, "16bit-vectors")) {
+			vectorField = Image3D(ocl.context, CL_MEM_READ_ONLY, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
+			vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(short)*totalSize);
+        } else {
+			vectorField = Image3D(ocl.context, CL_MEM_READ_ONLY, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
+			vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(float)*totalSize);
+        }
+
 
         // Run create vector field
         createVectorFieldKernel.setArg(0, blurredVolume);
@@ -1621,7 +1643,7 @@ if(getParamBool(parameters, "timing")) {
 }
 
 	try {
-		runGVF(ocl, vectorField, parameters, size, false);
+		runGVF(ocl, vectorField, parameters, size, true);
 	} catch(cl::Error e) {
 		if(e.err() == -4 || e.err() == -5) {
 			std::cout << "NOTE: Ran out of memory. Trying slower GVF instead." << std::endl;
