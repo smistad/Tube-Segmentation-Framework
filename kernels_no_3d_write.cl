@@ -19,10 +19,10 @@ __constant sampler_t hpSampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP
 #define SNORM16_TO_FLOAT(vector) max(-1.0f, convert_float(vector) / 32767.0f)
 #define VECTOR_FIELD_TYPE short
 #else
-#define FLOAT_TO_SNORM_INT16_4(vector) vector
-#define SNORM_INT16_TO_FLOAT_4(vector) vector
-#define FLOAT_TO_SNORM_INT16_3(vector) vector
-#define SNORM_INT16_TO_FLOAT_3(vector) vector
+#define FLOAT_TO_SNORM16_4(vector) vector
+#define SNORM16_TO_FLOAT_4(vector) vector
+#define FLOAT_TO_SNORM16_3(vector) vector
+#define SNORM16_TO_FLOAT_3(vector) vector
 #define FLOAT_TO_SNORM16_2(vector) vector
 #define SNORM16_TO_FLOAT_2(vector) vector
 #define FLOAT_TO_SNORM16(vector) vector
