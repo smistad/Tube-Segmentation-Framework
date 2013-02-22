@@ -2613,26 +2613,41 @@ if(getParamBool(parameters, "timing")) {
     	// Transfer edges (size: sum2) and vertices (size: sum) buffers to host
     	int * verticesArray = new int[sum*3];
     	int * edgesArray = new int[sum2*3];
+    	int * CArray = new int[sum];
+    	int * SArray = new int[sum];
 
     	ocl.queue.enqueueReadBuffer(vertices, CL_FALSE, 0, sum*3*sizeof(int), verticesArray);
     	ocl.queue.enqueueReadBuffer(edges, CL_FALSE, 0, sum2*2*sizeof(int), edgesArray);
+    	ocl.queue.enqueueReadBuffer(C, CL_FALSE, 0, sum*sizeof(int), CArray);
+    	ocl.queue.enqueueReadBuffer(S, CL_FALSE, 0, sum2*sizeof(int), SArray);
 
     	ocl.queue.finish();
     	std::vector<int3> vertices;
-    	for(int i = 0; i < sum*3; i++) {
-    		int3 v(verticesArray[i*3],verticesArray[i*3+1],verticesArray[i*3+2]);
-    		vertices.push_back(v);
+    	int counter = 0;
+    	int * indexes = new int[sum];
+    	for(int i = 0; i < sum; i++) {
+    		if(SArray[CArray[i]] >= minTreeLength) {
+				int3 v(verticesArray[i*3],verticesArray[i*3+1],verticesArray[i*3+2]);
+				vertices.push_back(v);
+				indexes[i] = counter;
+				counter++;
+    		}
     	}
     	std::vector<SIPL::int2> edges;
-    	for(int i = 0; i < sum2*2; i++) {
-    		SIPL::int2 v(edgesArray[i*2],edgesArray[i*2+1]);
-    		edges.push_back(v);
+    	for(int i = 0; i < sum2; i++) {
+    		if(SArray[CArray[edgesArray[i*2]]] >= minTreeLength) {
+				SIPL::int2 v(indexes[edgesArray[i*2]],indexes[edgesArray[i*2+1]]);
+				edges.push_back(v);
+    		}
     	}
 
     	writeToVtkFile(parameters, vertices, edges);
 
     	delete[] verticesArray;
     	delete[] edgesArray;
+    	delete[] CArray;
+    	delete[] SArray;
+    	delete[] indexes;
     }
 
 if(getParamBool(parameters, "timing")) {
