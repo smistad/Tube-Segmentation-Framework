@@ -53,14 +53,14 @@ void print(paramList parameters){
 	unordered_map<std::string, StringParameter>::iterator sIt;
 
 	for(bIt = parameters.bools.begin(); bIt != parameters.bools.end(); ++bIt){
-		std::cout << bIt->first << " = " << bIt->second.get() << std::endl;
+		std::cout << bIt->first << " = " << bIt->second.get() << " " << bIt->second.getDescription() << " "  << bIt->second.getGroup() << std::endl;
 	}
 
 	for(nIt = parameters.numerics.begin(); nIt != parameters.numerics.end(); ++nIt){
-		std::cout << nIt->first << " = " << nIt->second.get() << std::endl;
+		std::cout << nIt->first << " = " << nIt->second.get() << " " << nIt->second.getDescription() << " "  << nIt->second.getGroup() << std::endl;
 	}
 	for(sIt = parameters.strings.begin(); sIt != parameters.strings.end(); ++sIt){
-		std::cout << sIt->first << " = " << sIt->second.get() << std::endl;
+		std::cout << sIt->first << " = " << sIt->second.get() << " " << sIt->second.getDescription() << " "  << sIt->second.getGroup() << std::endl;
 	}
 }
 
