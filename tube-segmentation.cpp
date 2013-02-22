@@ -973,16 +973,19 @@ void runFastGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, SIPL::
 
     std::cout << "Running GVF with " << GVFIterations << " iterations " << std::endl;
     if(no3Dwrite) {
+    	int vectorFieldSize = sizeof(float);
+    	if(getParamBool(parameters, "16bit-vectors"))
+    		vectorFieldSize = sizeof(short);
         // Create auxillary buffers
         Buffer vectorFieldBuffer = Buffer(
                 ocl.context,
                 CL_MEM_READ_WRITE,
-                3*sizeof(float)*totalSize
+                3*vectorFieldSize*totalSize
         );
         Buffer vectorFieldBuffer1 = Buffer(
                 ocl.context,
                 CL_MEM_READ_WRITE,
-                3*sizeof(float)*totalSize
+                3*vectorFieldSize*totalSize
         );
 
         GVFInitKernel.setArg(0, vectorField);
@@ -1017,7 +1020,7 @@ void runFastGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, SIPL::
         vectorFieldBuffer1 = Buffer(
                 ocl.context,
                 CL_MEM_WRITE_ONLY,
-                4*sizeof(float)*totalSize
+                4*vectorFieldSize*totalSize
         );
 
         // Copy vector field to image
@@ -1643,7 +1646,7 @@ if(getParamBool(parameters, "timing")) {
 }
 
 	try {
-		runGVF(ocl, vectorField, parameters, size, true);
+		runGVF(ocl, vectorField, parameters, size, false);
 	} catch(cl::Error e) {
 		if(e.err() == -4 || e.err() == -5) {
 			std::cout << "NOTE: Ran out of memory. Trying slower GVF instead." << std::endl;
