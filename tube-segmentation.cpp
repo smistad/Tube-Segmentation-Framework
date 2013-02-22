@@ -3632,6 +3632,11 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
     		Connection * c = s->connections[i];
 			CrossSection * a = c->source_section;
 			CrossSection * b = c->target_section;
+    		vertices.push_back(a->pos);
+    		vertices.push_back(b->pos);
+    		a->index = counter;
+    		b->index = counter+1;
+    		counter += 2;
     		edges.push_back(SIPL::int2(a->index, b->index));
 			int distance = ceil(a->pos.distance(b->pos));
 			float3 direction(b->pos.x-a->pos.x,b->pos.y-a->pos.y,b->pos.z-a->pos.z);
