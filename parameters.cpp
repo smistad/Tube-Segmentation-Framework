@@ -270,7 +270,7 @@ void NumericParameter::set(float value) {
 }
 
 bool NumericParameter::validate(float value) {
-	return (value >= min) && (value <= max) && ((float)ceil((value-min)/step) - (float)(value-min)/step < 0.0001);
+	return (value >= min) && (value <= max) ;//&& ((float)ceil((value-min)/step) - (float)(value-min)/step < 0.0001);
 }
 
 StringParameter::StringParameter(string defaultValue, vector<string> possibilities, string description, string group) {
