@@ -58,4 +58,26 @@ TEST(ParameterTest, Description) {
 	std::vector<std::string> possibilities;
 	StringParameter p3("asd", possibilities, "test description", "asd");
 	EXPECT_EQ("test description", p3.getDescription());
+
+	paramList parameters = initParameters(PARAMETERS_DIR);
+	EXPECT_EQ("Display results", parameters.bools["display"].getDescription());
+	EXPECT_EQ("Extract black or white tubular structures", parameters.strings["mode"].getDescription());
+	EXPECT_EQ("Minimum radius of tubular structures", parameters.numerics["radius-min"].getDescription());
+}
+
+TEST(ParameterTest, Group) {
+	BoolParameter p(true, "test description", "asd");
+	EXPECT_EQ("asd", p.getGroup());
+
+	NumericParameter p2(0.1, 0.1, 0.2, 0.1, "test description", "asd");
+	EXPECT_EQ("asd", p2.getGroup());
+
+	std::vector<std::string> possibilities;
+	StringParameter p3("asd", possibilities, "test description", "asd");
+	EXPECT_EQ("asd", p3.getGroup());
+
+	paramList parameters = initParameters(PARAMETERS_DIR);
+	EXPECT_EQ("advanced", parameters.bools["display"].getGroup());
+	EXPECT_EQ("general", parameters.strings["mode"].getGroup());
+	EXPECT_EQ("tube-detection-filter", parameters.numerics["radius-min"].getGroup());
 }
