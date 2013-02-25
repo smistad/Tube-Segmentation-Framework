@@ -80,9 +80,9 @@ typedef struct paramList {
 	unordered_map<std::string, StringParameter> strings;
 } paramList;
 
-paramList loadParameterPreset(paramList parameters, std::string parameter_dir);
+void loadParameterPreset(paramList &parameters, std::string parameter_dir);
 paramList initParameters(std::string parameter_dir);
-paramList setParameter(paramList parameters, std::string name, std::string value);
+void setParameter(paramList &parameters, std::string name, std::string value);
 paramList getParameters(int argc, char ** argv);
 float getParam(paramList parameters, std::string parameterName);
 bool getParamBool(paramList parameters, std::string parameterName);

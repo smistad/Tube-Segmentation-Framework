@@ -16,9 +16,9 @@ class TubeSegmentationPCE : public ::testing::Test {
 protected:
 	virtual void SetUp() {
 		parameters = initParameters(PARAMETERS_DIR);
-		parameters = setParameter(parameters, "parameters", "Synthetic-Vascusynth");
-		parameters = setParameter(parameters, "centerline-method", "gpu");
-		parameters = loadParameterPreset(parameters, PARAMETERS_DIR);
+		setParameter(parameters, "parameters", "Synthetic-Vascusynth");
+		setParameter(parameters, "centerline-method", "gpu");
+		loadParameterPreset(parameters, PARAMETERS_DIR);
 	};
 	virtual void TearDown() {
 
@@ -31,9 +31,9 @@ class TubeSegmentationRidge : public ::testing::Test {
 protected:
 	virtual void SetUp() {
 		parameters = initParameters(PARAMETERS_DIR);
-		parameters = setParameter(parameters, "parameters", "Synthetic-Vascusynth");
-		parameters = setParameter(parameters, "centerline-method", "ridge");
-		parameters = loadParameterPreset(parameters, PARAMETERS_DIR);
+		setParameter(parameters, "parameters", "Synthetic-Vascusynth");
+		setParameter(parameters, "centerline-method", "ridge");
+		loadParameterPreset(parameters, PARAMETERS_DIR);
 	};
 	virtual void TearDown() {
 
@@ -61,9 +61,9 @@ TubeValidation runSyntheticData(paramList parameters) {
 
 TEST_F(TubeSegmentationPCE, SystemTestWithSyntheticDataNormal) {
 	// Normal execution
+	setParameter(parameters, "buffers-only", "false");
+	setParameter(parameters, "32bit-vectors", "false");
 	result = runSyntheticData(parameters);
-	parameters = setParameter(parameters, "buffers-only", "false");
-	parameters = setParameter(parameters, "32bit-vectors", "false");
 	EXPECT_GT(1.5, result.averageDistanceFromCenterline);
 	EXPECT_LT(75.0, result.percentageExtractedCenterlines);
 	EXPECT_LT(0.7, result.precision);
@@ -72,8 +72,8 @@ TEST_F(TubeSegmentationPCE, SystemTestWithSyntheticDataNormal) {
 
 TEST_F(TubeSegmentationPCE, SystemTestWithSyntheticData32bit) {
 	// 32 bit 3D textures
-	parameters = setParameter(parameters, "buffers-only", "false");
-	parameters = setParameter(parameters, "32bit-vectors", "true");
+	setParameter(parameters, "buffers-only", "false");
+	setParameter(parameters, "32bit-vectors", "true");
 	result = runSyntheticData(parameters);
 	EXPECT_GT(1.5, result.averageDistanceFromCenterline);
 	EXPECT_LT(75.0, result.percentageExtractedCenterlines);
@@ -83,8 +83,8 @@ TEST_F(TubeSegmentationPCE, SystemTestWithSyntheticData32bit) {
 
 TEST_F(TubeSegmentationPCE, SystemTestWithSyntheticData32bitBuffers) {
 	// 32 bit buffers
-	parameters = setParameter(parameters, "buffers-only", "true");
-	parameters = setParameter(parameters, "32bit-vectors", "true");
+	setParameter(parameters, "buffers-only", "true");
+	setParameter(parameters, "32bit-vectors", "true");
 	result = runSyntheticData(parameters);
 	EXPECT_GT(1.5, result.averageDistanceFromCenterline);
 	EXPECT_LT(75.0, result.percentageExtractedCenterlines);
@@ -94,8 +94,8 @@ TEST_F(TubeSegmentationPCE, SystemTestWithSyntheticData32bitBuffers) {
 
 TEST_F(TubeSegmentationPCE, SystemTestWithSyntheticData16bitBuffers) {
 	// 16 bit buffers
-	parameters = setParameter(parameters, "buffers-only", "true");
-	parameters = setParameter(parameters, "32bit-vectors", "false");
+	setParameter(parameters, "buffers-only", "true");
+	setParameter(parameters, "32bit-vectors", "false");
 	result = runSyntheticData(parameters);
 	EXPECT_GT(1.5, result.averageDistanceFromCenterline);
 	EXPECT_LT(75.0, result.percentageExtractedCenterlines);
@@ -105,9 +105,9 @@ TEST_F(TubeSegmentationPCE, SystemTestWithSyntheticData16bitBuffers) {
 
 TEST_F(TubeSegmentationRidge, SystemTestWithSyntheticDataNormal) {
 	// Normal execution
+	setParameter(parameters, "buffers-only", "false");
+	setParameter(parameters, "32bit-vectors", "false");
 	result = runSyntheticData(parameters);
-	parameters = setParameter(parameters, "buffers-only", "false");
-	parameters = setParameter(parameters, "32bit-vectors", "false");
 	EXPECT_GT(0.5, result.averageDistanceFromCenterline);
 	EXPECT_LT(75.0, result.percentageExtractedCenterlines);
 	EXPECT_LT(0.7, result.precision);
@@ -116,8 +116,8 @@ TEST_F(TubeSegmentationRidge, SystemTestWithSyntheticDataNormal) {
 
 TEST_F(TubeSegmentationRidge, SystemTestWithSyntheticData32bit) {
 	// 32 bit 3D textures
-	parameters = setParameter(parameters, "buffers-only", "false");
-	parameters = setParameter(parameters, "32bit-vectors", "true");
+	setParameter(parameters, "buffers-only", "false");
+	setParameter(parameters, "32bit-vectors", "true");
 	result = runSyntheticData(parameters);
 	EXPECT_GT(0.5, result.averageDistanceFromCenterline);
 	EXPECT_LT(75.0, result.percentageExtractedCenterlines);
@@ -127,8 +127,8 @@ TEST_F(TubeSegmentationRidge, SystemTestWithSyntheticData32bit) {
 
 TEST_F(TubeSegmentationRidge, SystemTestWithSyntheticData32bitBuffers) {
 	// 32 bit buffers
-	parameters = setParameter(parameters, "buffers-only", "true");
-	parameters = setParameter(parameters, "32bit-vectors", "true");
+	setParameter(parameters, "buffers-only", "true");
+	setParameter(parameters, "32bit-vectors", "true");
 	result = runSyntheticData(parameters);
 	EXPECT_GT(0.5, result.averageDistanceFromCenterline);
 	EXPECT_LT(75.0, result.percentageExtractedCenterlines);
@@ -138,8 +138,8 @@ TEST_F(TubeSegmentationRidge, SystemTestWithSyntheticData32bitBuffers) {
 
 TEST_F(TubeSegmentationRidge, SystemTestWithSyntheticData16bitBuffers) {
 	// 16 bit buffers
-	parameters = setParameter(parameters, "buffers-only", "true");
-	parameters = setParameter(parameters, "32bit-vectors", "false");
+	setParameter(parameters, "buffers-only", "true");
+	setParameter(parameters, "32bit-vectors", "false");
 	result = runSyntheticData(parameters);
 	EXPECT_GT(0.5, result.averageDistanceFromCenterline);
 	EXPECT_LT(75.0, result.percentageExtractedCenterlines);

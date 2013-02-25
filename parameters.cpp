@@ -33,7 +33,7 @@ vector<string> split(string str, string delimiter) {
 	return list;
 }
 
-paramList loadParameterPreset(paramList parameters, std::string parameter_dir) {
+void loadParameterPreset(paramList &parameters, std::string parameter_dir) {
 	// Check if parameters is set
     if(getParamStr(parameters, "parameters") != "none") {
     	std::string parameterFilename;
@@ -63,16 +63,15 @@ paramList loadParameterPreset(paramList parameters, std::string parameter_dir) {
     				// parameter with value
 					std::string name = line.substr(0, spacePos);
 					std::string value = line.substr(spacePos+1);
-					parameters = setParameter(parameters, name, value);
+					setParameter(parameters, name, value);
     			} else {
     				// parameter with no value
-    				parameters = setParameter(parameters, line, "true");
+    				setParameter(parameters, line, "true");
     			}
     		}
     		file.close();
     	}
     }
-    return parameters;
 }
 
 paramList initParameters(std::string parameter_dir) {
@@ -141,7 +140,7 @@ paramList initParameters(std::string parameter_dir) {
 	return parameters;
 }
 
-paramList setParameter(paramList parameters, string name, string value) {
+void setParameter(paramList &parameters, string name, string value) {
 	if(parameters.bools.count(name) > 0) {
 		BoolParameter v = parameters.bools[name];
 		bool boolValue = (value == "true") ? true : false;
@@ -159,8 +158,6 @@ paramList setParameter(paramList parameters, string name, string value) {
     	std::string str = "Can not set value for parameter with name: " + name;
         throw SIPL::SIPLException(str.c_str());
 	}
-
-	return parameters;
 
 }
 
@@ -208,12 +205,12 @@ paramList getParameters(int argc, char ** argv) {
                 }
             }
             if(token.substr(2) == "parameters")
-				parameters = setParameter(parameters, token.substr(2), nextToken);
+				setParameter(parameters, token.substr(2), nextToken);
         }
     }
 
     // If a parameter preset is given load these values
-    parameters = loadParameterPreset(parameters, std::string(PARAMETERS_DIR));
+    loadParameterPreset(parameters, std::string(PARAMETERS_DIR));
 
     // Go through each parameter, first parameter is filename
 	for(int i = 2; i < argc; i++) {
@@ -229,7 +226,7 @@ paramList getParameters(int argc, char ** argv) {
 					i++;
                 }
             }
-			parameters = setParameter(parameters, token.substr(2), nextToken);
+			setParameter(parameters, token.substr(2), nextToken);
         }
     }
 

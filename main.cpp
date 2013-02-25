@@ -10,7 +10,7 @@ int main(int argc, char ** argv) {
     TSFOutput * output;
     try {
 		output = run(filename, parameters, std::string(KERNELS_DIR));
-    } catch(SIPL::SIPLException e) {
+    } catch(SIPL::SIPLException &e) {
     	std::cout << e.what() << std::endl;
 
     	return -1;
