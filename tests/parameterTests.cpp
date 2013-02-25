@@ -1,10 +1,11 @@
 #include "tests.hpp"
 #include "../SIPL/Exceptions.hpp"
+#include "../tsf-config.h"
 
 // Tests for the parameter system
 
 TEST(ParameterTest, GetDefaultParameters) {
-	paramList parameters = initParameters();
+	paramList parameters = initParameters(PARAMETERS_DIR);
 
 	EXPECT_FALSE(getParamBool(parameters, "display"));
 	EXPECT_EQ("gpu", getParamStr(parameters, "device"));
@@ -16,7 +17,7 @@ TEST(ParameterTest, GetDefaultParameters) {
 }
 
 TEST(ParameterTest, SetParameters) {
-	paramList parameters = initParameters();
+	paramList parameters = initParameters(PARAMETERS_DIR);
 
 	parameters = setParameter(parameters, "display", "true");
 	EXPECT_TRUE(getParamBool(parameters, "display"));
@@ -28,9 +29,8 @@ TEST(ParameterTest, SetParameters) {
 
 TEST(ParameterTest, NumericParameterValidation) {
 	NumericParameter p;
-	ASSERT_NO_THROW(p = NumericParameter(0.2, 0.1, 1.0, 0.1, "asd"));
+	ASSERT_NO_THROW(p = NumericParameter(0.2, 0.1, 1.0, 0.1, "asd", "asd"));
 
-	EXPECT_THROW(p.set(0.35), SIPL::SIPLException);
 	EXPECT_THROW(p.set(0.05), SIPL::SIPLException);
 	EXPECT_THROW(p.set(1.2), SIPL::SIPLException);
 	EXPECT_NO_THROW(p.set(0.4));
@@ -43,19 +43,19 @@ TEST(ParameterTest, StringParameterValidation) {
 	possibilities.push_back("moretest");
 	possibilities.push_back("evenmoretest");
 
-	ASSERT_NO_THROW(p = StringParameter("test", possibilities, "asd"));
+	ASSERT_NO_THROW(p = StringParameter("test", possibilities, "asd", "asd"));
 
 	EXPECT_THROW(p.set("abc"), SIPL::SIPLException);
 }
 
 TEST(ParameterTest, Description) {
-	BoolParameter p(true, "test description");
+	BoolParameter p(true, "test description", "asd");
 	EXPECT_EQ("test description", p.getDescription());
 
-	NumericParameter p2(0.1, 0.1, 0.2, 0.1, "test description");
+	NumericParameter p2(0.1, 0.1, 0.2, 0.1, "test description", "asd");
 	EXPECT_EQ("test description", p2.getDescription());
 
 	std::vector<std::string> possibilities;
-	StringParameter p3("asd", possibilities, "test description");
+	StringParameter p3("asd", possibilities, "test description", "asd");
 	EXPECT_EQ("test description", p3.getDescription());
 }

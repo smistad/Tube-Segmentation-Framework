@@ -7,18 +7,18 @@
 
 
 TEST(TubeSegmentation, WrongFilenameException) {
-	paramList parameters = initParameters();
-	ASSERT_THROW(run("somefilethatdoesntexist.mhd", parameters), SIPL::IOException);
+	paramList parameters = initParameters(PARAMETERS_DIR);
+	ASSERT_THROW(run("somefilethatdoesntexist.mhd", parameters, KERNELS_DIR), SIPL::IOException);
 }
 
 
 class TubeSegmentationPCE : public ::testing::Test {
 protected:
 	virtual void SetUp() {
-		parameters = initParameters();
-		parameters = setParameter(parameters, "parameters", "vascusynth");
+		parameters = initParameters(PARAMETERS_DIR);
+		parameters = setParameter(parameters, "parameters", "Synthetic-Vascusynth");
 		parameters = setParameter(parameters, "centerline-method", "gpu");
-		parameters = loadParameterPreset(parameters);
+		parameters = loadParameterPreset(parameters, PARAMETERS_DIR);
 	};
 	virtual void TearDown() {
 
@@ -30,10 +30,10 @@ protected:
 class TubeSegmentationRidge : public ::testing::Test {
 protected:
 	virtual void SetUp() {
-		parameters = initParameters();
-		parameters = setParameter(parameters, "parameters", "vascusynth");
+		parameters = initParameters(PARAMETERS_DIR);
+		parameters = setParameter(parameters, "parameters", "Synthetic-Vascusynth");
 		parameters = setParameter(parameters, "centerline-method", "ridge");
-		parameters = loadParameterPreset(parameters);
+		parameters = loadParameterPreset(parameters, PARAMETERS_DIR);
 	};
 	virtual void TearDown() {
 
@@ -46,7 +46,7 @@ protected:
 TubeValidation runSyntheticData(paramList parameters) {
 	std::string datasetNr = "1";
 	TSFOutput * output;
-	output = run(std::string(TESTDATA_DIR) + std::string("/synthetic/dataset_") + datasetNr + std::string("/noisy.mhd"), parameters);
+	output = run(std::string(TESTDATA_DIR) + std::string("/synthetic/dataset_") + datasetNr + std::string("/noisy.mhd"), parameters, KERNELS_DIR);
 
 	TubeValidation result = validateTube(
 			output,
