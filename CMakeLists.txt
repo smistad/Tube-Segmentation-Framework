@@ -78,10 +78,12 @@ endif()
 #------------------------------------------------------------------------------
 find_package(GTest)
 if(GTEST_FOUND)
+if(SIPL_USE_GTK)
 	message("Google test framework found. Enabling testing ...")
 	target_link_libraries(tubeSegmentationLib OCL-Utilities SIPL ${Boost_LIBRARIES})
 	enable_testing()
 	add_subdirectory(tests)
+endif()
 endif()
 
 #------------------------------------------------------------------------------

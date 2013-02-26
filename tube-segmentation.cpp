@@ -18,7 +18,6 @@ using std::unordered_set;
 using boost::unordered_set;
 #endif
 #include "histogram-pyramids.hpp"
-//#include "tsf-config.h"
 
 //#define TIMING
 
