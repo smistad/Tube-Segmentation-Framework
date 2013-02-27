@@ -1,6 +1,3 @@
-#pragma OPENCL EXTENSION cl_amd_printf : enable
-
-
 __constant sampler_t sampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP_TO_EDGE | CLK_FILTER_NEAREST;
 __constant sampler_t interpolationSampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP_TO_EDGE | CLK_FILTER_LINEAR;
 
@@ -337,7 +334,7 @@ __kernel void constructHPLevel2D(
     ) { 
 
     int2 writePos = {get_global_id(0), get_global_id(1)};
-    int2 readPos = writePos*2;
+int2 readPos = writePos*2;
     uint writeValue = 
         read_imageui(readHistoPyramid, hpSampler, readPos).x + 
         read_imageui(readHistoPyramid, hpSampler, readPos+(int2)(1,0)).x + 
@@ -745,7 +742,7 @@ __kernel void linkCenterpoints(
         //printf("%d - %d \n", db, dc);
         for(int k = 0; k <= db; k++) {
             float alpha = (float)k/db;
-            float3 p = xa+ab*alpha;
+float3 p = xa+ab*alpha;
             float t = read_imagef(TDF, interpolationSampler, p.xyzz).x; 
             float i = read_imagef(intensity, interpolationSampler, p.xyzz).x; 
             avgIntensity += i;
@@ -768,7 +765,7 @@ __kernel void linkCenterpoints(
         float varIntensity = 0.0f;
         for(int k = 0; k <= db; k++) {
             float alpha = (float)k/db;
-            float3 p = xa+ab*alpha;
+float3 p = xa+ab*alpha;
             float t = read_imagef(TDF, interpolationSampler, p.xyzz).x; 
             float i = read_imagef(intensity, interpolationSampler, p.xyzz).x; 
             varIntensity += (i-avgIntensity)*(i-avgIntensity);
@@ -792,7 +789,8 @@ __kernel void linkCenterpoints(
         varIntensity = 0.0f;
         for(int k = 0; k <= dc; k++) {
             float alpha = (float)k/dc;
-            float3 p = xa+ac*alpha;
+
+float3 p = xa+ac*alpha;
             float t = read_imagef(TDF, interpolationSampler, p.xyzz).x; 
             float i = read_imagef(intensity, interpolationSampler, p.xyzz).x; 
             avgTDF += t;
@@ -807,9 +805,9 @@ __kernel void linkCenterpoints(
         if(avgIntensity > maxAvgIntensity)
             continue;
 
-        for(int k = 0; k <= db; k++) {
-            float alpha = (float)k/db;
-            float3 p = xa+ab*alpha;
+        for(int k = 0; k <= dc; k++) {
+            float alpha = (float)k/dc;
+float3 p = xa+ac*alpha;
             float t = read_imagef(TDF, interpolationSampler, p.xyzz).x; 
             float i = read_imagef(intensity, interpolationSampler, p.xyzz).x; 
             varIntensity += (i-avgIntensity)*(i-avgIntensity);
@@ -1137,8 +1135,9 @@ __kernel void grow(
 		    YZ.y = Zc.y-Y.y;
 		    YZ.z = Zc.z-Y.z;
 		    YZ = normalize(YZ);
-		    if(dot(FNY.xyz, YZ) > maxDotProduct) {
-			maxDotProduct = dot(FNY.xyz, YZ);
+const float v = FNY.x*YZ.x+FNY.y*YZ.y+FNY.z*YZ.z;
+		    if(v > maxDotProduct) {
+			maxDotProduct = v;
 			Z = Zc;
 		    }
 		}}}
@@ -1153,6 +1152,7 @@ __kernel void grow(
             }
 		}
 	    }}
+
 	}}}
 
 	if(continueGrowing) {
@@ -1430,8 +1430,12 @@ __kernel void createVectorField(
 
     // Gradient of volume
     float4 F; 
-    F.xyz = vectorSign*gradient(volume, pos, 0, 3); // The sign here is important
+    F.xyz = gradient(volume, pos, 0, 3); // The sign here is important
     F.w = 0.0f;
+
+F.x = vectorSign*F.x;
+F.y = vectorSign*F.y;
+F.z = vectorSign*F.z;
 
     // Fmax normalization
     const float l = length(F);
@@ -1484,13 +1488,6 @@ __kernel void circleFittingTDF(
     const float3 e2 = {eigenVectors[0][1], eigenVectors[1][1], eigenVectors[2][1]};
     const float3 e3 = {eigenVectors[0][2], eigenVectors[1][2], eigenVectors[2][2]};
 
-    /*
-    if(lambda.y > 0 && lambda.z > 0) {
-        T[LPOS(pos)] = 0;
-        return;
-    }
-    */
-
     // Circle Fitting
     float maxSum = 0.0f;
     float maxRadius = 0.0f;
@@ -1500,17 +1497,7 @@ __kernel void circleFittingTDF(
     for(float radius = rMin; radius <= rMax; radius += rStep) {
         bool negatives = false;
         float radiusSum = 0.0f;
-        /*
-        if(radius < 3) {
-            samples = 8;
-            stride = 4;
-        } else if(radius < 6) {
-            samples = 16;
-            stride = 2;
-        }
-        */
-
-        for(int j = 0; j < samples && !negatives; j++) {
+            for(int j = 0; j < samples && !negatives; j++) {
             float3 V_alpha = cosValues[j*stride]*e3 + sinValues[j*stride]*e2;
             float4 position = floatPos + radius*V_alpha.xyzz;
             float3 V = -read_imagef(vectorField, interpolationSampler, position).xyz;
@@ -1640,9 +1627,13 @@ __kernel void GVF3DIteration(
     float3 fz_1 = SNORM16_TO_FLOAT_3(vload3(offset-size.x*size.y, read_vector_field));
     
     // Update the vector field: Calculate Laplacian using a 3D central difference scheme
-    float3 laplacian = -6*v + fx1 + fx_1 + fy1 + fy_1 + fz1 + fz_1;
+float3 v2;
+v2.x = -6*v.x;
+v2.y = -6*v.y;
+v2.z = -6*v.z;
+    float3 laplacian = v2 + fx1 + fx_1 + fy1 + fy_1 + fz1 + fz_1;
 
-    v += mu * laplacian - (v - init_vector.xyz)*(init_vector.x*init_vector.x+init_vector.y*init_vector.y+init_vector.z*init_vector.z);//*init_vector.w;
+    v += mu*laplacian - (v - init_vector.xyz)*(init_vector.x*init_vector.x+init_vector.y*init_vector.y+init_vector.z*init_vector.z);
 
     vstore3(FLOAT_TO_SNORM16_3(v), writePos.x+writePos.y*size.x+writePos.z*size.x*size.y, write_vector_field);
 
