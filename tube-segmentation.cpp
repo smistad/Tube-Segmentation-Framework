@@ -77,7 +77,7 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
 	ocl->context = createCLContext(type);
 
     // Select first device
-    std::vector<cl::Device> devices = ocl->context.getInfo<CL_CONTEXT_DEVICES>();
+    VECTOR_CLASS<cl::Device> devices = ocl->context.getInfo<CL_CONTEXT_DEVICES>();
     std::cout << "Using device: " << devices[0].getInfo<CL_DEVICE_NAME>() << std::endl;
     ocl->queue = cl::CommandQueue(ocl->context, devices[0], CL_QUEUE_PROFILING_ENABLE);
 
