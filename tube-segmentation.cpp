@@ -1377,7 +1377,7 @@ void runSplineTDF(
     TDFKernel.setArg(6, 8); // arms
     TDFKernel.setArg(7, samples); // samples per arm
     TDFKernel.setArg(8, radius);
-    TDFKernel.setArg(9, 0.001f);
+    TDFKernel.setArg(9, 0.01f);
 
     ocl.queue.enqueueNDRangeKernel(
             TDFKernel,
