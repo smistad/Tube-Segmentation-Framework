@@ -9,7 +9,6 @@
 #include <list>
 #include <cstdio>
 #include <limits>
-
 #ifdef CPP11
 #include <unordered_set>
 using std::unordered_set;
@@ -18,6 +17,7 @@ using std::unordered_set;
 using boost::unordered_set;
 #endif
 #include "histogram-pyramids.hpp"
+//#include "tsf-config.h"
 
 //#define TIMING
 
@@ -76,7 +76,7 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
 	ocl->context = createCLContext(type);
 
     // Select first device
-    cl::vector<cl::Device> devices = ocl->context.getInfo<CL_CONTEXT_DEVICES>();
+    VECTOR_CLASS<cl::Device> devices = ocl->context.getInfo<CL_CONTEXT_DEVICES>();
     std::cout << "Using device: " << devices[0].getInfo<CL_DEVICE_NAME>() << std::endl;
     ocl->queue = cl::CommandQueue(ocl->context, devices[0], CL_QUEUE_PROFILING_ENABLE);
 
@@ -2611,14 +2611,14 @@ if(getParamBool(parameters, "timing")) {
     if(getParamStr(parameters, "centerline-vtk-file") != "off") {
     	// Transfer edges (size: sum2) and vertices (size: sum) buffers to host
     	int * verticesArray = new int[sum*3];
-    	int * edgesArray = new int[sum2*3];
+    	int * edgesArray = new int[sum2*2];
     	int * CArray = new int[sum];
     	int * SArray = new int[sum];
 
     	ocl.queue.enqueueReadBuffer(vertices, CL_FALSE, 0, sum*3*sizeof(int), verticesArray);
     	ocl.queue.enqueueReadBuffer(edges, CL_FALSE, 0, sum2*2*sizeof(int), edgesArray);
     	ocl.queue.enqueueReadBuffer(C, CL_FALSE, 0, sum*sizeof(int), CArray);
-    	ocl.queue.enqueueReadBuffer(S, CL_FALSE, 0, sum2*sizeof(int), SArray);
+    	ocl.queue.enqueueReadBuffer(S, CL_FALSE, 0, sum*sizeof(int), SArray);
 
     	ocl.queue.finish();
     	std::vector<int3> vertices;
