@@ -1272,9 +1272,6 @@ __kernel void splineTDF(
         if(maxRadius[j] == 999) {
             invalid = 1;
             break;
-        } else if(read_imageui(mask, interpolationSampler, position).x < 1.0f) {
-            invalid = 1;
-            break;
         }
     } // End for arms
 
@@ -1342,9 +1339,17 @@ __kernel void splineTDF(
         avgRadius = 0.0;
     }
 
+    float avgSymmetry = 0.0f;
+    for(int j = 0; j < arms/2; j++) {
+        avgSymmetry += min(maxRadius[j], maxRadius[arms/2 + j]) /
+            max(maxRadius[j], maxRadius[arms/2+j]);
+    }
+    avgSymmetry /= arms/2;
+
     R[LPOS(pos)] = avgRadius;
-    if(sum/(arms*(samples-1)) >= 0.0f && sum/(arms*(samples-1)) < 2.0f) {
-        T[LPOS(pos)] = sum / (arms*(samples-1));
+    if(sum/(arms*(samples-1)) >= 0.1f && sum/(arms*(samples-1)) < 2.0f) {
+        //T[LPOS(pos)] = sum / (arms*(samples-1));
+        T[LPOS(pos)] = avgSymmetry;
     } else {
         T[LPOS(pos)] = 0.0f;
     }
