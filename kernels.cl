@@ -1347,7 +1347,8 @@ __kernel void splineTDF(
     avgSymmetry /= arms/2;
 
     R[LPOS(pos)] = avgRadius;
-    if(sum/(arms*(samples-1)) >= 0.1f && sum/(arms*(samples-1)) < 2.0f) {
+    //if(sum/(arms*(samples-1)) >= 0.1f && sum/(arms*(samples-1)) < 2.0f) {
+    if(invalid != 1) {
         //T[LPOS(pos)] = sum / (arms*(samples-1));
         T[LPOS(pos)] = avgSymmetry;
     } else {
