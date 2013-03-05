@@ -411,6 +411,7 @@ __kernel void linkCenterpoints(
         if(avgTDF < minAvgTDF)
             continue;
 
+        /*
         // Check var TDF for a-b
         float varTDF = 0.0f;
         for(int k = 0; k <= db; k++) {
@@ -423,8 +424,10 @@ __kernel void linkCenterpoints(
         if(db > 4 && varTDF / (db+1) > maxVarTDF)
             continue;
 
-        avgTDF = 0.0f;
         varTDF = 0.0f;
+        */
+
+        avgTDF = 0.0f;
 
         // Check avg TDF for a-c
         for(int k = 0; k <= dc; k++) {
@@ -438,6 +441,7 @@ __kernel void linkCenterpoints(
         if(avgTDF < minAvgTDF)
             continue;
 
+        /*
         // Check var TDF for a-c
         for(int k = 0; k <= dc; k++) {
             float alpha = (float)k/dc;
@@ -448,6 +452,7 @@ __kernel void linkCenterpoints(
 
         if(dc > 4 && varTDF / (dc+1) > maxVarTDF)
             continue;
+        */
 
         validPairFound = true;
         bestPair.x = cl.y;
@@ -1278,7 +1283,6 @@ __kernel void findCandidateCenterpoints2(
 			} else {
 			*/
 			if(SQR_MAG(n) < SQR_MAG(pos)) {
-			//if(TS.TDF[POS(n)] > TS.TDF[POS(pos)]) {
 				invalid = true;
 				break;
 			//}
