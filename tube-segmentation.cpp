@@ -1,5 +1,6 @@
 #include "tube-segmentation.hpp"
 #include "SIPL/Types.hpp"
+#define USE_SIPL_VISUALIZATION 1
 #ifdef USE_SIPL_VISUALIZATION
 #include "SIPL/Core.hpp"
 #endif
@@ -1377,7 +1378,7 @@ void runSplineTDF(
     TDFKernel.setArg(6, 8); // arms
     TDFKernel.setArg(7, samples); // samples per arm
     TDFKernel.setArg(8, radius);
-    TDFKernel.setArg(9, 0.01f);
+    TDFKernel.setArg(9, 0.0001f);
 
     ocl.queue.enqueueNDRangeKernel(
             TDFKernel,
@@ -1715,7 +1716,7 @@ if(getParamBool(parameters, "timing")) {
 }
 
 	try {
-		runGVF(ocl, vectorField, parameters, size, false);
+		runGVF(ocl, vectorField, parameters, size, true);
 	} catch(cl::Error e) {
 		if(e.err() == -4 || e.err() == -5) {
 			std::cout << "NOTE: Ran out of memory. Trying slower GVF instead." << std::endl;
@@ -1739,6 +1740,8 @@ if(getParamBool(parameters, "timing")) {
     Buffer TDFlarge = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
     Buffer radiusLarge = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
     if(getParamBool(parameters, "use-spline-tdf")) {
+    	std::cout << "NOTE: Running Spline TDF" << std::endl;
+    	ocl.queue.finish();
 		runSplineTDF(ocl, vectorField, parameters, size, std::max(1.0f, radiusMin), radiusMax, radiusStep, TDFlarge, radiusLarge);
     } else {
 		runCircleFittingTDF(ocl, vectorField, parameters, size, std::max(1.0f, radiusMin), radiusMax, radiusStep, TDFlarge, radiusLarge);
@@ -1793,6 +1796,53 @@ if(getParamBool(parameters, "timing")) {
     endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
     std::cout << "RUNTIME of combine: " << (end-start)*1.0e-6 << " ms" << std::endl;
 }
+
+#ifdef USE_SIPL_VISUALIZATION
+	if(getParamBool(parameters, "show-vector-field")) {
+		// get vector field
+    SIPL::Volume<SIPL::float3> * vis = new SIPL::Volume<SIPL::float3>(size);
+    SIPL::Volume<float> * magnitude = new SIPL::Volume<float>(size);
+    if((no3Dwrite && !getParamBool(parameters, "16bit-vectors")) || getParamBool(parameters, "32bit-vectors")) {
+    	// 32 bit vector fields
+        float * Fs = new float[totalSize*4];
+        ocl.queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
+#pragma omp parallel for
+        for(int i = 0; i < totalSize; i++) {
+
+        	SIPL::float3 v;
+            v.x = Fs[i*4];
+            v.y = Fs[i*4+1];
+            v.z = Fs[i*4+2];
+            vis->set(i, v);
+            magnitude->set(i, v.length());
+        }
+        delete[] Fs;
+
+    } else {
+    	// 16 bit vector fields
+        short * Fs = new short[totalSize*4];
+        ocl.queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
+#pragma omp parallel for
+        for(int i = 0; i < totalSize; i++) {
+        	SIPL::float3 v;
+            v.x = MAX(-1.0f, Fs[i*4] / 32767.0f);
+            v.y = MAX(-1.0f, Fs[i*4+1] / 32767.0f);;
+            v.z = MAX(-1.0f, Fs[i*4+2] / 32767.0f);
+            vis->set(i, v);
+            magnitude->set(i, v.length());
+        }
+        delete[] Fs;
+    }
+    //vis->show();
+    magnitude->show(0.05, 0.1);
+    SIPL::Volume<float> * radius= new SIPL::Volume<float>(size);
+    float * rad = new float[totalSize];
+	ocl.queue.enqueueReadImage(radiusImage, CL_TRUE, offset, region, 0, 0, rad);
+	radius->setData(rad);
+	radius->show(40, 80);
+	}
+
+#endif
 
 }
 
@@ -2832,8 +2882,8 @@ std::vector<CrossSection *> createGraph(TubeSegmentation &TS, SIPL::int3 size) {
 		                break;
 		            }
 		            } else {
-		            if(SQR_MAG(n) < SQR_MAG(pos)) {
-		            //if(TS.TDF[POS(n)] > TS.TDF[POS(pos)]) {
+		            //if(SQR_MAG(n) < SQR_MAG(pos)) {
+		            if(TS.TDF[POS(n)] > TS.TDF[POS(pos)]) {
 		                invalid = true;
 		                break;
 		            }
@@ -2875,6 +2925,7 @@ std::vector<CrossSection *> createGraph(TubeSegmentation &TS, SIPL::int3 size) {
 				if(acos((double)fabs(e1_j.dot(c))) > 1.05)
 					continue;
 
+				/*
 				int distance = ceil(c_i->pos.distance(c_j->pos));
 				float3 direction(c_j->pos.x-c_i->pos.x,c_j->pos.y-c_i->pos.y,c_j->pos.z-c_i->pos.z);
 				bool invalid = false;
@@ -2891,6 +2942,7 @@ std::vector<CrossSection *> createGraph(TubeSegmentation &TS, SIPL::int3 size) {
 				}
 				//if(invalid)
 				//	continue;
+				 */
 
 
 				c_i->neighbors.push_back(c_j);
