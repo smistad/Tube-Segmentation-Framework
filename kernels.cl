@@ -1340,7 +1340,12 @@ __kernel void splineTDF(
     }
 
     float avgSymmetry = 0.0f;
+    float worstSymmetry = 2.0f;
     for(int j = 0; j < arms/2; j++) {
+        float symmetry = min(maxRadius[j], maxRadius[arms/2 + j]) /
+            max(maxRadius[j], maxRadius[arms/2+j]);
+        if(symmetry < worstSymmetry)
+        	worstSymmetry = symmetry;
         avgSymmetry += min(maxRadius[j], maxRadius[arms/2 + j]) /
             max(maxRadius[j], maxRadius[arms/2+j]);
     }
