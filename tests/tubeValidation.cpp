@@ -30,7 +30,7 @@ TubeValidation getValidationMeasures(
 	int width = eCenterlines->getWidth();
 	int height = eCenterlines->getHeight();
 	int depth = eCenterlines->getDepth();
-	int maxRadius = 3;
+	int maxRadius = 4;
 	for(int z = 0; z < depth; z++) {
 	for(int y = 0; y < height; y++) {
 	for(int x = 0; x < width; x++) {
