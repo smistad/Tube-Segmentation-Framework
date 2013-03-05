@@ -2059,6 +2059,40 @@ void writeToVtkFile(paramList &parameters, std::vector<int3> vertices, std::vect
 	file.close();
 }
 
+
+void removeLoops(
+		std::vector<int3> &vertices,
+		std::vector<SIPL::int2> &edges
+	) {
+
+	class Edge;
+	class Node {
+	public:
+		int3 pos;
+		std::vector<Edge *> edges;
+
+	};
+
+	class Edge {
+	public:
+		Node * to;
+		Node * from;
+		std::vector<Node *> removedNodes;
+	};
+
+
+	// Create graph
+
+	// Remove all nodes with degree 2 and add them to edge
+
+	// Do MST with edge distance as cost
+
+	// Restore graph
+	// For all edges that are in the MST graph: get nodes that was on these edges
+
+	// Cleanup
+}
+
 Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radius, Image3D &intensity, Image3D &vectorFieldSmall) {
     const int totalSize = size.x*size.y*size.z;
 	const bool no3Dwrite = !getParamBool(parameters, "3d_write");
@@ -2639,6 +2673,9 @@ if(getParamBool(parameters, "timing")) {
 				edges.push_back(v);
     		}
     	}
+
+    	// Remove loops from graph
+    	removeLoops(vertices, edges);
 
     	writeToVtkFile(parameters, vertices, edges);
 
