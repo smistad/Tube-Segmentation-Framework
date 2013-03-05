@@ -394,102 +394,60 @@ __kernel void linkCenterpoints(
         float3 ab = (xb-xa);
         float3 ac = (xc-xa);
         float angle = acos(dot(normalize(ab), normalize(ac)));
+        //printf("angle: %f\n", angle);
         if(angle < 2.0f) // 120 degrees
+        //if(angle < 1.57f) // 90 degrees
             continue;
-        // Check TDF
+
+        // Check avg TDF for a-b
         float avgTDF = 0.0f;
-        //float avgIntensity = 0.0f;
-        bool invalid = false;
-        //printf("%d - %d \n", db, dc);
         for(int k = 0; k <= db; k++) {
             float alpha = (float)k/db;
             float3 p = xa+ab*alpha;
             float t = read_imagef(TDF, interpolationSampler, p.xyzz).x; 
-            //float i = read_imagef(intensity, interpolationSampler, p.xyzz).x; 
-            //avgIntensity += i;
             avgTDF += t;
-            if(/*i > maxIntensity ||*/ t < minTDF) {
-                invalid = true;
-                break;
-            }
         }
-        if(invalid)
-            continue;
         avgTDF /= db+1;
-        //avgIntensity /= db+1;
         if(avgTDF < minAvgTDF)
             continue;
-            /*
-        if(avgIntensity > maxAvgIntensity)
-            continue;
-            */
 
+        // Check var TDF for a-b
         float varTDF = 0.0f;
-        //float varIntensity = 0.0f;
         for(int k = 0; k <= db; k++) {
             float alpha = (float)k/db;
             float3 p = xa+ab*alpha;
             float t = read_imagef(TDF, interpolationSampler, p.xyzz).x; 
-            //float i = read_imagef(intensity, interpolationSampler, p.xyzz).x; 
-            //varIntensity += (i-avgIntensity)*(i-avgIntensity);
             varTDF += (t-avgTDF)*(t-avgTDF);
-            if(/*i > maxIntensity || */t < minTDF) {
-                invalid = true;
-                break;
-            }
         }
-        if(invalid)
-            continue;
 
-        /*
-        if(db > 4 && varIntensity / (db+1) > maxVarIntensity)
-            continue;
-            */
         if(db > 4 && varTDF / (db+1) > maxVarTDF)
             continue;
 
         avgTDF = 0.0f;
-        //avgIntensity = 0.0f;
         varTDF = 0.0f;
-        //varIntensity = 0.0f;
+
+        // Check avg TDF for a-c
         for(int k = 0; k <= dc; k++) {
             float alpha = (float)k/dc;
             float3 p = xa+ac*alpha;
             float t = read_imagef(TDF, interpolationSampler, p.xyzz).x; 
-            //float i = read_imagef(intensity, interpolationSampler, p.xyzz).x; 
             avgTDF += t;
-            //avgIntensity += i;
         }
         avgTDF /= dc+1;
-        //avgIntensity /= dc+1;
 
         if(avgTDF < minAvgTDF)
             continue;
 
-        /*
-        if(avgIntensity > maxAvgIntensity)
-            continue;
-            */
-
-        for(int k = 0; k <= db; k++) {
-            float alpha = (float)k/db;
-            float3 p = xa+ab*alpha;
+        // Check var TDF for a-c
+        for(int k = 0; k <= dc; k++) {
+            float alpha = (float)k/dc;
+            float3 p = xa+ac*alpha;
             float t = read_imagef(TDF, interpolationSampler, p.xyzz).x; 
-            //float i = read_imagef(intensity, interpolationSampler, p.xyzz).x; 
-            //varIntensity += (i-avgIntensity)*(i-avgIntensity);
             varTDF += (t-avgTDF)*(t-avgTDF);
         }
 
-        /*
-        if(dc > 4 && varIntensity / (dc+1) > maxVarIntensity)
-            continue;
-            */
         if(dc > 4 && varTDF / (dc+1) > maxVarTDF)
             continue;
-        //printf("avg i: %f\n", avgIntensity );
-        //printf("avg tdf: %f\n", avgTDF );
-        //printf("var i: %f\n", varIntensity / (dc+1));
-        //printf("var tdf: %f\n", varTDF / (dc+1));
 
         validPairFound = true;
         bestPair.x = cl.y;
