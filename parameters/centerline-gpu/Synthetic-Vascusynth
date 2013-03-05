@@ -6,3 +6,4 @@ maximum 75
 min-mean-tdf 0.35
 cube-size 3
 min-tree-length 5
+max-distance 15.0
