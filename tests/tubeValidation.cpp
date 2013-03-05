@@ -22,6 +22,7 @@ TubeValidation getValidationMeasures(
 		) {
 	TubeValidation result;
 	Volume<char> * detectedCenterlines = new Volume<char>(realCenterlines->getSize());
+	detectedCenterlines->fill(0);
 
 	float avgDistance = 0.0f;
 	int counter = 0;
