@@ -2138,10 +2138,8 @@ std::vector<Node *> minimumSpanningTreePCE(std::vector<Node *> graph, int3 &size
 		Edge * e = queue.top();
 		queue.pop();
 
-		e->target->edges.clear(); // Remove all edges first
-		e->source->edges.push_back(e); // Add edge to source
-		result.push_back(e->target); // Add target to result
-		visited.insert(POS(e->target->pos));
+		if(visited.find(POS(e->target->pos)) != visited.end())
+			continue; // already visited
 
 		// Add all edges of e->target to queue if targets have not been added
 		for(int i = 0; i < e->target->edges.size(); i++) {
@@ -2150,6 +2148,11 @@ std::vector<Node *> minimumSpanningTreePCE(std::vector<Node *> graph, int3 &size
 				queue.push(en);
 			}
 		}
+
+		e->target->edges.clear(); // Remove all edges first
+		e->source->edges.push_back(e); // Add edge to source
+		result.push_back(e->target); // Add target to result
+		visited.insert(POS(e->target->pos));
 	}
 
 	return result;
@@ -2223,8 +2226,10 @@ void removeLoops(
 		}
 	}
 
+	std::cout << "graph size before MST: " << graph.size() << std::endl;
 	// Do MST with edge distance as cost
 	std::vector<Node *> newGraph = minimumSpanningTreePCE(graph, size);
+	std::cout << "graph size after MST: " << newGraph.size() << std::endl;
 
 	// Restore graph
 	// For all edges that are in the MST graph: get nodes that was on these edges
@@ -2842,7 +2847,7 @@ if(getParamBool(parameters, "timing")) {
     	}
 
     	// Remove loops from graph
-    	removeLoops(vertices, edges);
+    	removeLoops(vertices, edges, size);
 
     	writeToVtkFile(parameters, vertices, edges);
 
