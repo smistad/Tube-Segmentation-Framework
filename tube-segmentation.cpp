@@ -2094,7 +2094,7 @@ void removeEdge(Node * n, Node * remove) {
 	n->edges = edges;
 }
 
-void restoreNodes(Edge * e) {
+void restoreNodes(Edge * e, std::vector<Node *> &finalGraph) {
 	if(e->removedNodes.size() == 0)
 		return;
 
@@ -2108,6 +2108,7 @@ void restoreNodes(Edge * e) {
 		newEdge->target = e->removedNodes[k];
 		previous->edges.push_back(newEdge);
 		previous = e->removedNodes[k];
+		finalGraph.push_back(e->removedNodes[k]);
 
 	}
 	// Create edge from last k to target
@@ -2127,6 +2128,7 @@ std::vector<Node *> minimumSpanningTreePCE(std::vector<Node *> graph, int3 &size
 	visited.insert(POS(graph[0]->pos));
 
 	// Add edges to priority queue
+	std::cout << "nr of edges from root: " << graph[0]->edges.size() << std::endl;
 	for(int i = 0; i < graph[0]->edges.size(); i++) {
 		Edge * en = graph[0]->edges[i];
 		queue.push(en);
@@ -2142,6 +2144,7 @@ std::vector<Node *> minimumSpanningTreePCE(std::vector<Node *> graph, int3 &size
 			continue; // already visited
 
 		// Add all edges of e->target to queue if targets have not been added
+		std::cout << "looking though " << e->target->edges.size() << " edges" << std::endl;
 		for(int i = 0; i < e->target->edges.size(); i++) {
 			Edge * en = e->target->edges[i];
 			if(visited.find(POS(en->target->pos)) == visited.end()) {
@@ -2171,13 +2174,19 @@ void removeLoops(
 		nodes.push_back(n);
 	}
 	for(int i = 0; i < edges.size(); i++) {
-		Edge * e = new Edge;
 		Node * a = nodes[edges[i].x];
 		Node * b = nodes[edges[i].y];
+		Edge * e = new Edge;
 		e->distance = a->pos.distance(b->pos);
 		e->source = a;
 		e->target = b;
 		a->edges.push_back(e);
+
+		Edge * e2 = new Edge;
+		e2->distance = a->pos.distance(b->pos);
+		e2->source = b;
+		e2->target = a;
+		b->edges.push_back(e2);
 	}
 
 	// Create graph
@@ -2189,10 +2198,12 @@ void removeLoops(
 		if(n->edges.size() == 2) {
 			// calculate distance
 			float distance = n->edges[0]->distance+n->edges[1]->distance;
+			Node * a = n->edges[0]->target;
+			Node * b = n->edges[1]->target;
 			// Fuse the two nodes together
 			Edge * e = new Edge;
-			e->source = n->edges[0]->target;
-			e->target = n->edges[1]->target;
+			e->source = a;
+			e->target = b;
 			e->distance = distance;
 			// Add removed nodes from previous edges
 			for(int j = 0; j < n->edges[0]->removedNodes.size(); j++) {
@@ -2204,8 +2215,8 @@ void removeLoops(
 			e->removedNodes.push_back(n);
 
 			Edge * e2 = new Edge;
-			e2->source = n->edges[1]->target;
-			e2->target = n->edges[0]->target;
+			e2->source = b;
+			e2->target = a;
 			e2->distance = distance;
 			// Add removed nodes from previous edges
 			for(int j = 0; j < n->edges[0]->removedNodes.size(); j++) {
@@ -2216,10 +2227,10 @@ void removeLoops(
 			}
 			e2->removedNodes.push_back(n);
 
-			removeEdge(n->edges[0]->target,n);
-			removeEdge(n->edges[1]->target,n);
-			n->edges[0]->target->edges.push_back(e);
-			n->edges[1]->target->edges.push_back(e2);
+			removeEdge(a,n);
+			removeEdge(b,n);
+			a->edges.push_back(e);
+			b->edges.push_back(e2);
 		} else {
 			// add node to graph
 			graph.push_back(n);
@@ -2233,12 +2244,14 @@ void removeLoops(
 
 	// Restore graph
 	// For all edges that are in the MST graph: get nodes that was on these edges
+	std::vector<Node *> finalGraph;
 	for(int i = 0; i < newGraph.size(); i++) {
 		Node * n = newGraph[i];
+		finalGraph.push_back(n);
 		std::vector<Edge *> nEdges = n->edges;
 		for(int j = 0; j < nEdges.size(); j++) {
 			Edge * e = nEdges[j];
-			restoreNodes(e);
+			restoreNodes(e, finalGraph);
 		}
 	}
 
@@ -2246,8 +2259,8 @@ void removeLoops(
 	std::vector<int3> newVertices;
 	std::vector<SIPL::int2> newEdges;
 	int counter = 0;
-	for(int i = 0; i < newGraph.size(); i++) {
-		Node * n = newGraph[i];
+	for(int i = 0; i < finalGraph.size(); i++) {
+		Node * n = finalGraph[i];
 		newVertices.push_back(n->pos);
 		int nIndex = counter;
 		counter++;
