@@ -2059,38 +2059,205 @@ void writeToVtkFile(paramList &parameters, std::vector<int3> vertices, std::vect
 	file.close();
 }
 
+class Edge;
+class Node {
+public:
+	int3 pos;
+	std::vector<Edge *> edges;
+
+};
+
+class Edge {
+public:
+	Node * source;
+	Node * target;
+	std::vector<Node *> removedNodes;
+	float distance;
+};
+
+class EdgeComparator {
+public:
+	bool operator()(Edge * a, Edge *b) const {
+		return a->distance > b->distance;
+	}
+};
+
+
+void removeEdge(Node * n, Node * remove) {
+	std::vector<Edge *> edges;
+	for(int i = 0; i < n->edges.size(); i++) {
+		Edge * e = n->edges[i];
+		if(e->target != remove) {
+			edges.push_back(e);
+		}
+	}
+	n->edges = edges;
+}
+
+void restoreNodes(Edge * e) {
+	if(e->removedNodes.size() == 0)
+		return;
+
+	// Remove e from e->source
+	removeEdge(e->source, e->target);
+	Node * previous = e->source;
+	for(int k = 0; k < e->removedNodes.size(); k++) {
+		Edge * newEdge = new Edge;
+		// Create edge from source to k or k-1 to k
+		newEdge->source = previous;
+		newEdge->target = e->removedNodes[k];
+		previous->edges.push_back(newEdge);
+		previous = e->removedNodes[k];
+
+	}
+	// Create edge from last k to target
+	Edge * newEdge = new Edge;
+	newEdge->source = previous;
+	newEdge->target = e->target;
+	previous->edges.push_back(newEdge);
+}
+
+std::vector<Node *> minimumSpanningTreePCE(std::vector<Node *> graph, int3 &size) {
+	std::vector<Node *> result;
+	unordered_set<int> visited;
+	std::priority_queue<Edge *, std::vector<Edge *>, EdgeComparator> queue;
+
+	// Start with graph[0]
+	result.push_back(graph[0]);
+	visited.insert(POS(graph[0]->pos));
+
+	// Add edges to priority queue
+	for(int i = 0; i < graph[0]->edges.size(); i++) {
+		Edge * en = graph[0]->edges[i];
+		queue.push(en);
+	}
+	graph[0]->edges.clear();
+
+
+	while(!queue.empty()) {
+		Edge * e = queue.top();
+		queue.pop();
+
+		e->target->edges.clear(); // Remove all edges first
+		e->source->edges.push_back(e); // Add edge to source
+		result.push_back(e->target); // Add target to result
+		visited.insert(POS(e->target->pos));
+
+		// Add all edges of e->target to queue if targets have not been added
+		for(int i = 0; i < e->target->edges.size(); i++) {
+			Edge * en = e->target->edges[i];
+			if(visited.find(POS(en->target->pos)) == visited.end()) {
+				queue.push(en);
+			}
+		}
+	}
+
+	return result;
+}
 
 void removeLoops(
 		std::vector<int3> &vertices,
-		std::vector<SIPL::int2> &edges
+		std::vector<SIPL::int2> &edges,
+		int3 &size
 	) {
 
-	class Edge;
-	class Node {
-	public:
-		int3 pos;
-		std::vector<Edge *> edges;
-
-	};
-
-	class Edge {
-	public:
-		Node * to;
-		Node * from;
-		std::vector<Node *> removedNodes;
-	};
-
+	std::vector<Node *> nodes;
+	for(int i = 0; i < vertices.size(); i++) {
+		Node * n = new Node;
+		n->pos = vertices[i];
+		nodes.push_back(n);
+	}
+	for(int i = 0; i < edges.size(); i++) {
+		Edge * e = new Edge;
+		Node * a = nodes[edges[i].x];
+		Node * b = nodes[edges[i].y];
+		e->distance = a->pos.distance(b->pos);
+		e->source = a;
+		e->target = b;
+		a->edges.push_back(e);
+	}
 
 	// Create graph
+	std::vector<Node *> graph;
 
 	// Remove all nodes with degree 2 and add them to edge
+	for(int i = 0; i < nodes.size(); i++) {
+		Node * n = nodes[i];
+		if(n->edges.size() == 2) {
+			// calculate distance
+			float distance = n->edges[0]->distance+n->edges[1]->distance;
+			// Fuse the two nodes together
+			Edge * e = new Edge;
+			e->source = n->edges[0]->target;
+			e->target = n->edges[1]->target;
+			e->distance = distance;
+			// Add removed nodes from previous edges
+			for(int j = 0; j < n->edges[0]->removedNodes.size(); j++) {
+				e->removedNodes.push_back(n->edges[0]->removedNodes[j]);
+			}
+			for(int j = 0; j < n->edges[1]->removedNodes.size(); j++) {
+				e->removedNodes.push_back(n->edges[1]->removedNodes[j]);
+			}
+			e->removedNodes.push_back(n);
+
+			Edge * e2 = new Edge;
+			e2->source = n->edges[1]->target;
+			e2->target = n->edges[0]->target;
+			e2->distance = distance;
+			// Add removed nodes from previous edges
+			for(int j = 0; j < n->edges[0]->removedNodes.size(); j++) {
+				e2->removedNodes.push_back(n->edges[0]->removedNodes[j]);
+			}
+			for(int j = 0; j < n->edges[1]->removedNodes.size(); j++) {
+				e2->removedNodes.push_back(n->edges[1]->removedNodes[j]);
+			}
+			e2->removedNodes.push_back(n);
+
+			removeEdge(n->edges[0]->target,n);
+			removeEdge(n->edges[1]->target,n);
+			n->edges[0]->target->edges.push_back(e);
+			n->edges[1]->target->edges.push_back(e2);
+		} else {
+			// add node to graph
+			graph.push_back(n);
+		}
+	}
 
 	// Do MST with edge distance as cost
+	std::vector<Node *> newGraph = minimumSpanningTreePCE(graph, size);
 
 	// Restore graph
 	// For all edges that are in the MST graph: get nodes that was on these edges
+	for(int i = 0; i < newGraph.size(); i++) {
+		Node * n = newGraph[i];
+		std::vector<Edge *> nEdges = n->edges;
+		for(int j = 0; j < nEdges.size(); j++) {
+			Edge * e = nEdges[j];
+			restoreNodes(e);
+		}
+	}
+
+
+	std::vector<int3> newVertices;
+	std::vector<SIPL::int2> newEdges;
+	int counter = 0;
+	for(int i = 0; i < newGraph.size(); i++) {
+		Node * n = newGraph[i];
+		newVertices.push_back(n->pos);
+		int nIndex = counter;
+		counter++;
+		for(int j = 0; j < n->edges.size(); j++) {
+			Edge * e = n->edges[j];
+			// add edge from n to n_j
+			newEdges.push_back(SIPL::int2(nIndex, counter));
+			newVertices.push_back(e->target->pos);
+			counter++;
+		}
+	}
 
 	// Cleanup
+	vertices = newVertices;
+	edges = newEdges;
 }
 
 Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radius, Image3D &intensity, Image3D &vectorFieldSmall) {
