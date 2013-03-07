@@ -2206,29 +2206,30 @@ void removeLoops(
 			e->target = b;
 			e->distance = distance;
 			// Add removed nodes from previous edges
-			for(int j = 0; j < n->edges[0]->removedNodes.size(); j++) {
+			for(int j = n->edges[0]->removedNodes.size()-1; j >= 0; j--) {
 				e->removedNodes.push_back(n->edges[0]->removedNodes[j]);
 			}
+			e->removedNodes.push_back(n);
 			for(int j = 0; j < n->edges[1]->removedNodes.size(); j++) {
 				e->removedNodes.push_back(n->edges[1]->removedNodes[j]);
 			}
-			e->removedNodes.push_back(n);
 
 			Edge * e2 = new Edge;
 			e2->source = b;
 			e2->target = a;
 			e2->distance = distance;
 			// Add removed nodes from previous edges
-			for(int j = 0; j < n->edges[0]->removedNodes.size(); j++) {
-				e2->removedNodes.push_back(n->edges[0]->removedNodes[j]);
-			}
-			for(int j = 0; j < n->edges[1]->removedNodes.size(); j++) {
+			for(int j = n->edges[1]->removedNodes.size()-1; j >= 0; j--) {
 				e2->removedNodes.push_back(n->edges[1]->removedNodes[j]);
 			}
 			e2->removedNodes.push_back(n);
+			for(int j = 0; j < n->edges[0]->removedNodes.size(); j++) {
+				e2->removedNodes.push_back(n->edges[0]->removedNodes[j]);
+			}
 
 			removeEdge(a,n);
 			removeEdge(b,n);
+			n->edges.clear();
 			a->edges.push_back(e);
 			b->edges.push_back(e2);
 		} else {
