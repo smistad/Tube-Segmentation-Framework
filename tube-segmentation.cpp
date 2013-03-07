@@ -2128,7 +2128,6 @@ std::vector<Node *> minimumSpanningTreePCE(std::vector<Node *> graph, int3 &size
 	visited.insert(POS(graph[0]->pos));
 
 	// Add edges to priority queue
-	std::cout << "nr of edges from root: " << graph[0]->edges.size() << std::endl;
 	for(int i = 0; i < graph[0]->edges.size(); i++) {
 		Edge * en = graph[0]->edges[i];
 		queue.push(en);
@@ -2144,7 +2143,6 @@ std::vector<Node *> minimumSpanningTreePCE(std::vector<Node *> graph, int3 &size
 			continue; // already visited
 
 		// Add all edges of e->target to queue if targets have not been added
-		std::cout << "looking though " << e->target->edges.size() << " edges" << std::endl;
 		for(int i = 0; i < e->target->edges.size(); i++) {
 			Edge * en = e->target->edges[i];
 			if(visited.find(POS(en->target->pos)) == visited.end()) {
@@ -2238,10 +2236,8 @@ void removeLoops(
 		}
 	}
 
-	std::cout << "graph size before MST: " << graph.size() << std::endl;
 	// Do MST with edge distance as cost
 	std::vector<Node *> newGraph = minimumSpanningTreePCE(graph, size);
-	std::cout << "graph size after MST: " << newGraph.size() << std::endl;
 
 	// Restore graph
 	// For all edges that are in the MST graph: get nodes that was on these edges
