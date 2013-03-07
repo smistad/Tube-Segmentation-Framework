@@ -2298,6 +2298,31 @@ void removeLoops(
 	edges = newEdges;
 }
 
+char * createCenterlineVoxels(
+		std::vector<int3> &vertices,
+		std::vector<SIPL::int2> &edges,
+		int3 &size
+		) {
+	const int totalSize = size.x*size.y*size.z;
+	char * centerlines = new char[totalSize]();
+
+	for(int i = 0; i < edges.size(); i++) {
+		int3 a = vertices[edges[i].x];
+		int3 b = vertices[edges[i].y];
+		float distance = a.distance(b);
+		float3 direction(b.x-a.x,b.y-a.y,b.z-a.z);
+		int n = ceil(distance);
+		for(int j = 0; j < n; j++) {
+			float ratio = (float)j/n;
+			float3 pos = a+direction*ratio;
+			int3 intPos(round(pos.x), round(pos.y), round(pos.z));
+			centerlines[POS(intPos)] = 1;
+		}
+	}
+
+	return centerlines;
+}
+
 Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radius, Image3D &intensity, Image3D &vectorFieldSmall) {
     const int totalSize = size.x*size.y*size.z;
 	const bool no3Dwrite = !getParamBool(parameters, "3d_write");
@@ -2772,82 +2797,16 @@ if(getParamBool(parameters, "timing")) {
             NDRange(sum),
             NullRange
     );
-    Image3D centerlines;
-    Kernel RSTKernel(ocl.program, "removeSmallTrees");
-    RSTKernel.setArg(0, edges);
-    RSTKernel.setArg(1, vertices);
-    RSTKernel.setArg(2, C);
-    RSTKernel.setArg(3, S);
-    RSTKernel.setArg(4, minTreeLength);
-    if(no3Dwrite) {
-        Buffer centerlinesBuffer = Buffer(
-                ocl.context,
-                CL_MEM_WRITE_ONLY,
-                sizeof(char)*totalSize
-        );
-
-        initCharBuffer.setArg(0, centerlinesBuffer);
-        ocl.queue.enqueueNDRangeKernel(
-                initCharBuffer,
-                NullRange,
-                NDRange(totalSize),
-                NullRange
-        );
-
-        RSTKernel.setArg(5, centerlinesBuffer);
-        RSTKernel.setArg(6, size.x);
-        RSTKernel.setArg(7, size.y);
-
-        ocl.queue.enqueueNDRangeKernel(
-                RSTKernel,
-                NullRange,
-                NDRange(sum2),
-                NullRange
-        );
-
-        centerlines = Image3D(
+    Image3D centerlines= Image3D(
             ocl.context,
             CL_MEM_READ_WRITE,
             ImageFormat(CL_R, CL_SIGNED_INT8),
             size.x, size.y, size.z
         );
 
-        ocl.queue.enqueueCopyBufferToImage(
-                centerlinesBuffer,
-                centerlines,
-                0,
-                offset,
-                region
-        );
-
-    } else {
-        centerlines = Image3D(
-            ocl.context,
-            CL_MEM_READ_WRITE,
-            ImageFormat(CL_R, CL_SIGNED_INT8),
-            size.x, size.y, size.z
-        );
-
-        Kernel init3DImage(ocl.program, "init3DImage");
-        init3DImage.setArg(0, centerlines);
-        ocl.queue.enqueueNDRangeKernel(
-            init3DImage,
-            NullRange,
-            NDRange(size.x, size.y, size.z),
-            NullRange
-        );
-
-        RSTKernel.setArg(5, centerlines);
-
-        ocl.queue.enqueueNDRangeKernel(
-                RSTKernel,
-                NullRange,
-                NDRange(sum2),
-                NullRange
-        );
-    }
-
-    if(getParamStr(parameters, "centerline-vtk-file") != "off") {
+    if(getParamStr(parameters, "centerline-vtk-file") != "off" ||
+    		getParamBool(parameters, "loop-removal")) {
+    	// Do rasterization of centerline on CPU
     	// Transfer edges (size: sum2) and vertices (size: sum) buffers to host
     	int * verticesArray = new int[sum*3];
     	int * edgesArray = new int[sum2*2];
@@ -2882,13 +2841,85 @@ if(getParamBool(parameters, "timing")) {
     	// Remove loops from graph
     	removeLoops(vertices, edges, size);
 
-    	writeToVtkFile(parameters, vertices, edges);
+    	char * centerlinesData = createCenterlineVoxels(vertices, edges, size);
+    	ocl.queue.enqueueWriteImage(
+    			centerlines,
+    			CL_FALSE,
+    			offset,
+    			region,
+    			0, 0,
+    			centerlinesData
+		);
+		if(getParamStr(parameters, "centerline-vtk-file") != "off")
+			writeToVtkFile(parameters, vertices, edges);
 
     	delete[] verticesArray;
     	delete[] edgesArray;
     	delete[] CArray;
     	delete[] SArray;
     	delete[] indexes;
+    } else {
+    	// Do rasterization of centerline on GPU
+    	Kernel RSTKernel(ocl.program, "removeSmallTrees");
+		RSTKernel.setArg(0, edges);
+		RSTKernel.setArg(1, vertices);
+		RSTKernel.setArg(2, C);
+		RSTKernel.setArg(3, S);
+		RSTKernel.setArg(4, minTreeLength);
+		if(no3Dwrite) {
+			Buffer centerlinesBuffer = Buffer(
+					ocl.context,
+					CL_MEM_WRITE_ONLY,
+					sizeof(char)*totalSize
+			);
+
+			initCharBuffer.setArg(0, centerlinesBuffer);
+			ocl.queue.enqueueNDRangeKernel(
+					initCharBuffer,
+					NullRange,
+					NDRange(totalSize),
+					NullRange
+			);
+
+			RSTKernel.setArg(5, centerlinesBuffer);
+			RSTKernel.setArg(6, size.x);
+			RSTKernel.setArg(7, size.y);
+
+			ocl.queue.enqueueNDRangeKernel(
+					RSTKernel,
+					NullRange,
+					NDRange(sum2),
+					NullRange
+			);
+
+			ocl.queue.enqueueCopyBufferToImage(
+					centerlinesBuffer,
+					centerlines,
+					0,
+					offset,
+					region
+			);
+
+		} else {
+
+			Kernel init3DImage(ocl.program, "init3DImage");
+			init3DImage.setArg(0, centerlines);
+			ocl.queue.enqueueNDRangeKernel(
+				init3DImage,
+				NullRange,
+				NDRange(size.x, size.y, size.z),
+				NullRange
+			);
+
+			RSTKernel.setArg(5, centerlines);
+
+			ocl.queue.enqueueNDRangeKernel(
+					RSTKernel,
+					NullRange,
+					NDRange(sum2),
+					NullRange
+			);
+		}
     }
 
 if(getParamBool(parameters, "timing")) {
