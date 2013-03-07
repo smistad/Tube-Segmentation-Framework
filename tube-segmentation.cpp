@@ -2118,22 +2118,25 @@ void restoreNodes(Edge * e, std::vector<Node *> &finalGraph) {
 	previous->edges.push_back(newEdge);
 }
 
-std::vector<Node *> minimumSpanningTreePCE(std::vector<Node *> graph, int3 &size) {
+std::vector<Node *> minimumSpanningTreePCE(
+		int root,
+		std::vector<Node *> &graph,
+		int3 &size,
+		unordered_set<int> &visited
+		) {
 	std::vector<Node *> result;
-	unordered_set<int> visited;
 	std::priority_queue<Edge *, std::vector<Edge *>, EdgeComparator> queue;
 
 	// Start with graph[0]
-	result.push_back(graph[0]);
-	visited.insert(POS(graph[0]->pos));
+	result.push_back(graph[root]);
+	visited.insert(POS(graph[root]->pos));
 
 	// Add edges to priority queue
-	for(int i = 0; i < graph[0]->edges.size(); i++) {
-		Edge * en = graph[0]->edges[i];
+	for(int i = 0; i < graph[root]->edges.size(); i++) {
+		Edge * en = graph[root]->edges[i];
 		queue.push(en);
 	}
-	graph[0]->edges.clear();
-
+	graph[root]->edges.clear();
 
 	while(!queue.empty()) {
 		Edge * e = queue.top();
@@ -2237,7 +2240,27 @@ void removeLoops(
 	}
 
 	// Do MST with edge distance as cost
-	std::vector<Node *> newGraph = minimumSpanningTreePCE(graph, size);
+	int sizeBeforeMST = graph.size();
+	unordered_set<int> visited;
+	std::vector<Node *> newGraph = minimumSpanningTreePCE(0, graph, size, visited);
+	int sizeAfterMST = newGraph.size();
+
+	while(newGraph.size() < graph.size()) {
+		// Some nodes were not visited: find new root
+		int root;
+		for(int i = 0; i < graph.size(); i++) {
+			if(visited.find(POS(graph[i]->pos)) == visited.end()) {
+				// i has not been used
+				root = i;
+			}
+		}
+
+		std::vector<Node *> newGraph2 = minimumSpanningTreePCE(root, graph, size, visited);
+		for(int i = 0; i < newGraph2.size(); i++) {
+			newGraph.push_back(newGraph2[i]);
+		}
+		int sizeAfterMST = newGraph.size();
+	}
 
 	// Restore graph
 	// For all edges that are in the MST graph: get nodes that was on these edges
