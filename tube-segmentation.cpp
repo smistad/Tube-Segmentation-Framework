@@ -2419,6 +2419,9 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
 
         candidates2Kernel.setArg(3, centerpoints2);
         std::cout << "candidates: " << hp3.getSum() << std::endl;
+        if(hp3.getSum() <= 0 || hp3.getSum() > 0.5*totalSize) {
+        	throw SIPL::SIPLException("The number of candidate voxels is too or too high. Something went wrong... Wrong parameters? Out of memory?", __LINE__, __FILE__);
+        }
         hp3.traverse(candidates2Kernel, 4);
         ocl.queue.enqueueCopyBufferToImage(
             centerpoints2,
@@ -2498,6 +2501,10 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
         HistogramPyramid3D hp3(ocl);
         hp3.create(centerpointsImage, size.x, size.y, size.z);
         std::cout << "candidates: " << hp3.getSum() << std::endl;
+		if(hp3.getSum() <= 0 || hp3.getSum() > 0.5*totalSize) {
+        	throw SIPL::SIPLException("The number of candidate voxels is too or too high. Something went wrong... Wrong parameters? Out of memory?", __LINE__, __FILE__);
+        }
+
         candidates2Kernel.setArg(3, centerpointsImage2);
         hp3.traverse(candidates2Kernel, 4);
 
