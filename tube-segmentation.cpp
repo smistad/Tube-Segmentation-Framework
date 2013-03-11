@@ -1648,7 +1648,11 @@ if(getParamBool(parameters, "timing")) {
 }
 
 	try {
+		// As this is the most memory intensity step, two calls to queue.finish
+		// is performed to ensure that any unnecessary data is moved away from the GPU
+		ocl.queue.finish();
 		runGVF(ocl, vectorField, parameters, size, false);
+		ocl.queue.finish();
 	} catch(cl::Error e) {
 		if(e.err() == -4 || e.err() == -5) {
 			std::cout << "NOTE: Ran out of memory. Trying slower GVF instead." << std::endl;
