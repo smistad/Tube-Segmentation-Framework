@@ -1679,9 +1679,9 @@ if(getParamBool(parameters, "timing")) {
     circleFittingTDFKernel.setArg(0, vectorField);
     circleFittingTDFKernel.setArg(1, TDFlarge);
     circleFittingTDFKernel.setArg(2, radiusLarge);
-    circleFittingTDFKernel.setArg(3, std::max(1.0f, radiusMin));
+    circleFittingTDFKernel.setArg(3, std::max(2.5f, radiusMin));
     circleFittingTDFKernel.setArg(4, radiusMax);
-    circleFittingTDFKernel.setArg(5, radiusStep);
+    circleFittingTDFKernel.setArg(5, 1.5f);
 
     ocl.queue.enqueueNDRangeKernel(
             circleFittingTDFKernel,
@@ -2648,7 +2648,7 @@ if(getParamBool(parameters, "timing")) {
     linkingKernel.setArg(1, radius);
     linkingKernel.setArg(2, vertices);
     linkingKernel.setArg(3, edgeTuples);
-    linkingKernel.setArg(4, intensity);
+    linkingKernel.setArg(4, vectorField);
     linkingKernel.setArg(5, compacted_lengths);
     linkingKernel.setArg(6, sum);
     linkingKernel.setArg(7, Tmean);

@@ -345,7 +345,7 @@ __kernel void linkCenterpoints(
         __read_only image3d_t radius,
         __global int const * restrict positions,
         __write_only image2d_t edges,
-        __read_only image3d_t intensity,
+        __read_only image3d_t vectorField,
         __read_only image2d_t compacted_lengths,
         __private int sum,
         __private float minAvgTDF,
@@ -401,15 +401,26 @@ __kernel void linkCenterpoints(
 
         // Check avg TDF for a-b
         float avgTDF = 0.0f;
+        float avgRadius = 0.0f;
+        float maxMag = 0.0f;
         for(int k = 0; k <= db; k++) {
             float alpha = (float)k/db;
             float3 p = xa+ab*alpha;
             float t = read_imagef(TDF, interpolationSampler, p.xyzz).x; 
             avgTDF += t;
+            avgRadius += read_imagef(radius, interpolationSampler, p.xyzz).x;
+            maxMag = max(maxMag, read_imagef(vectorField, interpolationSampler, p.xyzz).w);
         }
         avgTDF /= db+1;
+        avgRadius /= db+1;
+        if(avgRadius < 6.0f) {
         if(avgTDF < minAvgTDF)
             continue;
+        } else {
+        	if(maxMag > 0.2f) {
+        		continue;
+        	}
+        }
 
         /*
         // Check var TDF for a-b
@@ -428,6 +439,8 @@ __kernel void linkCenterpoints(
         */
 
         avgTDF = 0.0f;
+        avgRadius = 0.0f;
+        maxMag = 0.0f;
 
         // Check avg TDF for a-c
         for(int k = 0; k <= dc; k++) {
@@ -435,11 +448,20 @@ __kernel void linkCenterpoints(
             float3 p = xa+ac*alpha;
             float t = read_imagef(TDF, interpolationSampler, p.xyzz).x; 
             avgTDF += t;
+            avgRadius += read_imagef(radius, interpolationSampler, p.xyzz).x;
+            maxMag = max(maxMag, read_imagef(vectorField, interpolationSampler, p.xyzz).w);
         }
         avgTDF /= dc+1;
+        avgRadius /= dc+1;
 
+        if(avgRadius < 6.0f) {
         if(avgTDF < minAvgTDF)
             continue;
+        } else {
+        	if(maxMag > 0.2f) {
+        		continue;
+        	}
+        }
 
         /*
         // Check var TDF for a-c
