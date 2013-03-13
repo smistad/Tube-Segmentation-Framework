@@ -587,19 +587,23 @@ __kernel void combine(
 
 __kernel void initGrowing(
 	__read_only image3d_t centerline,
-	__write_only image3d_t initSegmentation
+	__write_only image3d_t initSegmentation,
+	__read_only image3d_t avgRadius
 	) {
     int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
     if(read_imagei(centerline, sampler, pos).x == 1) {
+    	float radius = read_imagef(avgRadius, sampler, pos).x;
+    	int N = min(max(1, (int)round(radius/2.0f)), 4);
+
 	
-        for(int a = -1; a < 2; a++) {
-        for(int b = -1; b < 2; b++) {
-        for(int c = -1; c < 2; c++) {
+        for(int a = -N; a < N+1; a++) {
+        for(int b = -N; b < N+1; b++) {
+        for(int c = -N; c < N+1; c++) {
             int4 n;
             n.x = pos.x + a;
             n.y = pos.y + b;
             n.z = pos.z + c;
-	    if(read_imagei(centerline, sampler, n).x == 0)
+	    if(read_imagei(centerline, sampler, n).x == 0 && length((float3)(a,b,c)) <= N)
 	    write_imagei(initSegmentation, n, 2);
         }}}
 	}
@@ -641,7 +645,7 @@ __kernel void grow(
 		FNY.x /= FNY.w;
 		FNY.y /= FNY.w;
 		FNY.z /= FNY.w;
-	    if(FNY.w > FNXw || FNXw < 0.1f) {
+	    if(FNY.w > FNXw /*|| FNXw < 0.1f*/) {
 
 		int4 Z;
 		float maxDotProduct = -2.0f;

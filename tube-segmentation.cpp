@@ -1829,7 +1829,7 @@ Image3D runSphereSegmentation(OpenCL ocl, Image3D &centerline, Image3D &radius, 
 
 }
 
-Image3D runInverseGradientSegmentation(OpenCL &ocl, Image3D &centerline, Image3D &vectorField, SIPL::int3 size, paramList parameters) {
+Image3D runInverseGradientSegmentation(OpenCL &ocl, Image3D &centerline, Image3D &vectorField, Image3D &radius, SIPL::int3 size, paramList parameters) {
     const int totalSize = size.x*size.y*size.z;
 	const bool no3Dwrite = !getParamBool(parameters, "3d_write");
     cl::Event startEvent, endEvent;
@@ -1880,6 +1880,7 @@ Image3D runInverseGradientSegmentation(OpenCL &ocl, Image3D &centerline, Image3D
         );
         initGrowKernel.setArg(0, volume);
         initGrowKernel.setArg(1, volume2);
+        initGrowKernel.setArg(2, radius);
         ocl.queue.enqueueNDRangeKernel(
             initGrowKernel,
             NullRange,
@@ -1924,6 +1925,7 @@ Image3D runInverseGradientSegmentation(OpenCL &ocl, Image3D &centerline, Image3D
         ocl.queue.enqueueCopyImage(volume, volume2, offset, offset, region);
         initGrowKernel.setArg(0, volume);
         initGrowKernel.setArg(1, volume2);
+        initGrowKernel.setArg(2, radius);
         ocl.queue.enqueueNDRangeKernel(
             initGrowKernel,
             NullRange,
@@ -2305,6 +2307,7 @@ void removeLoops(
 char * createCenterlineVoxels(
 		std::vector<int3> &vertices,
 		std::vector<SIPL::int2> &edges,
+		float * radius,
 		int3 &size
 		) {
 	const int totalSize = size.x*size.y*size.z;
@@ -2316,12 +2319,23 @@ char * createCenterlineVoxels(
 		float distance = a.distance(b);
 		float3 direction(b.x-a.x,b.y-a.y,b.z-a.z);
 		int n = ceil(distance);
+		float avgRadius = 0.0f;
 		for(int j = 0; j < n; j++) {
 			float ratio = (float)j/n;
 			float3 pos = a+direction*ratio;
 			int3 intPos(round(pos.x), round(pos.y), round(pos.z));
 			centerlines[POS(intPos)] = 1;
+			avgRadius += radius[POS(intPos)];
 		}
+		avgRadius /= n;
+
+		for(int j = 0; j < n; j++) {
+			float ratio = (float)j/n;
+			float3 pos = a+direction*ratio;
+			int3 intPos(round(pos.x), round(pos.y), round(pos.z));
+			radius[POS(intPos)] = avgRadius;
+		}
+
 	}
 
 	return centerlines;
@@ -2830,6 +2844,8 @@ if(getParamBool(parameters, "timing")) {
     	ocl.queue.enqueueReadBuffer(S, CL_FALSE, 0, sum*sizeof(int), SArray);
 
     	ocl.queue.finish();
+    	float * radiusB = new float[totalSize];
+    	ocl.queue.enqueueReadImage(radius, CL_FALSE, offset, region, 0, 0, radiusB);
     	std::vector<int3> vertices;
     	int counter = 0;
     	int * indexes = new int[sum];
@@ -2852,7 +2868,8 @@ if(getParamBool(parameters, "timing")) {
     	// Remove loops from graph
     	removeLoops(vertices, edges, size);
 
-    	char * centerlinesData = createCenterlineVoxels(vertices, edges, size);
+    	ocl.queue.finish();
+    	char * centerlinesData = createCenterlineVoxels(vertices, edges, radiusB, size);
     	ocl.queue.enqueueWriteImage(
     			centerlines,
     			CL_FALSE,
@@ -2861,6 +2878,15 @@ if(getParamBool(parameters, "timing")) {
     			0, 0,
     			centerlinesData
 		);
+		ocl.queue.enqueueWriteImage(
+    			radius,
+    			CL_FALSE,
+    			offset,
+    			region,
+    			0, 0,
+    			radiusB
+		);
+
 		if(getParamStr(parameters, "centerline-vtk-file") != "off")
 			writeToVtkFile(parameters, vertices, edges);
 
@@ -2980,7 +3006,7 @@ void runCircleFittingAndNewCenterlineAlg(OpenCL * ocl, cl::Image3D &dataset, SIP
     Image3D * segmentation = new Image3D;
     if(!getParamBool(parameters, "no-segmentation")) {
     	if(!getParamBool(parameters, "sphere-segmentation")) {
-			*segmentation = runInverseGradientSegmentation(*ocl, *centerline, vectorField, *size, parameters);
+			*segmentation = runInverseGradientSegmentation(*ocl, *centerline, vectorField, radius, *size, parameters);
     	} else {
 			*segmentation = runSphereSegmentation(*ocl, *centerline, radius, *size, parameters);
     	}
@@ -3957,7 +3983,7 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
     if(!getParamBool(parameters, "no-segmentation")) {
         *volume = Image3D(ocl->context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, ImageFormat(CL_R, CL_SIGNED_INT8), size->x, size->y, size->z, 0, 0, centerline);
 		if(!getParamBool(parameters, "sphere-segmentation")) {
-			*volume = runInverseGradientSegmentation(*ocl, *volume, vectorField, *size, parameters);
+			*volume = runInverseGradientSegmentation(*ocl, *volume, vectorField, radius, *size, parameters);
     	} else {
 			*volume = runSphereSegmentation(*ocl,*volume, radius, *size, parameters);
     	}
@@ -4042,7 +4068,7 @@ void runCircleFittingAndRidgeTraversal(OpenCL * ocl, Image3D &dataset, SIPL::int
     if(!getParamBool(parameters, "no-segmentation")) {
         *volume = Image3D(ocl->context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, ImageFormat(CL_R, CL_SIGNED_INT8), size->x, size->y, size->z, 0, 0, TS.centerline);
 		if(!getParamBool(parameters, "sphere-segmentation")) {
-			*volume = runInverseGradientSegmentation(*ocl, *volume, vectorField, *size, parameters);
+			*volume = runInverseGradientSegmentation(*ocl, *volume, vectorField, radius, *size, parameters);
     	} else {
 			*volume = runSphereSegmentation(*ocl,*volume, radius, *size, parameters);
     	}
