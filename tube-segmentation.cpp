@@ -9,6 +9,7 @@
 #include <list>
 #include <cstdio>
 #include <limits>
+#include <fstream>
 #ifdef CPP11
 #include <unordered_set>
 using std::unordered_set;
@@ -182,8 +183,8 @@ bool inBounds(SIPL::int3 pos, SIPL::int3 size) {
 
 #define LPOS(a,b,c) (a)+(b)*(size.x)+(c)*(size.x*size.y)
 #define M(a,b,c) 1-sqrt(pow(T.Fx[a+b*size.x+c*size.x*size.y],2.0f) + pow(T.Fy[a+b*size.x+c*size.x*size.y],2.0f) + pow(T.Fz[a+b*size.x+c*size.x*size.y],2.0f))
-#define SQR_MAG(pos) sqrt(pow(TS.Fx[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f) + pow(TS.Fy[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f) + pow(TS.Fz[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f))
-#define SQR_MAG_SMALL(pos) sqrt(pow(TS.FxSmall[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f) + pow(TS.FySmall[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f) + pow(TS.FzSmall[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f))
+#define SQR_MAG(pos) sqrt(pow(T.Fx[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f) + pow(T.Fy[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f) + pow(T.Fz[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f))
+#define SQR_MAG_SMALL(pos) sqrt(pow(T.FxSmall[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f) + pow(T.FySmall[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f) + pow(T.FzSmall[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f))
 
 #define SIZE 3
 
@@ -631,7 +632,7 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList &parame
                     for(int b = -1; b < 2; b++) {
                         for(int c = -1; c < 2; c++) {
                             int3 nPos(x+a,y+b,z+c);
-                            if(T.TDF[POS(nPos)] > T.TDF[POS(pos)]) {
+                            if(SQR_MAG(nPos) < SQR_MAG(pos)) {
                                 valid = false;
                                 break;
                             }
@@ -2969,13 +2970,36 @@ if(getParamBool(parameters, "timing")) {
     return centerlines;
 }
 
-void writeDataToDisk(TSFOutput * output, std::string storageDirectory) {
+void writeDataToDisk(TSFOutput * output, std::string storageDirectory, std::string name) {
 	SIPL::int3 * size = output->getSize();
-	if(output->hasCenterlineVoxels())
-		writeToRaw<char>(output->getCenterlineVoxels(), storageDirectory + "centerline.raw", size->x, size->y, size->z);
+	if(output->hasCenterlineVoxels()) {
+		// Create MHD file
+		std::ofstream file;
+		std::string filename = storageDirectory + name + ".centerline.mhd";
+		file.open(filename.c_str());
+		file << "ObjectType = Image\n";
+		file << "NDims = 3\n";
+		file << "DimSize = " << output->getSize()->x << " " << output->getSize()->y << " " << output->getSize()->z << "\n";
+		file << "ElementType = MET_CHAR\n";
+		file << "ElementDataFile = " << name << ".centerline.raw\n";
+		file.close();
+		writeToRaw<char>(output->getCenterlineVoxels(), storageDirectory + name + ".centerline.raw", size->x, size->y, size->z);
+	}
 
-	if(output->hasSegmentation())
-		writeToRaw<char>(output->getSegmentation(), storageDirectory + "segmentation.raw", size->x, size->y, size->z);
+	if(output->hasSegmentation()) {
+		// Create MHD file
+		std::ofstream file;
+		std::string filename = storageDirectory + name + ".segmentation.mhd";
+		file.open(filename.c_str());
+		file << "ObjectType = Image\n";
+		file << "NDims = 3\n";
+		file << "DimSize = " << output->getSize()->x << " " << output->getSize()->y << " " << output->getSize()->z << "\n";
+		file << "ElementType = MET_CHAR\n";
+		file << "ElementDataFile = " << name << ".segmentation.raw\n";
+		file.close();
+
+		writeToRaw<char>(output->getSegmentation(), storageDirectory + name + ".segmentation.raw", size->x, size->y, size->z);
+	}
 }
 
 void runCircleFittingAndNewCenterlineAlg(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * size, paramList &parameters, TSFOutput * output) {
@@ -3014,7 +3038,7 @@ void runCircleFittingAndNewCenterlineAlg(OpenCL * ocl, cl::Image3D &dataset, SIP
     }
 
 	if(getParamStr(parameters, "storage-dir") != "off") {
-		writeDataToDisk(output, getParamStr(parameters, "storage-dir"));
+		writeDataToDisk(output, getParamStr(parameters, "storage-dir"), getParamStr(parameters, "storage-name"));
     }
 
 }
@@ -3039,7 +3063,7 @@ public:
 	};
 };
 
-std::vector<CrossSection *> createGraph(TubeSegmentation &TS, SIPL::int3 size) {
+std::vector<CrossSection *> createGraph(TubeSegmentation &T, SIPL::int3 size) {
 	// Create vector
 	std::vector<CrossSection *> sections;
 	float threshold = 0.5f;
@@ -3051,13 +3075,13 @@ std::vector<CrossSection *> createGraph(TubeSegmentation &TS, SIPL::int3 size) {
 	for(int y = 1; y < size.y-1; y++) {
 	for(int x = 1; x < size.x-1; x++) {
 		int3 pos(x,y,z);
-		float tdf = TS.TDF[POS(pos)];
+		float tdf = T.TDF[POS(pos)];
 		if(tdf > threshold) {
-			int maxD = std::min(std::max((int)round(TS.radius[POS(pos)]), 1), 5);
+			int maxD = std::min(std::max((int)round(T.radius[POS(pos)]), 1), 5);
 		    //std::cout << SQR_MAG(pos) << " " << SQR_MAG_SMALL(pos) << std::endl;
 			//std::cout << "radius" << TS.radius[POS(pos)] << std::endl;
 			//std::cout << "maxD "<< maxD <<std::endl;
-			float3 e1 = getTubeDirection(TS, pos, size);
+			float3 e1 = getTubeDirection(T, pos, size);
 			bool invalid = false;
 		    for(int a = -maxD; a <= maxD; a++) {
 		    for(int b = -maxD; b <= maxD; b++) {
@@ -3077,7 +3101,7 @@ std::vector<CrossSection *> createGraph(TubeSegmentation &TS, SIPL::int3 size) {
 
 		        if((theta < thetaLimit && r.length() < maxD-0.5f)) {
 		        	//std::cout << SQR_MAG(n) << std::endl;
-		        	if(TS.radius[POS(pos)]<= 3) {
+		        	if(T.radius[POS(pos)]<= 3) {
 		            //if(TS.TDF[POS(n)] > TS.TDF[POS(pos)]) {
 		            if(SQR_MAG_SMALL(n) < SQR_MAG_SMALL(pos)) {
 		                invalid = true;
@@ -3136,10 +3160,12 @@ std::vector<CrossSection *> createGraph(TubeSegmentation &TS, SIPL::int3 size) {
 					int3 in(round(n.x),round(n.y),round(n.z));
 					//float3 e1 = getTubeDirection(TS, in, size);
 					//cost += (1-fabs(a->direction.dot(e1)))+(1-fabs(b->direction.dot(e1)));
-					if(TS.intensity[POS(in)] > 0.5f) {
+					/*
+					if(T.intensity[POS(in)] > 0.5f) {
 						invalid = true;
 						break;
 					}
+					*/
 				}
 				//if(invalid)
 				//	continue;
@@ -3993,7 +4019,7 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
 
 
 	if(getParamStr(parameters, "storage-dir") != "off") {
-        writeDataToDisk(output, getParamStr(parameters, "storage-dir"));
+        writeDataToDisk(output, getParamStr(parameters, "storage-dir"), getParamStr(parameters, "storage-name"));
     }
 
 }
@@ -4077,7 +4103,7 @@ void runCircleFittingAndRidgeTraversal(OpenCL * ocl, Image3D &dataset, SIPL::int
 
 
     if(getParamStr(parameters, "storage-dir") != "off") {
-        writeDataToDisk(output, getParamStr(parameters, "storage-dir"));
+        writeDataToDisk(output, getParamStr(parameters, "storage-dir"), getParamStr(parameters, "storage-name"));
     }
 
 }
