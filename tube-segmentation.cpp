@@ -2980,6 +2980,7 @@ void writeDataToDisk(TSFOutput * output, std::string storageDirectory, std::stri
 		file << "ObjectType = Image\n";
 		file << "NDims = 3\n";
 		file << "DimSize = " << output->getSize()->x << " " << output->getSize()->y << " " << output->getSize()->z << "\n";
+		file << "ElementSpacing = " << output->getSpacing().x << " " << output->getSpacing().y << " " << output->getSpacing().z << "\n";
 		file << "ElementType = MET_CHAR\n";
 		file << "ElementDataFile = " << name << ".centerline.raw\n";
 		file.close();
@@ -2994,6 +2995,7 @@ void writeDataToDisk(TSFOutput * output, std::string storageDirectory, std::stri
 		file << "ObjectType = Image\n";
 		file << "NDims = 3\n";
 		file << "DimSize = " << output->getSize()->x << " " << output->getSize()->y << " " << output->getSize()->z << "\n";
+		file << "ElementSpacing = " << output->getSpacing().x << " " << output->getSpacing().y << " " << output->getSpacing().z << "\n";
 		file << "ElementType = MET_CHAR\n";
 		file << "ElementDataFile = " << name << ".segmentation.raw\n";
 		file.close();
@@ -4172,6 +4174,7 @@ Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &par
     std::string typeName = "";
     std::string rawFilename = "";
     bool typeFound = false, sizeFound = false, rawFilenameFound = false;
+    SIPL::float3 spacing(1,1,1);
     do {
         std::string line;
         std::getline(mhdFile, line);
@@ -4204,6 +4207,17 @@ Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &par
             size->z = atoi(sizeZ.c_str());
 
             sizeFound = true;
+		} else if(line.substr(0, 14) == "ElementSpacing") {
+            std::string sizeString = line.substr(14+3);
+            std::string sizeX = sizeString.substr(0,sizeString.find(" "));
+            sizeString = sizeString.substr(sizeString.find(" ")+1);
+            std::string sizeY = sizeString.substr(0,sizeString.find(" "));
+            sizeString = sizeString.substr(sizeString.find(" ")+1);
+            std::string sizeZ = sizeString.substr(0,sizeString.find(" "));
+
+            spacing.x = atof(sizeX.c_str());
+            spacing.y = atof(sizeY.c_str());
+            spacing.z = atof(sizeZ.c_str());
         }
 
     } while(!mhdFile.eof());
@@ -4576,6 +4590,7 @@ Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &par
     	}
     }
     output->setShiftVector(shiftVector);
+    output->setSpacing(spacing);
 
     // Run toFloat kernel
 
