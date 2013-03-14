@@ -4790,3 +4790,12 @@ void TSFOutput::setShiftVector(SIPL::int3 shiftVector) {
 	this->shiftVector = shiftVector;
 }
 
+SIPL::float3 TSFOutput::getSpacing() const {
+	return spacing;
+}
+
+void TSFOutput::setSpacing(SIPL::float3 spacing) {
+	this->spacing = spacing;
+}
+
+

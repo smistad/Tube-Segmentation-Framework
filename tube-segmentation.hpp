@@ -48,12 +48,15 @@ public:
 	~TSFOutput();
 	SIPL::int3 getShiftVector() const;
 	void setShiftVector(SIPL::int3 shiftVector);
+	SIPL::float3 getSpacing() const;
+	void setSpacing(SIPL::float3 spacing);
 
 private:
 	cl::Image3D* oclCenterlineVoxels;
 	cl::Image3D* oclSegmentation;
 	cl::Image3D* oclTDF;
 	SIPL::int3* size;
+	SIPL::float3 spacing;
 	SIPL::int3 shiftVector;
 	bool hostHasSegmentation;
 	bool hostHasCenterlineVoxels;
