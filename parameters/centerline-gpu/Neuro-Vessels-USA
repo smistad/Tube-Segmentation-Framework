@@ -1,10 +1,13 @@
-minimum 0
-maximum 50
-radius-min 3.5
-large-blur 3.5
+minimum 50
+maximum 200
+fmax 0.1
+min-mean-tdf 0.5
+radius-min 1.5
+radius-max 7.0
+small-blur 2.0
+large-blur 3.0
 cropping threshold
 cropping-threshold 50
 min-tree-length 10
 sphere-segmentation
-cube-size 6
-fmax 0.1
+cube-size 4
