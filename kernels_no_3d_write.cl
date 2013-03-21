@@ -1062,14 +1062,18 @@ __kernel void combine(
 
 __kernel void initGrowing(
 	__read_only image3d_t centerline,
-	__global char * initSegmentation
+	__global char * initSegmentation,
+	__read_only image3d_t avgRadius
 	) {
     int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
     if(read_imagei(centerline, sampler, pos).x == 1) {
 	
-        for(int a = -1; a < 2; a++) {
-        for(int b = -1; b < 2; b++) {
-        for(int c = -1; c < 2; c++) {
+    	float radius = read_imagef(avgRadius, sampler, pos).x;
+    	int N = min(max(1, (int)round(radius/2.0f)), 4);
+
+        for(int a = -N; a < N+1; a++) {
+        for(int b = -N; b < N+1; b++) {
+        for(int c = -N; c < N+1; c++) {
             int4 n;
             n.x = pos.x + a;
             n.y = pos.y + b;
