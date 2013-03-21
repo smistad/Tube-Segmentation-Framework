@@ -8,3 +8,4 @@ tdf-high 0.35
 cube-size 3
 min-tree-length 3
 max-distance 10.0
+radius-max 4.0
