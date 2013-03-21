@@ -383,8 +383,8 @@ __kernel void linkCenterpoints(
     // Check distance between xa and xb
     int dc = round(cl2.x);
 
-    float minTDF = 0.0f;
-    float maxVarTDF = 1.005f;
+    //float minTDF = 0.0f;
+    //float maxVarTDF = 1.005f;
     //float maxIntensity = 1.3f;
     //float maxAvgIntensity = 1.2f;
     //float maxVarIntensity = 1.005f;
@@ -966,9 +966,9 @@ __kernel void dilate(
     int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
 
     if(read_imagei(volume, sampler, pos).x == 1) {
-    for(int a = -1; a < 2 ; a++) { 
-        for(int b = -1; b < 2 ; b++) { 
-            for(int c = -1; c < 2 ; c++) { 
+    for(int a = -1; a < 2 ; a++) {
+        for(int b = -1; b < 2 ; b++) {
+            for(int c = -1; c < 2 ; c++) {
                 int4 nPos = pos + (int4)(a,b,c,0);
 		write_imagei(result, nPos, 1);
             }
@@ -987,9 +987,9 @@ __kernel void erode(
     if(value == 1) {
 
     bool keep = true;
-    for(int a = -1; a < 2 ; a++) { 
-        for(int b = -1; b < 2 ; b++) { 
-            for(int c = -1; c < 2 ; c++) { 
+    for(int a = -1; a < 2 ; a++) {
+        for(int b = -1; b < 2 ; b++) {
+            for(int c = -1; c < 2 ; c++) {
                 keep = (read_imagei(volume, sampler, pos + (int4)(a,b,c,0)).x == 1 && keep);
             }
         }
@@ -1706,5 +1706,4 @@ void eigen_decomposition(float A[SIZE][SIZE], float V[SIZE][SIZE], float d[SIZE]
   tred2(V, d, e);
   tql2(V, d, e);
 }
-
 
