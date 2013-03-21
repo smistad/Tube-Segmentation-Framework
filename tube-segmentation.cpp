@@ -21,14 +21,16 @@ using boost::unordered_set;
 //#include "tsf-config.h"
 
 //#define TIMING
-
-#ifdef TIMING
+#ifdef CPP11
 #include <chrono>
-#define INIT_TIMER auto timerStart = std::chrono::high_resolution_clock::now();
-#define START_TIMER  timerStart = std::chrono::high_resolution_clock::now();
+using std::chrono::high_resolution_clock;
+using std::chrono::duration_cast;
+using std::chrono::milliseconds;
+#define INIT_TIMER high_resolution_clock::time_point timerStart = high_resolution_clock::now();
+#define START_TIMER  timerStart = high_resolution_clock::now();
 #define STOP_TIMER(name)  std::cout << "RUNTIME of " << name << ": " << \
-        std::chrono::duration_cast<std::chrono::milliseconds>( \
-                            std::chrono::high_resolution_clock::now()-timerStart \
+        duration_cast<milliseconds>( \
+                            high_resolution_clock::now()-timerStart \
                     ).count() << " ms " << std::endl;
 #else
 #define INIT_TIMER
@@ -106,7 +108,9 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
         ocl->program = buildProgramFromSource(ocl->context, filename, buildOptions);
     }
 
-    START_TIMER
+    if(getParamBool(parameters, "timer-total")) {
+		START_TIMER
+    }
     SIPL::int3 * size = new SIPL::int3();
     TSFOutput * output = new TSFOutput(ocl, size);
     try {
@@ -126,7 +130,9 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
         throw SIPL::SIPLException(str.c_str());
     }
     ocl->queue.finish();
-    STOP_TIMER("total")
+    if(getParamBool(parameters, "timer-total")) {
+		STOP_TIMER("total")
+    }
     return output;
 }
 
