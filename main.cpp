@@ -1,12 +1,7 @@
 #include "tube-segmentation.hpp"
 #include "SIPL/Core.hpp"
 #include "tsf-config.h"
-#ifdef CPP11
-#include <chrono>
-using std::chrono::high_resolution_clock;
-using std::chrono::duration_cast;
-using std::chrono::milliseconds;
-#endif
+
 
 int main(int argc, char ** argv) {
 
@@ -15,12 +10,6 @@ int main(int argc, char ** argv) {
     std::string filename = argv[1];
 
 
-#ifdef CPP11
-    high_resolution_clock::time_point timerStart;
-    if(getParamBool(parameters, "timer-total")) {
-		timerStart = high_resolution_clock::now();
-    }
-#endif
     TSFOutput * output;
     try {
 		output = run(filename, parameters, std::string(KERNELS_DIR));
@@ -29,15 +18,6 @@ int main(int argc, char ** argv) {
 
     	return -1;
     }
-
-#ifdef CPP11
-    if(getParamBool(parameters, "timer-total")) {
-		std::cout << "TOTAL RUNTIME: " <<
-				duration_cast<milliseconds>(
-				high_resolution_clock::now()-timerStart).count() <<
-				" ms " << std::endl;
-    }
-#endif
 
     if(getParamBool(parameters, "display")) {
         // Visualize result
