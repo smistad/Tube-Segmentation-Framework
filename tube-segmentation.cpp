@@ -2295,18 +2295,37 @@ void removeLoops(
 
 	std::vector<int3> newVertices;
 	std::vector<SIPL::int2> newEdges;
+	unordered_map<int, int> added;
 	int counter = 0;
 	for(int i = 0; i < finalGraph.size(); i++) {
 		Node * n = finalGraph[i];
-		newVertices.push_back(n->pos);
-		int nIndex = counter;
-		counter++;
+		int nIndex;
+		if(added.find(POS(n->pos)) != added.end()) {
+			// already has been added
+			// fetch index
+			nIndex = added[POS(n->pos)];
+		} else {
+			newVertices.push_back(n->pos);
+			added[POS(n->pos)] = counter;
+			nIndex = counter;
+			counter++;
+		}
 		for(int j = 0; j < n->edges.size(); j++) {
 			Edge * e = n->edges[j];
 			// add edge from n to n_j
-			newEdges.push_back(SIPL::int2(nIndex, counter));
-			newVertices.push_back(e->target->pos);
-			counter++;
+
+			int tIndex;
+			if(added.find(POS(e->target->pos)) != added.end()) {
+				// already has been added
+				// fetch index
+				tIndex = added[POS(e->target->pos)];
+			} else {
+				newVertices.push_back(e->target->pos);
+				added[POS(e->target->pos)] = counter;
+				tIndex = counter;
+				counter++;
+			}
+			newEdges.push_back(SIPL::int2(nIndex, tIndex));
 		}
 	}
 
