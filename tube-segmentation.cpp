@@ -2888,28 +2888,28 @@ if(getParamBool(parameters, "timing")) {
     		}
     	}
     	std::vector<SIPL::int2> edges;
+		int maxEdgeDistance = getParam(parameters, "max-edge-distance");
     	for(int i = 0; i < sum2; i++) {
-    		if(SArray[CArray[edgesArray[i*2]]] >= minTreeLength) {
+    		if(SArray[CArray[edgesArray[i*2]]] >= minTreeLength && SArray[CArray[edgesArray[i*2+1]]] >= minTreeLength ) {
     			// Check length of edge
     			int3 A = vertices[indexes[edgesArray[i*2]]];
     			int3 B = vertices[indexes[edgesArray[i*2+1]]];
     			float distance = A.distance(B);
-    			int maxEdgeDistance = getParam(parameters, "max-edge-distance");
-    			if(getParamStr(parameters, "centerline-vtk-file") != "off" && distance > maxEdgeDistance) {
+    			if(getParamStr(parameters, "centerline-vtk-file") != "off" &&
+    					distance > maxEdgeDistance) {
 					float3 direction(B.x-A.x,B.y-A.y,B.z-A.z);
 					float3 Af(A.x,A.y,A.z);
 					int previous = indexes[edgesArray[i*2]];
-    				for(int i = maxEdgeDistance; i < distance; i += maxEdgeDistance) {
-    					float3 newPos = Af + ((float)i/distance)*direction;
+    				for(int j = maxEdgeDistance; j < distance; j += maxEdgeDistance) {
+    					float3 newPos = Af + ((float)j/distance)*direction;
     					int3 newVertex(round(newPos.x), round(newPos.y), round(newPos.z));
     					// Create new vertex
     					vertices.push_back(newVertex);
-    					indexes[i] = counter;
     					// Add new edge
     					SIPL::int2 edge(previous, counter);
+    					edges.push_back(edge);
     					previous = counter;
     					counter++;
-    					edges.push_back(edge);
     				}
     				// Connect previous vertex to B
     				SIPL::int2 edge(previous, indexes[edgesArray[i*2+1]]);
