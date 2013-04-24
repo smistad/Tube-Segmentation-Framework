@@ -1,6 +1,6 @@
 #include "tests.hpp"
 #include "../SIPL/Exceptions.hpp"
-#include "../tsf-config.h"
+#include "tsf-config.h"
 
 // Tests for the parameter system
 
