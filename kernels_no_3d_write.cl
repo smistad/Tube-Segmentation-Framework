@@ -1593,7 +1593,9 @@ __kernel void GVF3DFinish_one_component(
 		__global VECTOR_FIELD_TYPE const * restrict vectorFieldX,
 		__global VECTOR_FIELD_TYPE const * restrict vectorFieldY,
 		__global VECTOR_FIELD_TYPE const * restrict vectorFieldZ,
-		__global VECTOR_FIELD_TYPE * vectorField2
+		__global VECTOR_FIELD_TYPE * vectorField,
+		__global VECTOR_FIELD_TYPE * vectorField2,
+		__private int maxZ
 	) {
     const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
     int offset = pos.x+pos.y*get_global_size(0)+pos.z*get_global_size(0)*get_global_size(1);
@@ -1603,7 +1605,7 @@ __kernel void GVF3DFinish_one_component(
     v.z = SNORM16_TO_FLOAT(vectorFieldZ[offset]);
     v.w = 0;
     v.w = length(v) > 0.0f ? length(v) : 1.0f;
-    vstore4(FLOAT_TO_SNORM16_4(v), offset, vectorField2);
+    vstore4(FLOAT_TO_SNORM16_4(v), SELECT_POS(pos,maxZ), SELECT_BUFFER(vectorField,vectorField2,pos.z,maxZ));
 }
 
 __kernel void GVF3DIteration(
