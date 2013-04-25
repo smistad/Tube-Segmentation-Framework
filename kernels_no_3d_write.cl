@@ -1424,11 +1424,16 @@ __kernel void blurVolumeWithGaussian(
     blurredVolume[LPOS(pos)] = sum;
 }
 
+#define SELECT_BUFFER(vec1,vec2,z,maxZ) z < maxZ ? vec1:vec2
+#define SELECT_POS(pos,maxZ) pos.z < maxZ ? LPOS(pos) : LPOS((int4)(pos.x,pos.y,pos.z-maxZ,0))
+
 __kernel void createVectorField(
         __read_only image3d_t volume, 
         __global VECTOR_FIELD_TYPE * vectorField,
+        __global VECTOR_FIELD_TYPE * vectorField2,
         __private float Fmax,
-        __private int vectorSign
+        __private int vectorSign,
+        __private int maxZ
         ) {
     const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
 
@@ -1447,7 +1452,8 @@ F.z = vectorSign*F.z;
     F.w = 1.0f;
 
     // Store vector field
-    vstore4(FLOAT_TO_SNORM16_4(F), LPOS(pos), vectorField);
+
+    vstore4(FLOAT_TO_SNORM16_4(F), SELECT_POS(pos,maxZ), SELECT_BUFFER(vectorField,vectorField2,pos.z,maxZ));
 }
 
 
