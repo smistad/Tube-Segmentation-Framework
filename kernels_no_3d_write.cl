@@ -236,12 +236,17 @@ uint DecodeMorton3Z(uint code) {
 
 __kernel void constructHPLevelCharChar(
         __global uchar * readHistoPyramid,
-        __global uchar * writeHistoPyramid
+        __global uchar * writeHistoPyramid,
+        __private int totalSize
     ) { 
 
     uint writePos = EncodeMorton3(get_global_id(0), get_global_id(1), get_global_id(2));
     uint readPos = EncodeMorton3(get_global_id(0)*2, get_global_id(1)*2, get_global_id(2)*2);
-    uchar writeValue = readHistoPyramid[readPos] +
+    uchar writeValue;
+    if(readPos >= totalSize) {
+    	writeValue = 0;
+    } else {
+		writeValue = readHistoPyramid[readPos] +
                     readHistoPyramid[readPos + 1] +
                     readHistoPyramid[readPos + 2] +
                     readHistoPyramid[readPos + 3] +
@@ -249,6 +254,7 @@ __kernel void constructHPLevelCharChar(
                     readHistoPyramid[readPos + 5] +
                     readHistoPyramid[readPos + 6] +
                     readHistoPyramid[readPos + 7];
+    }
 
     writeHistoPyramid[writePos] = writeValue;
 }

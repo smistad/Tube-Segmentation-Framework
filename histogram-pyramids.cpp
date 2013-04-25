@@ -149,6 +149,7 @@ void HistogramPyramid3DBuffer::create(Buffer &baseLevel, int sizeX, int sizeY, i
     // Run base to first level
     constructHPLevelCharCharKernel.setArg(0, HPlevels[0]);
     constructHPLevelCharCharKernel.setArg(1, HPlevels[1]);
+    constructHPLevelCharCharKernel.setArg(2, sizeX*sizeY*sizeZ);
 
     ocl.queue.enqueueNDRangeKernel(
         constructHPLevelCharCharKernel,
