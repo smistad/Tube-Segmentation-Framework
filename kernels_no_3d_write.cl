@@ -686,7 +686,8 @@ __kernel void createPositions3DBuffer(
     int target = get_global_id(0);
     if(target >= sum)
         target = 0;
-    int4 pos = traverseHP3DBuffer((uint3)(sizeX,sizeY,sizeZ),target,HP_SIZE,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,hp8,hp9);
+    uint3 size = {sizeX,sizeY,sizeZ};
+    int4 pos = traverseHP3DBuffer(size,target,HP_SIZE,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,hp8,hp9);
     vstore3(pos.xyz, target, positions);
 }
 
@@ -758,6 +759,7 @@ __kernel void linkCenterpoints(
     if(id >= sum)
         id = 0;
     float3 xa = convert_float3(vload3(id, positions));
+    //printf("%f %f %f\n",xa.x,xa.y,xa.z);
 
     int2 bestPair;
     float shortestDistance = maxDistance*2;
@@ -1020,7 +1022,7 @@ __kernel void dd(
         }
     }}}
     if(found) {
-        centerpoints[LPOS(bestPos)] = 1;
+        centerpoints[bestPos.x+bestPos.y*get_image_width(TDF)+bestPos.z*get_image_width(TDF)*get_image_height(TDF)] = 1;
     }
 }
 
