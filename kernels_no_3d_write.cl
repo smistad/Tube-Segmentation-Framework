@@ -431,11 +431,10 @@ int4 scanHPLevelShort(int target, __global ushort * hp, int4 current) {
     return current;
 
 }
-int4 scanHPLevelChar(int target, __global uchar * hp, int4 current, bool morton, uint3 size) {
 
-	int8 neighbors;
-	if(morton){
-    neighbors = (int8)(
+int4 scanHPLevelChar(int target, __global uchar * hp, int4 current) {
+
+	int8 neighbors = {
         hp[EncodeMorton(current)],
         hp[EncodeMorton(current + cubeOffsets[1])],
         hp[EncodeMorton(current + cubeOffsets[2])],
@@ -444,9 +443,45 @@ int4 scanHPLevelChar(int target, __global uchar * hp, int4 current, bool morton,
         hp[EncodeMorton(current + cubeOffsets[5])],
         hp[EncodeMorton(current + cubeOffsets[6])],
         hp[EncodeMorton(current + cubeOffsets[7])],
-    );
-	} else {
-		neighbors = (int8)(
+	};
+
+    int acc = current.s3 + neighbors.s0;
+    int8 cmp;
+    cmp.s0 = acc <= target;
+    acc += neighbors.s1;
+    cmp.s1 = acc <= target;
+    acc += neighbors.s2;
+    cmp.s2 = acc <= target;
+    acc += neighbors.s3;
+    cmp.s3 = acc <= target;
+    acc += neighbors.s4;
+    cmp.s4 = acc <= target;
+    acc += neighbors.s5;
+    cmp.s5 = acc <= target;
+    acc += neighbors.s6;
+    cmp.s6 = acc <= target;
+    cmp.s7 = 0;
+
+
+    current += cubeOffsets[(cmp.s0+cmp.s1+cmp.s2+cmp.s3+cmp.s4+cmp.s5+cmp.s6+cmp.s7)];
+    current.s0 = current.s0*2;
+    current.s1 = current.s1*2;
+    current.s2 = current.s2*2;
+    current.s3 = current.s3 +
+    cmp.s0*neighbors.s0 +
+    cmp.s1*neighbors.s1 +
+    cmp.s2*neighbors.s2 +
+    cmp.s3*neighbors.s3 +
+    cmp.s4*neighbors.s4 +
+    cmp.s5*neighbors.s5 +
+    cmp.s6*neighbors.s6 +
+    cmp.s7*neighbors.s7;
+    return current;
+
+}
+int4 scanHPLevelCharNoMorton(int target, __global uchar * hp, int4 current, uint3 size) {
+
+	int8 neighbors = {
         hp[NLPOS(current)],
         hp[NLPOS(current + cubeOffsets[1])],
         hp[NLPOS(current + cubeOffsets[2])],
@@ -455,9 +490,7 @@ int4 scanHPLevelChar(int target, __global uchar * hp, int4 current, bool morton,
         hp[NLPOS(current + cubeOffsets[5])],
         hp[NLPOS(current + cubeOffsets[6])],
         hp[NLPOS(current + cubeOffsets[7])],
-    );
-
-	}
+    };
 
     int acc = current.s3 + neighbors.s0;
     int8 cmp;
@@ -573,8 +606,8 @@ int4 traverseHP3DBuffer(
     if(HP_SIZE > 8)
     position = scanHPLevelShort(target, hp3, position);
     position = scanHPLevelShort(target, hp2, position);
-    position = scanHPLevelChar(target, hp1, position,true,size);
-    position = scanHPLevelChar(target, hp0, position,false,size);
+    position = scanHPLevelChar(target, hp1, position);
+    position = scanHPLevelCharNoMorton(target, hp0, position,size);
     position.x = position.x / 2;
     position.y = position.y / 2;
     position.z = position.z / 2;
