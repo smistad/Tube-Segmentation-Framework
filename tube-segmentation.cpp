@@ -2618,26 +2618,11 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
     int sum = 0;
 
     if(no3Dwrite) {
-    	float * t = new float[totalSize];
-    	ocl.queue.enqueueReadImage(TDF, CL_TRUE, offset, region, 0, 0, t);
-    	int sumf = 0;
-        char *b2 = new char[totalSize]();
-    	for(int i = 0; i<totalSize;i++){
-    		if(t[i] > Thigh){
-    			sumf++;
-    			b2[i] = 1;
-    		}
-    	}
-    	std::cout << "sum above was " << sumf << std::endl;
-
         Buffer centerpoints = Buffer(
                 ocl.context,
-                CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
-                sizeof(char)*totalSize,
-                b2
+                CL_MEM_READ_WRITE,
+                sizeof(char)*totalSize
         );
-
-        /*
 
         candidatesKernel.setArg(0, TDF);
         candidatesKernel.setArg(1, centerpoints);
@@ -2648,14 +2633,6 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
                 NDRange(size.x,size.y,size.z),
                 NullRange
         );
-        char *b = new char[totalSize];
-        ocl.queue.enqueueReadBuffer(centerpoints, CL_TRUE, 0, totalSize, b);
-     	sumf = 0;
-    	for(int i = 0; i<totalSize;i++){
-    			sumf += b[i];
-    	}
-    	std::cout << "sum of buffer was " << sumf << std::endl;
-        */
 
         HistogramPyramid3DBuffer hp3(ocl);
         hp3.create(centerpoints, size.x, size.y, size.z);
