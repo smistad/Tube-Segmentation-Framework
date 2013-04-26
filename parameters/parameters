@@ -37,7 +37,7 @@ buffers-only bool false "Use OpenCL buffers instead of 3D textures" advanced
 storage-dir str off "Directory of where to store results (ommit to skip)" storage
 storage-name str unnamed "Storage name" storage
 32bit-vectors bool false "Force the use of 32 bit vectors" advanced
-16bit-vectors bool false "Force the use of 16 bit vectors" advanced
+16bit-vectors bool true "Force the use of 16 bit vectors" advanced
 parameters str none none Lung-Airways-CT Neuro-Vessels-USA Neuro-Vessels-MRA Phantom-Acc-US Synthetic-Vascusynth "Which parameter preset to use" preset
 loop-removal bool true "Perform loop removal on centerlines on CPU" advanced
 timer-total bool false "Measure the total execution time" advanced
