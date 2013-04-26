@@ -41,6 +41,7 @@ class HistogramPyramid3DBuffer : public HistogramPyramid {
         cl::Buffer createPositionBuffer();
         void traverse(cl::Kernel &kernel, int);
     private:
+        int sizeX,sizeY,sizeZ;
         std::vector<cl::Buffer> HPlevels;
 };
 

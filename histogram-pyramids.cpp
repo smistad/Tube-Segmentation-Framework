@@ -111,6 +111,9 @@ void HistogramPyramid3D::create(Image3D &baseLevel, int sizeX, int sizeY, int si
 }
 
 void HistogramPyramid3DBuffer::create(Buffer &baseLevel, int sizeX, int sizeY, int sizeZ) {
+	this->sizeX = sizeX;
+	this->sizeY = sizeY;
+	this->sizeZ = sizeZ;
     // Make baseLevel into power of 2 in all dimensions
     if(sizeX == sizeY && sizeY == sizeZ && log2(sizeX) == round(log2(sizeX))) {
         size = sizeX;
@@ -149,7 +152,9 @@ void HistogramPyramid3DBuffer::create(Buffer &baseLevel, int sizeX, int sizeY, i
     // Run base to first level
     constructHPLevelCharCharKernel.setArg(0, HPlevels[0]);
     constructHPLevelCharCharKernel.setArg(1, HPlevels[1]);
-    constructHPLevelCharCharKernel.setArg(2, sizeX*sizeY*sizeZ);
+    constructHPLevelCharCharKernel.setArg(2, sizeX);
+    constructHPLevelCharCharKernel.setArg(3, sizeY);
+    constructHPLevelCharCharKernel.setArg(4, sizeZ);
 
     ocl.queue.enqueueNDRangeKernel(
         constructHPLevelCharCharKernel,
@@ -390,8 +395,11 @@ Buffer HistogramPyramid3DBuffer::createPositionBuffer() {
             3*sizeof(int)*sum
     );
     Kernel kernel(ocl.program, "createPositions3DBuffer");
-    kernel.setArg(0, (*positions));
-    this->traverse(kernel, 1);
+    kernel.setArg(0, sizeX);
+    kernel.setArg(1, sizeY);
+    kernel.setArg(2, sizeZ);
+    kernel.setArg(3, (*positions));
+    this->traverse(kernel, 4);
     return *positions;
 }
 
