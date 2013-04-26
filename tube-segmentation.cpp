@@ -81,6 +81,7 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
     // Select first device
     VECTOR_CLASS<cl::Device> devices = ocl->context.getInfo<CL_CONTEXT_DEVICES>();
     std::cout << "Using device: " << devices[0].getInfo<CL_DEVICE_NAME>() << std::endl;
+    ocl->device = devices[0];
     if(getParamBool(parameters, "timing")) {
         ocl->queue = cl::CommandQueue(ocl->context, devices[0], CL_QUEUE_PROFILING_ENABLE);
     } else {
@@ -1197,18 +1198,46 @@ void runLowMemoryGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, S
         }
 
 
-        Buffer vectorFieldBuffer = Buffer(
-                ocl.context,
-                CL_MEM_WRITE_ONLY,
-                4*vectorFieldSize*totalSize
-        );
+		bool usingTwoBuffers = false;
+    	int maxZ = size.z;
+        // Create auxillary buffer
+        Buffer vectorFieldBuffer, vectorFieldBuffer2;
+        unsigned int maxBufferSize = ocl.device.getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE>();
+        if(getParamBool(parameters, "16bit-vectors")) {
+			if(4*sizeof(short)*totalSize < maxBufferSize) {
+				vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(short)*totalSize);
+			} else {
+				std::cout << "NOTE: Could not fit entire vector field into one buffer. Splitting buffer in two." << std::endl;
+				// create two buffers
+				unsigned int limit = (float)maxBufferSize / (4*sizeof(short));
+				maxZ = floor((float)limit/(size.x*size.y));
+				unsigned int splitSize = maxZ*size.x*size.y*4*sizeof(short);
+				vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, splitSize);
+				vectorFieldBuffer2 = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(short)*totalSize-splitSize);
+				usingTwoBuffers = true;
+			}
+        } else {
+			if(4*sizeof(float)*totalSize < maxBufferSize) {
+				vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(float)*totalSize);
+			} else {
+				std::cout << "NOTE: Could not fit entire vector field into one buffer. Splitting buffer in two." << std::endl;
+				// create two buffers
+				unsigned int limit = (float)maxBufferSize / (4*sizeof(float));
+				maxZ = floor((float)limit/(size.x*size.y));
+				unsigned int splitSize = maxZ*size.x*size.y*4*sizeof(float);
+				vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, splitSize);
+				vectorFieldBuffer2 = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(float)*totalSize-splitSize);
+				usingTwoBuffers = true;
+    		}
+        }
 
         // Copy vector field to image
-
         GVFFinishKernel.setArg(0, vectorFieldX);
         GVFFinishKernel.setArg(1, vectorFieldY);
         GVFFinishKernel.setArg(2, vectorFieldZ);
         GVFFinishKernel.setArg(3, vectorFieldBuffer);
+        GVFFinishKernel.setArg(4, vectorFieldBuffer2);
+        GVFFinishKernel.setArg(5, maxZ);
 
         ocl.queue.enqueueNDRangeKernel(
                 GVFFinishKernel,
@@ -1226,14 +1255,49 @@ void runLowMemoryGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, S
 		region[1] = size.y;
 		region[2] = size.z;
 
-        // Copy buffer contents to image
-        ocl.queue.enqueueCopyBufferToImage(
-                vectorFieldBuffer,
-                vectorField,
-                0,
-                offset,
-                region
-        );
+		if(usingTwoBuffers) {
+			cl::size_t<3> region2;
+			region2[0] = size.x;
+			region2[1] = size.y;
+			unsigned int limit;
+			if(getParamBool(parameters, "16bit-vectors")) {
+				limit = (float)maxBufferSize / (4*sizeof(short));
+			} else {
+				limit = (float)maxBufferSize / (4*sizeof(float));
+			}
+			region2[2] = floor((float)limit/(size.x*size.y));
+			ocl.queue.enqueueCopyBufferToImage(
+					vectorFieldBuffer,
+					vectorField,
+					0,
+					offset,
+					region2
+			);
+			cl::size_t<3> offset2;
+			offset2[0] = 0;
+			offset2[1] = 0;
+			offset2[2] = region2[2];
+			cl::size_t<3> region3;
+			region3[0] = size.x;
+			region3[1] = size.y;
+			region3[2] = size.z-region2[2];
+			ocl.queue.enqueueCopyBufferToImage(
+					vectorFieldBuffer2,
+					vectorField,
+					0,
+					offset2,
+					region3
+			);
+		} else {
+			// Copy buffer contents to image
+			ocl.queue.enqueueCopyBufferToImage(
+					vectorFieldBuffer,
+					vectorField,
+					0,
+					offset,
+					region
+			);
+		}
 
     } else {
         Image3D vectorFieldX, vectorFieldY, vectorFieldZ;
@@ -1408,21 +1472,49 @@ if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
 }
     if(no3Dwrite) {
+    	bool usingTwoBuffers = false;
+    	int maxZ = size.z;
         // Create auxillary buffer
-        Buffer vectorFieldBuffer;
+        Buffer vectorFieldBuffer, vectorFieldBuffer2;
+        unsigned int maxBufferSize = ocl.device.getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE>();
         if(getParamBool(parameters, "16bit-vectors")) {
 			vectorField = Image3D(ocl.context, CL_MEM_READ_ONLY, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
-			vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(short)*totalSize);
+			if(4*sizeof(short)*totalSize < maxBufferSize) {
+				vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(short)*totalSize);
+			} else {
+				std::cout << "NOTE: Could not fit entire vector field into one buffer. Splitting buffer in two." << std::endl;
+				// create two buffers
+				unsigned int limit = (float)maxBufferSize / (4*sizeof(short));
+				maxZ = floor((float)limit/(size.x*size.y));
+				unsigned int splitSize = maxZ*size.x*size.y*4*sizeof(short);
+				vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, splitSize);
+				vectorFieldBuffer2 = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(short)*totalSize-splitSize);
+				usingTwoBuffers = true;
+			}
         } else {
 			vectorField = Image3D(ocl.context, CL_MEM_READ_ONLY, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
-			vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(float)*totalSize);
+			if(4*sizeof(float)*totalSize < maxBufferSize) {
+				vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(float)*totalSize);
+			} else {
+				std::cout << "NOTE: Could not fit entire vector field into one buffer. Splitting buffer in two." << std::endl;
+				// create two buffers
+				unsigned int limit = (float)maxBufferSize / (4*sizeof(float));
+				maxZ = floor((float)limit/(size.x*size.y));
+				unsigned int splitSize = maxZ*size.x*size.y*4*sizeof(float);
+				vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, splitSize);
+				vectorFieldBuffer2 = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(float)*totalSize-splitSize);
+				usingTwoBuffers = true;
+    		}
         }
 
         // Run create vector field
         createVectorFieldKernel.setArg(0, blurredVolume);
         createVectorFieldKernel.setArg(1, vectorFieldBuffer);
-        createVectorFieldKernel.setArg(2, Fmax);
-        createVectorFieldKernel.setArg(3, vectorSign);
+        createVectorFieldKernel.setArg(2, vectorFieldBuffer2);
+        createVectorFieldKernel.setArg(3, Fmax);
+        createVectorFieldKernel.setArg(4, vectorSign);
+        createVectorFieldKernel.setArg(5, maxZ);
+
 
         ocl.queue.enqueueNDRangeKernel(
                 createVectorFieldKernel,
@@ -1431,14 +1523,49 @@ if(getParamBool(parameters, "timing")) {
                 NullRange
         );
 
-        // Copy buffer contents to image
-        ocl.queue.enqueueCopyBufferToImage(
-                vectorFieldBuffer,
-                vectorField,
-                0,
-                offset,
-                region
-        );
+        if(usingTwoBuffers) {
+        	cl::size_t<3> region2;
+        	region2[0] = size.x;
+        	region2[1] = size.y;
+        	unsigned int limit;
+			if(getParamBool(parameters, "16bit-vectors")) {
+				limit = (float)maxBufferSize / (4*sizeof(short));
+			} else {
+				limit = (float)maxBufferSize / (4*sizeof(float));
+			}
+        	region2[2] = floor((float)limit/(size.x*size.y));
+ 			ocl.queue.enqueueCopyBufferToImage(
+					vectorFieldBuffer,
+					vectorField,
+					0,
+					offset,
+					region2
+			);
+ 			cl::size_t<3> offset2;
+ 			offset2[0] = 0;
+ 			offset2[1] = 0;
+ 			offset2[2] = region2[2];
+ 			cl::size_t<3> region3;
+ 			region3[0] = size.x;
+ 			region3[1] = size.y;
+ 			region3[2] = size.z-region2[2];
+			ocl.queue.enqueueCopyBufferToImage(
+					vectorFieldBuffer2,
+					vectorField,
+					0,
+					offset2,
+					region3
+			);
+        } else {
+			// Copy buffer contents to image
+			ocl.queue.enqueueCopyBufferToImage(
+					vectorFieldBuffer,
+					vectorField,
+					0,
+					offset,
+					region
+			);
+        }
 
     } else {
         if(getParamBool(parameters, "32bit-vectors")) {
@@ -1591,22 +1718,49 @@ if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
 }
    if(no3Dwrite) {
+		bool usingTwoBuffers = false;
+    	int maxZ = size.z;
         // Create auxillary buffer
-        Buffer vectorFieldBuffer;
-		if(getParamBool(parameters, "16bit-vectors")) {
+        Buffer vectorFieldBuffer, vectorFieldBuffer2;
+        unsigned int maxBufferSize = ocl.device.getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE>();
+        if(getParamBool(parameters, "16bit-vectors")) {
 			vectorField = Image3D(ocl.context, CL_MEM_READ_ONLY, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
-			vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(short)*totalSize);
+			if(4*sizeof(short)*totalSize < maxBufferSize) {
+				vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(short)*totalSize);
+			} else {
+				std::cout << "NOTE: Could not fit entire vector field into one buffer. Splitting buffer in two." << std::endl;
+				// create two buffers
+				unsigned int limit = (float)maxBufferSize / (4*sizeof(short));
+				maxZ = floor((float)limit/(size.x*size.y));
+				unsigned int splitSize = maxZ*size.x*size.y*4*sizeof(short);
+				vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, splitSize);
+				vectorFieldBuffer2 = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(short)*totalSize-splitSize);
+				usingTwoBuffers = true;
+			}
         } else {
 			vectorField = Image3D(ocl.context, CL_MEM_READ_ONLY, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
-			vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(float)*totalSize);
+			if(4*sizeof(float)*totalSize < maxBufferSize) {
+				vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(float)*totalSize);
+			} else {
+				std::cout << "NOTE: Could not fit entire vector field into one buffer. Splitting buffer in two." << std::endl;
+				// create two buffers
+				unsigned int limit = (float)maxBufferSize / (4*sizeof(float));
+				maxZ = floor((float)limit/(size.x*size.y));
+				unsigned int splitSize = maxZ*size.x*size.y*4*sizeof(float);
+				vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, splitSize);
+				vectorFieldBuffer2 = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(float)*totalSize-splitSize);
+				usingTwoBuffers = true;
+    		}
         }
-
 
         // Run create vector field
         createVectorFieldKernel.setArg(0, blurredVolume);
         createVectorFieldKernel.setArg(1, vectorFieldBuffer);
-        createVectorFieldKernel.setArg(2, Fmax);
-        createVectorFieldKernel.setArg(3, vectorSign);
+        createVectorFieldKernel.setArg(2, vectorFieldBuffer2);
+        createVectorFieldKernel.setArg(3, Fmax);
+        createVectorFieldKernel.setArg(4, vectorSign);
+        createVectorFieldKernel.setArg(5, maxZ);
+
 
         ocl.queue.enqueueNDRangeKernel(
                 createVectorFieldKernel,
@@ -1615,14 +1769,50 @@ if(getParamBool(parameters, "timing")) {
                 NullRange
         );
 
-        // Copy buffer contents to image
-        ocl.queue.enqueueCopyBufferToImage(
-                vectorFieldBuffer,
-                vectorField, 
-                0,
-                offset,
-                region
-        );
+        if(usingTwoBuffers) {
+        	cl::size_t<3> region2;
+        	region2[0] = size.x;
+        	region2[1] = size.y;
+        	unsigned int limit;
+			if(getParamBool(parameters, "16bit-vectors")) {
+				limit = (float)maxBufferSize / (4*sizeof(short));
+			} else {
+				limit = (float)maxBufferSize / (4*sizeof(float));
+			}
+        	region2[2] = floor((float)limit/(size.x*size.y));
+ 			ocl.queue.enqueueCopyBufferToImage(
+					vectorFieldBuffer,
+					vectorField,
+					0,
+					offset,
+					region2
+			);
+ 			cl::size_t<3> offset2;
+ 			offset2[0] = 0;
+ 			offset2[1] = 0;
+ 			offset2[2] = region2[2];
+ 			cl::size_t<3> region3;
+ 			region3[0] = size.x;
+ 			region3[1] = size.y;
+ 			region3[2] = size.z-region2[2];
+			ocl.queue.enqueueCopyBufferToImage(
+					vectorFieldBuffer2,
+					vectorField,
+					0,
+					offset2,
+					region3
+			);
+        } else {
+			// Copy buffer contents to image
+			ocl.queue.enqueueCopyBufferToImage(
+					vectorFieldBuffer,
+					vectorField,
+					0,
+					offset,
+					region
+			);
+        }
+
 
     } else {
         if(getParamBool(parameters, "32bit-vectors")) {
@@ -1657,18 +1847,37 @@ if(getParamBool(parameters, "timing")) {
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
 }
-
-	try {
-		// As this is the most memory intensity step, two calls to queue.finish
-		// is performed to ensure that any unnecessary data is moved away from the GPU
+	// Determine whether to use the slow GVF that use less memory or not
+	bool useSlowGVF = false;
+	if(no3Dwrite) {
+        unsigned int maxBufferSize = ocl.device.getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE>();
+		if(getParamBool(parameters, "16bit-vectors")) {
+			if(4*sizeof(short)*totalSize > maxBufferSize) {
+				useSlowGVF = true;
+			}
+		} else {
+			if(4*sizeof(float)*totalSize > maxBufferSize) {
+				useSlowGVF = true;
+			}
+		}
+	}
+	if(useSlowGVF) {
 		ocl.queue.finish();
-		runGVF(ocl, vectorField, parameters, size, false);
+		runGVF(ocl, vectorField, parameters, size, true);
 		ocl.queue.finish();
-	} catch(cl::Error e) {
-		if(e.err() == -4 || e.err() == -5) {
-			std::cout << "NOTE: Ran out of memory. Trying slower GVF instead." << std::endl;
-			// Most likely ran out of memory. Try slower GVF which uses less memory.
-			runGVF(ocl, vectorField, parameters, size, true);
+	} else {
+		try {
+			// As this is the most memory intensity step, two calls to queue.finish
+			// is performed to ensure that any unnecessary data is moved away from the GPU
+			ocl.queue.finish();
+			runGVF(ocl, vectorField, parameters, size, false);
+			ocl.queue.finish();
+		} catch(cl::Error e) {
+			if(e.err() == -4 || e.err() == -5) {
+				std::cout << "NOTE: Ran out of memory. Trying slower GVF instead." << std::endl;
+				// Most likely ran out of memory. Try slower GVF which uses less memory.
+				runGVF(ocl, vectorField, parameters, size, true);
+			}
 		}
 	}
 
@@ -2409,31 +2618,10 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
     int sum = 0;
 
     if(no3Dwrite) {
-        int hpSize;
-        if(size.x == size.y && size.y == size.z && log2(size.x) == round(log2(size.x))) {
-            hpSize = size.x;
-        }else{
-            // Find largest size and find closest power of two
-            int largestSize = std::max(size.x, std::max(size.y, size.z));
-            int i = 1;
-            while(pow(2.0, i) < largestSize)
-                i++;
-            hpSize = pow(2.0, i);
-        }
-
-
         Buffer centerpoints = Buffer(
                 ocl.context,
                 CL_MEM_READ_WRITE,
-                sizeof(char)*hpSize*hpSize*hpSize
-        );
-
-        initCharBuffer.setArg(0, centerpoints);
-        ocl.queue.enqueueNDRangeKernel(
-                initCharBuffer,
-                NullRange,
-                NDRange(hpSize*hpSize*hpSize),
-                NullRange
+                sizeof(char)*totalSize
         );
 
         candidatesKernel.setArg(0, TDF);
@@ -2447,7 +2635,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
         );
 
         HistogramPyramid3DBuffer hp3(ocl);
-        hp3.create(centerpoints, hpSize, hpSize, hpSize);
+        hp3.create(centerpoints, size.x, size.y, size.z);
 
         candidates2Kernel.setArg(0, TDF);
         candidates2Kernel.setArg(1, radius);
@@ -2468,7 +2656,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
         candidates2Kernel.setArg(3, centerpoints2);
         std::cout << "candidates: " << hp3.getSum() << std::endl;
         if(hp3.getSum() <= 0 || hp3.getSum() > 0.5*totalSize) {
-        	throw SIPL::SIPLException("The number of candidate voxels is too or too high. Something went wrong... Wrong parameters? Out of memory?", __LINE__, __FILE__);
+        	throw SIPL::SIPLException("The number of candidate voxels is too low or too high. Something went wrong... Wrong parameters? Out of memory?", __LINE__, __FILE__);
         }
         hp3.traverse(candidates2Kernel, 4);
         ocl.queue.enqueueCopyBufferToImage(
@@ -2489,13 +2677,13 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
         Buffer centerpoints3 = Buffer(
                 ocl.context,
                 CL_MEM_READ_WRITE,
-                sizeof(char)*hpSize*hpSize*hpSize
+                sizeof(char)*totalSize
         );
         initCharBuffer.setArg(0, centerpoints3);
         ocl.queue.enqueueNDRangeKernel(
                 initCharBuffer,
                 NullRange,
-                NDRange(hpSize*hpSize*hpSize),
+                NDRange(totalSize),
                 NullRange
         );
         ddKernel.setArg(3, centerpoints3);
@@ -2508,7 +2696,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
 
         // Construct HP of centerpointsImage
         HistogramPyramid3DBuffer hp(ocl);
-        hp.create(centerpoints3, hpSize, hpSize, hpSize);
+        hp.create(centerpoints3, size.x, size.y, size.z);
         sum = hp.getSum();
         std::cout << "number of vertices detected " << sum << std::endl;
 
