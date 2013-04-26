@@ -1509,8 +1509,8 @@ __kernel void circleFittingTDF(
             //if(dot(normalize(V), normalize(V_alpha)) < 0.2f)
             //    negatives = true;
         }
-        if(negatives)
-        	continue;
+        //if(negatives) // these instructions may lead to wierd results
+        //	continue;
         radiusSum /= samples;
         if(radiusSum > maxSum) {
             maxSum = radiusSum;
