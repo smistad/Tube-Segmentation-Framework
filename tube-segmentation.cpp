@@ -91,6 +91,7 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
     // Query the size of available memory
     unsigned int memorySize = devices[0].getInfo<CL_DEVICE_GLOBAL_MEM_SIZE>();
     std::cout << "Available memory on selected device " << (double)memorySize/(1024*1024) << " MB "<< std::endl;
+std::cout << "Max alloc size: " << (float)devices[0].getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE>()/(1024*1024) << " MB " << std::endl;
 
     // Compile and create program
     if(!getParamBool(parameters, "buffers-only") && (int)devices[0].getInfo<CL_DEVICE_EXTENSIONS>().find("cl_khr_3d_image_writes") > -1) {
@@ -1028,6 +1029,7 @@ void runFastGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, SIPL::
                 );
         }
         ocl.queue.finish();
+	std::cout << "finished GVF iterations" << std::endl;
 
         vectorFieldBuffer1 = Buffer(
                 ocl.context,
@@ -1382,7 +1384,7 @@ void runGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, SIPL::int3
 	}
 }
 
-void runCircleFittingMethod(OpenCL &ocl, Image3D &dataset, SIPL::int3 size, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radiusImage, Image3D &vectorFieldSmall) {
+void runCircleFittingMethod(OpenCL &ocl, Image3D &dataset, SIPL::int3 size, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radiusImage) {
     // Set up parameters
     const float radiusMin = getParam(parameters, "radius-min");
     const float radiusMax = getParam(parameters, "radius-max");
@@ -1590,7 +1592,6 @@ if(getParamBool(parameters, "timing")) {
         );
 
     }
-    vectorFieldSmall = vectorField;
 
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
@@ -2580,7 +2581,7 @@ char * createCenterlineVoxels(
 	return centerlines;
 }
 
-Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radius, Image3D &intensity, Image3D &vectorFieldSmall) {
+Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radius) {
     const int totalSize = size.x*size.y*size.z;
 	const bool no3Dwrite = !getParamBool(parameters, "3d_write");
     const int cubeSize = getParam(parameters, "cube-size");
@@ -3263,13 +3264,13 @@ void runCircleFittingAndNewCenterlineAlg(OpenCL * ocl, cl::Image3D &dataset, SIP
     region[1] = size->y;
     region[2] = size->z;
 
-    runCircleFittingMethod(*ocl, dataset, *size, parameters, vectorField, *TDF, radius,vectorFieldSmall);
+    runCircleFittingMethod(*ocl, dataset, *size, parameters, vectorField, *TDF, radius);
     output->setTDF(TDF);
     if(getParamBool(parameters, "tdf-only"))
     	return;
 
     Image3D * centerline = new Image3D;
-    *centerline = runNewCenterlineAlg(*ocl, *size, parameters, vectorField, *TDF, radius, dataset,vectorFieldSmall);
+    *centerline = runNewCenterlineAlg(*ocl, *size, parameters, vectorField, *TDF, radius);
     output->setCenterlineVoxels(centerline);
 
     Image3D * segmentation = new Image3D;
@@ -4063,7 +4064,7 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
     region[1] = size->y;
     region[2] = size->z;
 
-    runCircleFittingMethod(*ocl, dataset, *size, parameters, vectorField, *TDF, radius, vectorFieldSmall);
+    runCircleFittingMethod(*ocl, dataset, *size, parameters, vectorField, *TDF, radius);
 
 
     // Transfer from device to host
@@ -4278,7 +4279,7 @@ void runCircleFittingAndRidgeTraversal(OpenCL * ocl, Image3D &dataset, SIPL::int
     Image3D vectorField, radius,vectorFieldSmall;
     Image3D * TDF = new Image3D;
     TubeSegmentation TS;
-    runCircleFittingMethod(*ocl, dataset, *size, parameters, vectorField, *TDF, radius,vectorFieldSmall);
+    runCircleFittingMethod(*ocl, dataset, *size, parameters, vectorField, *TDF, radius);
     output->setTDF(TDF);
     const int totalSize = size->x*size->y*size->z;
 	const bool no3Dwrite = !getParamBool(parameters, "3d_write");
