@@ -3,7 +3,7 @@
 #include "../parameters.hpp"
 #include "../SIPL/Exceptions.hpp"
 #include "tubeValidation.cpp"
-#include "../tsf-config.h"
+#include "tsf-config.h"
 
 
 TEST(TubeSegmentation, WrongFilenameException) {
