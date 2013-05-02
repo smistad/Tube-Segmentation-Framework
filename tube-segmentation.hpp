@@ -76,11 +76,11 @@ void print(paramList parameters);
 
 cl::Image3D readDatasetAndTransfer(OpenCL &ocl, std::string, paramList &parameters, SIPL::int3 *, TSFOutput *);
 
-void runCircleFittingAndRidgeTraversal(OpenCL *, cl::Image3D &dataset, SIPL::int3 * size, paramList &parameters, TSFOutput *);
+void runCircleFittingAndRidgeTraversal(OpenCL *, cl::Image3D *dataset, SIPL::int3 * size, paramList &parameters, TSFOutput *);
 
-void runCircleFittingAndNewCenterlineAlg(OpenCL *, cl::Image3D &dataset, SIPL::int3 * size, paramList &parameters, TSFOutput *);
+void runCircleFittingAndNewCenterlineAlg(OpenCL *, cl::Image3D *dataset, SIPL::int3 * size, paramList &parameters, TSFOutput *);
 
-void runCircleFittingAndTest(OpenCL *, cl::Image3D &dataset, SIPL::int3 * size, paramList &parameters, TSFOutput *);
+void runCircleFittingAndTest(OpenCL *, cl::Image3D *dataset, SIPL::int3 * size, paramList &parameters, TSFOutput *);
 
 
 TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_dir);
