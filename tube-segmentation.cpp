@@ -91,11 +91,16 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
     // Query the size of available memory
     unsigned int memorySize = devices[0].getInfo<CL_DEVICE_GLOBAL_MEM_SIZE>();
     std::cout << "Available memory on selected device " << (double)memorySize/(1024*1024) << " MB "<< std::endl;
+std::cout << "Max alloc size: " << (float)devices[0].getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE>()/(1024*1024) << " MB " << std::endl;
 
     // Compile and create program
     if(!getParamBool(parameters, "buffers-only") && (int)devices[0].getInfo<CL_DEVICE_EXTENSIONS>().find("cl_khr_3d_image_writes") > -1) {
     	std::string filename = kernel_dir+"/kernels.cl";
-        ocl->program = buildProgramFromSource(ocl->context, filename.c_str());
+        std::string buildOptions = "";
+        if(getParamBool(parameters, "16bit-vectors")) {
+        	buildOptions = "-D VECTORS_16BIT";
+        }
+        ocl->program = buildProgramFromSource(ocl->context, filename, buildOptions);
         BoolParameter v = parameters.bools["3d_write"];
         v.set(true);
         parameters.bools["3d_write"] = v;
@@ -117,10 +122,11 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
 		START_TIMER
     }
     SIPL::int3 * size = new SIPL::int3();
-    TSFOutput * output = new TSFOutput(ocl, size);
+    TSFOutput * output = new TSFOutput(ocl, size, getParamBool(parameters, "16bit-vectors"));
     try {
         // Read dataset and transfer to device
-        cl::Image3D dataset = readDatasetAndTransfer(*ocl, filename, parameters, size, output);
+        cl::Image3D * dataset = new cl::Image3D;
+        *dataset = readDatasetAndTransfer(*ocl, filename, parameters, size, output);
 
         // Run specified method on dataset
         if(getParamStr(parameters, "centerline-method") == "ridge") {
@@ -168,6 +174,11 @@ void __stdcall freeData(cl_mem memobj, void * user_data) {
     T * data = (T *)user_data;
     delete[] data;
 }
+
+void __stdcall notify(cl_mem memobj, void * user_data) {
+    std::cout << "object was deleted" << std::endl;
+}
+
 
 
 typedef struct CenterlinePoint {
@@ -993,11 +1004,12 @@ void runFastGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, SIPL::
                 CL_MEM_READ_WRITE,
                 3*vectorFieldSize*totalSize
         );
-        Buffer vectorFieldBuffer1 = Buffer(
+        Buffer * vectorFieldBuffer1 = new Buffer(
                 ocl.context,
                 CL_MEM_READ_WRITE,
                 3*vectorFieldSize*totalSize
         );
+        //vectorFieldBuffer1->setDestructorCallback((void (__stdcall *)(cl_mem,void *))(notify), NULL);
 
         GVFInitKernel.setArg(0, vectorField);
         GVFInitKernel.setArg(1, vectorFieldBuffer);
@@ -1015,21 +1027,21 @@ void runFastGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, SIPL::
         for(int i = 0; i < GVFIterations; i++) {
             if(i % 2 == 0) {
                 GVFIterationKernel.setArg(1, vectorFieldBuffer);
-                GVFIterationKernel.setArg(2, vectorFieldBuffer1);
+                GVFIterationKernel.setArg(2, *vectorFieldBuffer1);
             } else {
-                GVFIterationKernel.setArg(1, vectorFieldBuffer1);
+                GVFIterationKernel.setArg(1, *vectorFieldBuffer1);
                 GVFIterationKernel.setArg(2, vectorFieldBuffer);
             }
                 ocl.queue.enqueueNDRangeKernel(
                         GVFIterationKernel,
                         NullRange,
                         NDRange(size.x,size.y,size.z),
-                        NullRange
+                        NDRange(4,4,4)
                 );
         }
-        ocl.queue.finish();
+        delete vectorFieldBuffer1;
 
-        vectorFieldBuffer1 = Buffer(
+        Buffer finalVectorFieldBuffer = Buffer(
                 ocl.context,
                 CL_MEM_WRITE_ONLY,
                 4*vectorFieldSize*totalSize
@@ -1037,13 +1049,13 @@ void runFastGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, SIPL::
 
         // Copy vector field to image
         GVFFinishKernel.setArg(0, vectorFieldBuffer);
-        GVFFinishKernel.setArg(1, vectorFieldBuffer1);
+        GVFFinishKernel.setArg(1, finalVectorFieldBuffer);
 
         ocl.queue.enqueueNDRangeKernel(
                 GVFFinishKernel,
                 NullRange,
                 NDRange(size.x,size.y,size.z),
-                NullRange
+                NDRange(4,4,4)
         );
 
 		cl::size_t<3> offset;
@@ -1057,13 +1069,12 @@ void runFastGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, SIPL::
 
         // Copy buffer contents to image
         ocl.queue.enqueueCopyBufferToImage(
-                vectorFieldBuffer1,
+                finalVectorFieldBuffer,
                 vectorField,
                 0,
                 offset,
                 region
         );
-
 
     } else {
         Image3D vectorField1, vectorField2;
@@ -1382,7 +1393,7 @@ void runGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, SIPL::int3
 	}
 }
 
-void runCircleFittingMethod(OpenCL &ocl, Image3D &dataset, SIPL::int3 size, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radiusImage, Image3D &vectorFieldSmall) {
+void runCircleFittingMethod(OpenCL &ocl, Image3D * dataset, SIPL::int3 size, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radiusImage) {
     // Set up parameters
     const float radiusMin = getParam(parameters, "radius-min");
     const float radiusMax = getParam(parameters, "radius-max");
@@ -1413,11 +1424,10 @@ void runCircleFittingMethod(OpenCL &ocl, Image3D &dataset, SIPL::int3 size, para
     cl::Event startEvent, endEvent;
     cl_ulong start, end;
     INIT_TIMER
-
-    Image3D blurredVolume = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_FLOAT), size.x, size.y, size.z);
-    Buffer TDFsmall;
-    Buffer radiusSmall;
+    void * TDFsmall;
+    float * radiusSmall;
     if(radiusMin < 2.5f) {
+        Image3D * blurredVolume = new Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_FLOAT), size.x, size.y, size.z);
     if(smallBlurSigma > 0) {
     	int maskSize = 1;
 		float * mask = createBlurMask(smallBlurSigma, &maskSize);
@@ -1432,7 +1442,7 @@ void runCircleFittingMethod(OpenCL &ocl, Image3D &dataset, SIPL::int3 size, para
 			);
 
 			// Run blurVolumeWithGaussian on dataset
-			blurVolumeWithGaussianKernel.setArg(0, dataset);
+			blurVolumeWithGaussianKernel.setArg(0, *dataset);
 			blurVolumeWithGaussianKernel.setArg(1, blurredVolumeBuffer);
 			blurVolumeWithGaussianKernel.setArg(2, maskSize);
 			blurVolumeWithGaussianKernel.setArg(3, blurMask);
@@ -1446,15 +1456,15 @@ void runCircleFittingMethod(OpenCL &ocl, Image3D &dataset, SIPL::int3 size, para
 
 			ocl.queue.enqueueCopyBufferToImage(
 					blurredVolumeBuffer,
-					blurredVolume,
+					*blurredVolume,
 					0,
 					offset,
 					region
 			);
     	} else {
 			// Run blurVolumeWithGaussian on processedVolume
-			blurVolumeWithGaussianKernel.setArg(0, dataset);
-			blurVolumeWithGaussianKernel.setArg(1, blurredVolume);
+			blurVolumeWithGaussianKernel.setArg(0, *dataset);
+			blurVolumeWithGaussianKernel.setArg(1, *blurredVolume);
 			blurVolumeWithGaussianKernel.setArg(2, maskSize);
 			blurVolumeWithGaussianKernel.setArg(3, blurMask);
 			ocl.queue.enqueueNDRangeKernel(
@@ -1471,6 +1481,7 @@ void runCircleFittingMethod(OpenCL &ocl, Image3D &dataset, SIPL::int3 size, para
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
 }
+    Image3D * vectorFieldSmall;
     if(no3Dwrite) {
     	bool usingTwoBuffers = false;
     	int maxZ = size.z;
@@ -1478,7 +1489,6 @@ if(getParamBool(parameters, "timing")) {
         Buffer vectorFieldBuffer, vectorFieldBuffer2;
         unsigned int maxBufferSize = ocl.device.getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE>();
         if(getParamBool(parameters, "16bit-vectors")) {
-			vectorField = Image3D(ocl.context, CL_MEM_READ_ONLY, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
 			if(4*sizeof(short)*totalSize < maxBufferSize) {
 				vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(short)*totalSize);
 			} else {
@@ -1492,7 +1502,6 @@ if(getParamBool(parameters, "timing")) {
 				usingTwoBuffers = true;
 			}
         } else {
-			vectorField = Image3D(ocl.context, CL_MEM_READ_ONLY, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
 			if(4*sizeof(float)*totalSize < maxBufferSize) {
 				vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(float)*totalSize);
 			} else {
@@ -1508,7 +1517,7 @@ if(getParamBool(parameters, "timing")) {
         }
 
         // Run create vector field
-        createVectorFieldKernel.setArg(0, blurredVolume);
+        createVectorFieldKernel.setArg(0, *blurredVolume);
         createVectorFieldKernel.setArg(1, vectorFieldBuffer);
         createVectorFieldKernel.setArg(2, vectorFieldBuffer2);
         createVectorFieldKernel.setArg(3, Fmax);
@@ -1523,6 +1532,26 @@ if(getParamBool(parameters, "timing")) {
                 NullRange
         );
 
+        if(smallBlurSigma > 0) {
+            delete blurredVolume;
+            blurredVolume = NULL;
+        }
+
+        if(getParamBool(parameters, "16bit-vectors")) {
+            vectorFieldSmall = new Image3D(
+                ocl.context, 
+                CL_MEM_READ_ONLY,
+                ImageFormat(CL_RGBA, CL_SNORM_INT16),
+                size.x,size.y,size.z
+            );
+        } else {
+            vectorFieldSmall = new Image3D(
+                    ocl.context, 
+                    CL_MEM_READ_ONLY,
+                    ImageFormat(CL_RGBA, CL_FLOAT),
+                size.x,size.y,size.z
+            );
+        }
         if(usingTwoBuffers) {
         	cl::size_t<3> region2;
         	region2[0] = size.x;
@@ -1536,7 +1565,7 @@ if(getParamBool(parameters, "timing")) {
         	region2[2] = floor((float)limit/(size.x*size.y));
  			ocl.queue.enqueueCopyBufferToImage(
 					vectorFieldBuffer,
-					vectorField,
+					*vectorFieldSmall,
 					0,
 					offset,
 					region2
@@ -1551,7 +1580,7 @@ if(getParamBool(parameters, "timing")) {
  			region3[2] = size.z-region2[2];
 			ocl.queue.enqueueCopyBufferToImage(
 					vectorFieldBuffer2,
-					vectorField,
+					*vectorFieldSmall,
 					0,
 					offset2,
 					region3
@@ -1560,7 +1589,7 @@ if(getParamBool(parameters, "timing")) {
 			// Copy buffer contents to image
 			ocl.queue.enqueueCopyBufferToImage(
 					vectorFieldBuffer,
-					vectorField,
+					*vectorFieldSmall,
 					0,
 					offset,
 					region
@@ -1570,15 +1599,15 @@ if(getParamBool(parameters, "timing")) {
     } else {
         if(getParamBool(parameters, "32bit-vectors")) {
             std::cout << "NOTE: Using 32 bit vectors" << std::endl;
-            vectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
+            vectorFieldSmall = new Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
         } else {
             std::cout << "NOTE: Using 16 bit vectors" << std::endl;
-            vectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
+            vectorFieldSmall = new Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
         }
 
         // Run create vector field
-        createVectorFieldKernel.setArg(0, blurredVolume);
-        createVectorFieldKernel.setArg(1, vectorField);
+        createVectorFieldKernel.setArg(0, *blurredVolume);
+        createVectorFieldKernel.setArg(1, *vectorFieldSmall);
         createVectorFieldKernel.setArg(2, Fmax);
         createVectorFieldKernel.setArg(3, vectorSign);
 
@@ -1589,8 +1618,12 @@ if(getParamBool(parameters, "timing")) {
                 NDRange(4,4,4)
         );
 
+    if(smallBlurSigma > 0) {
+        delete blurredVolume;
+        blurredVolume = NULL;
     }
-    vectorFieldSmall = vectorField;
+    }
+
 
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
@@ -1603,11 +1636,16 @@ if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
 }
     // Run circle fitting TDF kernel
-    TDFsmall = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
-    radiusSmall = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
-    circleFittingTDFKernel.setArg(0, vectorField);
-    circleFittingTDFKernel.setArg(1, TDFsmall);
-    circleFittingTDFKernel.setArg(2, radiusSmall);
+    Buffer * TDFsmallBuffer;
+    if(getParamBool(parameters, "16bit-vectors")) {
+        TDFsmallBuffer = new Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(short)*totalSize);
+    } else {
+        TDFsmallBuffer = new Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
+    }
+    Buffer * radiusSmallBuffer = new Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
+    circleFittingTDFKernel.setArg(0, *vectorFieldSmall);
+    circleFittingTDFKernel.setArg(1, *TDFsmallBuffer);
+    circleFittingTDFKernel.setArg(2, *radiusSmallBuffer);
     circleFittingTDFKernel.setArg(3, radiusMin);
     circleFittingTDFKernel.setArg(4, 3.0f);
     circleFittingTDFKernel.setArg(5, 0.5f);
@@ -1619,13 +1657,19 @@ if(getParamBool(parameters, "timing")) {
             NDRange(4,4,4)
     );
 
+
     if(radiusMax < 2.5) {
     	// Stop here
     	// Copy TDFsmall to TDF and radiusSmall to radiusImage
-		TDF = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_FLOAT),
+        if(getParamBool(parameters, "16bit-vectors")) {
+            TDF = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_UNORM_INT16),
 				size.x, size.y, size.z);
+        } else {
+            TDF = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_FLOAT),
+				size.x, size.y, size.z);
+        }
 		ocl.queue.enqueueCopyBufferToImage(
-			TDFsmall,
+			*TDFsmallBuffer,
 			TDF,
 			0,
 			offset,
@@ -1634,15 +1678,35 @@ if(getParamBool(parameters, "timing")) {
 		radiusImage = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_FLOAT),
 				size.x, size.y, size.z);
 		ocl.queue.enqueueCopyBufferToImage(
-			radiusSmall,
+			*radiusSmallBuffer,
 			radiusImage,
 			0,
 			offset,
 			region
 		);
+        vectorField = *vectorFieldSmall;
 		return;
+    } else {
+        delete vectorFieldSmall;
+        vectorFieldSmall = NULL;
     }
+
+    // TODO: cleanup the two arrays below!!!!!!!!
+	// Transfer result back to host
+    if(getParamBool(parameters, "16bit-vectors")) {
+        TDFsmall = new unsigned short[totalSize];
+        ocl.queue.enqueueReadBuffer(*TDFsmallBuffer, CL_FALSE, 0, sizeof(short)*totalSize, TDFsmall);
+    } else {
+        TDFsmall = new float[totalSize];
+        ocl.queue.enqueueReadBuffer(*TDFsmallBuffer, CL_FALSE, 0, sizeof(float)*totalSize, TDFsmall);
+    }
+    radiusSmall = new float[totalSize];
+    ocl.queue.enqueueReadBuffer(*radiusSmallBuffer, CL_FALSE, 0, sizeof(float)*totalSize, radiusSmall);
+
+    delete TDFsmallBuffer;
+    delete radiusSmallBuffer;
     } // end if radiusMin < 2.5
+
 
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
@@ -1656,6 +1720,7 @@ if(getParamBool(parameters, "timing")) {
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
 }
+    Image3D * blurredVolume = new Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_FLOAT), size.x, size.y, size.z);
     if(largeBlurSigma > 0) {
     	int maskSize = 1;
 		float * mask = createBlurMask(largeBlurSigma, &maskSize);
@@ -1670,7 +1735,7 @@ if(getParamBool(parameters, "timing")) {
 			);
 
 			// Run blurVolumeWithGaussian on dataset
-			blurVolumeWithGaussianKernel.setArg(0, dataset);
+			blurVolumeWithGaussianKernel.setArg(0, *dataset);
 			blurVolumeWithGaussianKernel.setArg(1, blurredVolumeBuffer);
 			blurVolumeWithGaussianKernel.setArg(2, maskSize);
 			blurVolumeWithGaussianKernel.setArg(3, blurMask);
@@ -1684,15 +1749,15 @@ if(getParamBool(parameters, "timing")) {
 
 			ocl.queue.enqueueCopyBufferToImage(
 					blurredVolumeBuffer,
-					blurredVolume,
+					*blurredVolume,
 					0,
 					offset,
 					region
 			);
     	} else {
 			// Run blurVolumeWithGaussian on processedVolume
-			blurVolumeWithGaussianKernel.setArg(0, dataset);
-			blurVolumeWithGaussianKernel.setArg(1, blurredVolume);
+			blurVolumeWithGaussianKernel.setArg(0, *dataset);
+			blurVolumeWithGaussianKernel.setArg(1, *blurredVolume);
 			blurVolumeWithGaussianKernel.setArg(2, maskSize);
 			blurVolumeWithGaussianKernel.setArg(3, blurMask);
 			ocl.queue.enqueueNDRangeKernel(
@@ -1704,6 +1769,10 @@ if(getParamBool(parameters, "timing")) {
     	}
     } else {
         blurredVolume = dataset;
+    }
+    if(largeBlurSigma > 0) {
+        delete dataset;
+        dataset = NULL;
     }
 
 
@@ -1754,7 +1823,7 @@ if(getParamBool(parameters, "timing")) {
         }
 
         // Run create vector field
-        createVectorFieldKernel.setArg(0, blurredVolume);
+        createVectorFieldKernel.setArg(0, *blurredVolume);
         createVectorFieldKernel.setArg(1, vectorFieldBuffer);
         createVectorFieldKernel.setArg(2, vectorFieldBuffer2);
         createVectorFieldKernel.setArg(3, Fmax);
@@ -1768,6 +1837,9 @@ if(getParamBool(parameters, "timing")) {
                 NDRange(size.x,size.y,size.z),
                 NullRange
         );
+
+        delete blurredVolume;
+        blurredVolume = NULL;
 
         if(usingTwoBuffers) {
         	cl::size_t<3> region2;
@@ -1823,7 +1895,7 @@ if(getParamBool(parameters, "timing")) {
 
 
         // Run create vector field
-        createVectorFieldKernel.setArg(0, blurredVolume);
+        createVectorFieldKernel.setArg(0, *blurredVolume);
         createVectorFieldKernel.setArg(1, vectorField);
         createVectorFieldKernel.setArg(2, Fmax);
         createVectorFieldKernel.setArg(3, vectorSign);
@@ -1834,6 +1906,9 @@ if(getParamBool(parameters, "timing")) {
                 NDRange(size.x,size.y,size.z),
                 NDRange(4,4,4)
         );
+
+        delete blurredVolume;
+        blurredVolume = NULL;
 
     }
 
@@ -1862,23 +1937,11 @@ if(getParamBool(parameters, "timing")) {
 		}
 	}
 	if(useSlowGVF) {
-		ocl.queue.finish();
 		runGVF(ocl, vectorField, parameters, size, true);
-		ocl.queue.finish();
 	} else {
-		try {
 			// As this is the most memory intensity step, two calls to queue.finish
 			// is performed to ensure that any unnecessary data is moved away from the GPU
-			ocl.queue.finish();
 			runGVF(ocl, vectorField, parameters, size, false);
-			ocl.queue.finish();
-		} catch(cl::Error e) {
-			if(e.err() == -4 || e.err() == -5) {
-				std::cout << "NOTE: Ran out of memory. Trying slower GVF instead." << std::endl;
-				// Most likely ran out of memory. Try slower GVF which uses less memory.
-				runGVF(ocl, vectorField, parameters, size, true);
-			}
-		}
 	}
 
 if(getParamBool(parameters, "timing")) {
@@ -1893,7 +1956,12 @@ if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
 }
     // Run circle fitting TDF kernel on GVF result
-    Buffer TDFlarge = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
+    Buffer TDFlarge;
+    if(getParamBool(parameters, "16bit-vectors")) {
+        TDFlarge = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(short)*totalSize);
+    } else {
+        TDFlarge = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
+    }
     Buffer radiusLarge = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
 
     circleFittingTDFKernel.setArg(0, vectorField);
@@ -1921,8 +1989,18 @@ if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
 }
 	if(radiusMin < 2.5f) {
-		combineKernel.setArg(0, TDFsmall);
-		combineKernel.setArg(1, radiusSmall);
+        Buffer TDFsmall2;
+        if(getParamBool(parameters, "16bit-vectors")) {
+            TDFsmall2 = Buffer(ocl.context, CL_MEM_READ_ONLY, sizeof(short)*totalSize);
+            ocl.queue.enqueueWriteBuffer(TDFsmall2, CL_FALSE, 0, sizeof(short)*totalSize, (short*)TDFsmall);
+        } else {
+            TDFsmall2 = Buffer(ocl.context, CL_MEM_READ_ONLY, sizeof(float)*totalSize);
+            ocl.queue.enqueueWriteBuffer(TDFsmall2, CL_FALSE, 0, sizeof(float)*totalSize, (float*)TDFsmall);
+        }
+        Buffer radiusSmall2 = Buffer(ocl.context, CL_MEM_READ_ONLY, sizeof(float)*totalSize);
+        ocl.queue.enqueueWriteBuffer(radiusSmall2, CL_FALSE, 0, sizeof(float)*totalSize, radiusSmall);
+		combineKernel.setArg(0, TDFsmall2);
+		combineKernel.setArg(1, radiusSmall2);
 		combineKernel.setArg(2, TDFlarge);
 		combineKernel.setArg(3, radiusLarge);
 
@@ -1933,8 +2011,13 @@ if(getParamBool(parameters, "timing")) {
 				NDRange(64)
 		);
 	}
-    TDF = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_FLOAT),
-            size.x, size.y, size.z);
+    if(getParamBool(parameters, "16bit-vectors")) {
+        TDF = Image3D(ocl.context, CL_MEM_READ_ONLY, ImageFormat(CL_R, CL_UNORM_INT16),
+                size.x, size.y, size.z);
+    } else {
+        TDF = Image3D(ocl.context, CL_MEM_READ_ONLY, ImageFormat(CL_R, CL_FLOAT),
+                size.x, size.y, size.z);
+    }
     ocl.queue.enqueueCopyBufferToImage(
         TDFlarge,
         TDF,
@@ -1942,7 +2025,7 @@ if(getParamBool(parameters, "timing")) {
         offset,
         region
     );
-    radiusImage = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_FLOAT),
+    radiusImage = Image3D(ocl.context, CL_MEM_READ_ONLY, ImageFormat(CL_R, CL_FLOAT),
             size.x, size.y, size.z);
     ocl.queue.enqueueCopyBufferToImage(
         radiusLarge,
@@ -2580,7 +2663,7 @@ char * createCenterlineVoxels(
 	return centerlines;
 }
 
-Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radius, Image3D &intensity, Image3D &vectorFieldSmall) {
+Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radius) {
     const int totalSize = size.x*size.y*size.z;
 	const bool no3Dwrite = !getParamBool(parameters, "3d_write");
     const int cubeSize = getParam(parameters, "cube-size");
@@ -3247,9 +3330,9 @@ void writeDataToDisk(TSFOutput * output, std::string storageDirectory, std::stri
 	}
 }
 
-void runCircleFittingAndNewCenterlineAlg(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * size, paramList &parameters, TSFOutput * output) {
+void runCircleFittingAndNewCenterlineAlg(OpenCL * ocl, cl::Image3D * dataset, SIPL::int3 * size, paramList &parameters, TSFOutput * output) {
     INIT_TIMER
-    Image3D vectorField, radius,vectorFieldSmall;
+    Image3D vectorField, radius;
     Image3D * TDF = new Image3D;
     const int totalSize = size->x*size->y*size->z;
 	const bool no3Dwrite = !getParamBool(parameters, "3d_write");
@@ -3263,13 +3346,13 @@ void runCircleFittingAndNewCenterlineAlg(OpenCL * ocl, cl::Image3D &dataset, SIP
     region[1] = size->y;
     region[2] = size->z;
 
-    runCircleFittingMethod(*ocl, dataset, *size, parameters, vectorField, *TDF, radius,vectorFieldSmall);
+    runCircleFittingMethod(*ocl, dataset, *size, parameters, vectorField, *TDF, radius);
     output->setTDF(TDF);
     if(getParamBool(parameters, "tdf-only"))
     	return;
 
     Image3D * centerline = new Image3D;
-    *centerline = runNewCenterlineAlg(*ocl, *size, parameters, vectorField, *TDF, radius, dataset,vectorFieldSmall);
+    *centerline = runNewCenterlineAlg(*ocl, *size, parameters, vectorField, *TDF, radius);
     output->setCenterlineVoxels(centerline);
 
     Image3D * segmentation = new Image3D;
@@ -4047,7 +4130,7 @@ SIPL::Volume<float3> * visualizeSegments(std::vector<Segment *> segments, int3 s
 }
 #endif
 
-void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * size, paramList &parameters, TSFOutput * output) {
+void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D * dataset, SIPL::int3 * size, paramList &parameters, TSFOutput * output) {
     INIT_TIMER
     Image3D vectorField, radius, vectorFieldSmall;
     Image3D * TDF = new Image3D;
@@ -4063,7 +4146,7 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
     region[1] = size->y;
     region[2] = size->z;
 
-    runCircleFittingMethod(*ocl, dataset, *size, parameters, vectorField, *TDF, radius, vectorFieldSmall);
+    runCircleFittingMethod(*ocl, dataset, *size, parameters, vectorField, *TDF, radius);
 
 
     // Transfer from device to host
@@ -4270,7 +4353,7 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * si
 }
 
 
-void runCircleFittingAndRidgeTraversal(OpenCL * ocl, Image3D &dataset, SIPL::int3 * size, paramList &parameters, TSFOutput * output) {
+void runCircleFittingAndRidgeTraversal(OpenCL * ocl, Image3D * dataset, SIPL::int3 * size, paramList &parameters, TSFOutput * output) {
     
     INIT_TIMER
     cl::Event startEvent, endEvent;
@@ -4278,7 +4361,7 @@ void runCircleFittingAndRidgeTraversal(OpenCL * ocl, Image3D &dataset, SIPL::int
     Image3D vectorField, radius,vectorFieldSmall;
     Image3D * TDF = new Image3D;
     TubeSegmentation TS;
-    runCircleFittingMethod(*ocl, dataset, *size, parameters, vectorField, *TDF, radius,vectorFieldSmall);
+    runCircleFittingMethod(*ocl, dataset, *size, parameters, vectorField, *TDF, radius);
     output->setTDF(TDF);
     const int totalSize = size->x*size->y*size->z;
 	const bool no3Dwrite = !getParamBool(parameters, "3d_write");
@@ -4909,7 +4992,8 @@ Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &par
     return convertedDataset;
 }
 
-TSFOutput::TSFOutput(OpenCL * ocl, SIPL::int3 * size) {
+TSFOutput::TSFOutput(OpenCL * ocl, SIPL::int3 * size, bool TDFis16bit) {
+	this->TDFis16bit = TDFis16bit;
 	this->ocl = ocl;
 	this->size = size;
 	hostHasCenterlineVoxels = false;
@@ -4984,8 +5068,19 @@ float * TSFOutput::getTDF() {
 		region[0] = size->x;
 		region[1] = size->y;
 		region[2] = size->z;
-		TDF = new float[size->x*size->y*size->z];
-		ocl->queue.enqueueReadImage(*oclTDF,CL_TRUE, origin, region, 0, 0, TDF);		hostHasTDF = true;
+		int totalSize = size->x*size->y*size->z;
+		TDF = new float[totalSize];
+		if(TDFis16bit) {
+			unsigned short * tempTDF = new unsigned short[totalSize];
+			ocl->queue.enqueueReadImage(*oclTDF,CL_TRUE, origin, region, 0, 0, tempTDF);
+			for(int i = 0; i < totalSize;i++) {
+				TDF[i] = (float)tempTDF[i] / 65535.0f;
+			}
+			delete[] tempTDF;
+		} else {
+			ocl->queue.enqueueReadImage(*oclTDF,CL_TRUE, origin, region, 0, 0, TDF);
+		}
+		hostHasTDF = true;
 		return TDF;
 	} else {
 		throw SIPL::SIPLException("Trying to fetch non existing data from TSFOutput", __LINE__, __FILE__);

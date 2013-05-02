@@ -30,7 +30,7 @@ typedef struct TubeSegmentation {
 
 class TSFOutput {
 public:
-	TSFOutput(OpenCL * ocl, SIPL::int3 * size);
+	TSFOutput(OpenCL * ocl, SIPL::int3 * size, bool TDFis16bit = false);
 	bool hasSegmentation() { return deviceHasSegmentation || hostHasSegmentation; };
 	bool hasCenterlineVoxels() { return deviceHasCenterlineVoxels || hostHasCenterlineVoxels; };
 	bool hasTDF() { return deviceHasTDF || hostHasTDF; };
@@ -58,6 +58,7 @@ private:
 	SIPL::int3* size;
 	SIPL::float3 spacing;
 	SIPL::int3 shiftVector;
+	bool TDFis16bit;
 	bool hostHasSegmentation;
 	bool hostHasCenterlineVoxels;
 	bool hostHasTDF;
@@ -76,11 +77,11 @@ void print(paramList parameters);
 
 cl::Image3D readDatasetAndTransfer(OpenCL &ocl, std::string, paramList &parameters, SIPL::int3 *, TSFOutput *);
 
-void runCircleFittingAndRidgeTraversal(OpenCL *, cl::Image3D &dataset, SIPL::int3 * size, paramList &parameters, TSFOutput *);
+void runCircleFittingAndRidgeTraversal(OpenCL *, cl::Image3D *dataset, SIPL::int3 * size, paramList &parameters, TSFOutput *);
 
-void runCircleFittingAndNewCenterlineAlg(OpenCL *, cl::Image3D &dataset, SIPL::int3 * size, paramList &parameters, TSFOutput *);
+void runCircleFittingAndNewCenterlineAlg(OpenCL *, cl::Image3D *dataset, SIPL::int3 * size, paramList &parameters, TSFOutput *);
 
-void runCircleFittingAndTest(OpenCL *, cl::Image3D &dataset, SIPL::int3 * size, paramList &parameters, TSFOutput *);
+void runCircleFittingAndTest(OpenCL *, cl::Image3D *dataset, SIPL::int3 * size, paramList &parameters, TSFOutput *);
 
 
 TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_dir);
