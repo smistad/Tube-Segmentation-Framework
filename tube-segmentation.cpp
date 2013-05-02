@@ -1632,16 +1632,16 @@ if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
 }
     // Run circle fitting TDF kernel
-    Buffer TDFsmallBuffer;
+    Buffer * TDFsmallBuffer;
     if(getParamBool(parameters, "16bit-vectors")) {
-        TDFsmallBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(short)*totalSize);
+        TDFsmallBuffer = new Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(short)*totalSize);
     } else {
-        TDFsmallBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
+        TDFsmallBuffer = new Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
     }
-    Buffer radiusSmallBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
+    Buffer * radiusSmallBuffer = new Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
     circleFittingTDFKernel.setArg(0, *vectorFieldSmall);
-    circleFittingTDFKernel.setArg(1, TDFsmallBuffer);
-    circleFittingTDFKernel.setArg(2, radiusSmallBuffer);
+    circleFittingTDFKernel.setArg(1, *TDFsmallBuffer);
+    circleFittingTDFKernel.setArg(2, *radiusSmallBuffer);
     circleFittingTDFKernel.setArg(3, radiusMin);
     circleFittingTDFKernel.setArg(4, 3.0f);
     circleFittingTDFKernel.setArg(5, 0.5f);
@@ -1652,6 +1652,7 @@ if(getParamBool(parameters, "timing")) {
             NDRange(size.x,size.y,size.z),
             NDRange(4,4,4)
     );
+
 
     if(radiusMax < 2.5) {
     	// Stop here
@@ -1664,7 +1665,7 @@ if(getParamBool(parameters, "timing")) {
 				size.x, size.y, size.z);
         }
 		ocl.queue.enqueueCopyBufferToImage(
-			TDFsmallBuffer,
+			*TDFsmallBuffer,
 			TDF,
 			0,
 			offset,
@@ -1673,7 +1674,7 @@ if(getParamBool(parameters, "timing")) {
 		radiusImage = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_FLOAT),
 				size.x, size.y, size.z);
 		ocl.queue.enqueueCopyBufferToImage(
-			radiusSmallBuffer,
+			*radiusSmallBuffer,
 			radiusImage,
 			0,
 			offset,
@@ -1686,16 +1687,20 @@ if(getParamBool(parameters, "timing")) {
         vectorFieldSmall = NULL;
     }
 
+    // TODO: cleanup the two arrays below!!!!!!!!
 	// Transfer result back to host
     if(getParamBool(parameters, "16bit-vectors")) {
         TDFsmall = new unsigned short[totalSize];
-        ocl.queue.enqueueReadBuffer(TDFsmallBuffer, CL_FALSE, 0, sizeof(short)*totalSize, TDFsmall);
+        ocl.queue.enqueueReadBuffer(*TDFsmallBuffer, CL_FALSE, 0, sizeof(short)*totalSize, TDFsmall);
     } else {
         TDFsmall = new float[totalSize];
-        ocl.queue.enqueueReadBuffer(TDFsmallBuffer, CL_FALSE, 0, sizeof(float)*totalSize, TDFsmall);
+        ocl.queue.enqueueReadBuffer(*TDFsmallBuffer, CL_FALSE, 0, sizeof(float)*totalSize, TDFsmall);
     }
     radiusSmall = new float[totalSize];
-    ocl.queue.enqueueReadBuffer(radiusSmallBuffer, CL_FALSE, 0, sizeof(float)*totalSize, radiusSmall);
+    ocl.queue.enqueueReadBuffer(*radiusSmallBuffer, CL_FALSE, 0, sizeof(float)*totalSize, radiusSmall);
+
+    delete TDFsmallBuffer;
+    delete radiusSmallBuffer;
     } // end if radiusMin < 2.5
 
 
@@ -2001,7 +2006,6 @@ if(getParamBool(parameters, "timing")) {
 				NDRange(totalSize),
 				NDRange(64)
 		);
-        std::cout << "combine finished."<<std::endl;
 	}
     if(getParamBool(parameters, "16bit-vectors")) {
         TDF = Image3D(ocl.context, CL_MEM_READ_ONLY, ImageFormat(CL_R, CL_UNORM_INT16),
@@ -2017,7 +2021,6 @@ if(getParamBool(parameters, "timing")) {
         offset,
         region
     );
-    std::cout << "TDF to image finished" << std::endl;
     radiusImage = Image3D(ocl.context, CL_MEM_READ_ONLY, ImageFormat(CL_R, CL_FLOAT),
             size.x, size.y, size.z);
     ocl.queue.enqueueCopyBufferToImage(
@@ -2027,7 +2030,6 @@ if(getParamBool(parameters, "timing")) {
         offset,
         region
     );
-    std::cout << "radius to image finished" << std::endl;
 
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
