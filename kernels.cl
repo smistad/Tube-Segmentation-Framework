@@ -8,6 +8,16 @@ __constant sampler_t hpSampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP
 
 #define LPOS(pos) pos.x+pos.y*get_global_size(0)+pos.z*get_global_size(0)*get_global_size(1)
 
+#ifdef VECTORS_16BIT
+#define UNORM16_TO_FLOAT(v) (float)v / 65535.0f
+#define FLOAT_TO_UNORM16(v) convert_ushort_sat_rte(v * 65535.0f)
+#define TDF_TYPE ushort
+#else
+#define UNORM16_TO_FLOAT(v) v
+#define FLOAT_TO_UNORM16(v) v
+#define TDF_TYPE float
+#endif
+
 
 // Intialize 3D image to 0
 __kernel void init3DImage(
@@ -573,9 +583,9 @@ __kernel void removeDuplicateEdges(
 }
 
 __kernel void combine(
-    __global float * TDFsmall,
+    __global TDF_TYPE * TDFsmall,
     __global float * radiusSmall,
-    __global float * TDFlarge,
+    __global TDF_TYPE * TDFlarge,
     __global float * radiusLarge
     ) {
     uint i = get_global_id(0);
@@ -1084,7 +1094,7 @@ __constant float sinValues[32] = {0.0f, 0.841471f, 0.909297f, 0.14112f, -0.75680
 
 __kernel void circleFittingTDF(
         __read_only image3d_t vectorField,
-        __global float * T,
+        __global TDF_TYPE * T,
         __global float * Radius,
         __private float rMin,
         __private float rMax,
@@ -1183,7 +1193,7 @@ __kernel void circleFittingTDF(
 	*/
 
 	// Store result
-    T[LPOS(pos)] = maxSum;
+    T[LPOS(pos)] = FLOAT_TO_UNORM16(maxSum);
     Radius[LPOS(pos)] = maxRadius;
 }
 

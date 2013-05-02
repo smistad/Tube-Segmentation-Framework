@@ -96,7 +96,11 @@ std::cout << "Max alloc size: " << (float)devices[0].getInfo<CL_DEVICE_MAX_MEM_A
     // Compile and create program
     if(!getParamBool(parameters, "buffers-only") && (int)devices[0].getInfo<CL_DEVICE_EXTENSIONS>().find("cl_khr_3d_image_writes") > -1) {
     	std::string filename = kernel_dir+"/kernels.cl";
-        ocl->program = buildProgramFromSource(ocl->context, filename.c_str());
+        std::string buildOptions = "";
+        if(getParamBool(parameters, "16bit-vectors")) {
+        	buildOptions = "-D VECTORS_16BIT";
+        }
+        ocl->program = buildProgramFromSource(ocl->context, filename, buildOptions);
         BoolParameter v = parameters.bools["3d_write"];
         v.set(true);
         parameters.bools["3d_write"] = v;
