@@ -1005,7 +1005,7 @@ void runFastGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, SIPL::
                 CL_MEM_READ_WRITE,
                 3*vectorFieldSize*totalSize
         );
-        vectorFieldBuffer1->setDestructorCallback((void (__stdcall *)(cl_mem,void *))(notify), NULL);
+        //vectorFieldBuffer1->setDestructorCallback((void (__stdcall *)(cl_mem,void *))(notify), NULL);
 
         GVFInitKernel.setArg(0, vectorField);
         GVFInitKernel.setArg(1, vectorFieldBuffer);
@@ -1035,8 +1035,6 @@ void runFastGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, SIPL::
                         NDRange(4,4,4)
                 );
         }
-        ocl.queue.finish();
-        std::cout << "finished GVF iterations" << std::endl;
         delete vectorFieldBuffer1;
 
         Buffer finalVectorFieldBuffer = Buffer(
@@ -1073,8 +1071,6 @@ void runFastGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, SIPL::
                 offset,
                 region
         );
-        std::cout << "finished GVF and transfer to image" << std::endl;
-
 
     } else {
         Image3D vectorField1, vectorField2;
@@ -1426,9 +1422,8 @@ void runCircleFittingMethod(OpenCL &ocl, Image3D * dataset, SIPL::int3 size, par
     INIT_TIMER
     void * TDFsmall;
     float * radiusSmall;
-    Image3D blurredVolume;
     if(radiusMin < 2.5f) {
-        blurredVolume = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_FLOAT), size.x, size.y, size.z);
+        Image3D * blurredVolume = new Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_FLOAT), size.x, size.y, size.z);
     if(smallBlurSigma > 0) {
     	int maskSize = 1;
 		float * mask = createBlurMask(smallBlurSigma, &maskSize);
@@ -1457,7 +1452,7 @@ void runCircleFittingMethod(OpenCL &ocl, Image3D * dataset, SIPL::int3 size, par
 
 			ocl.queue.enqueueCopyBufferToImage(
 					blurredVolumeBuffer,
-					blurredVolume,
+					*blurredVolume,
 					0,
 					offset,
 					region
@@ -1465,7 +1460,7 @@ void runCircleFittingMethod(OpenCL &ocl, Image3D * dataset, SIPL::int3 size, par
     	} else {
 			// Run blurVolumeWithGaussian on processedVolume
 			blurVolumeWithGaussianKernel.setArg(0, *dataset);
-			blurVolumeWithGaussianKernel.setArg(1, blurredVolume);
+			blurVolumeWithGaussianKernel.setArg(1, *blurredVolume);
 			blurVolumeWithGaussianKernel.setArg(2, maskSize);
 			blurVolumeWithGaussianKernel.setArg(3, blurMask);
 			ocl.queue.enqueueNDRangeKernel(
@@ -1476,7 +1471,7 @@ void runCircleFittingMethod(OpenCL &ocl, Image3D * dataset, SIPL::int3 size, par
 			);
     	}
     } else {
-        blurredVolume = *dataset;
+        blurredVolume = dataset;
     }
 
 if(getParamBool(parameters, "timing")) {
@@ -1518,7 +1513,7 @@ if(getParamBool(parameters, "timing")) {
         }
 
         // Run create vector field
-        createVectorFieldKernel.setArg(0, blurredVolume);
+        createVectorFieldKernel.setArg(0, *blurredVolume);
         createVectorFieldKernel.setArg(1, vectorFieldBuffer);
         createVectorFieldKernel.setArg(2, vectorFieldBuffer2);
         createVectorFieldKernel.setArg(3, Fmax);
@@ -1532,6 +1527,11 @@ if(getParamBool(parameters, "timing")) {
                 NDRange(size.x,size.y,size.z),
                 NullRange
         );
+
+        if(smallBlurSigma > 0) {
+            delete blurredVolume;
+            blurredVolume = NULL;
+        }
 
         if(getParamBool(parameters, "16bit-vectors")) {
             vectorFieldSmall = Image3D(
@@ -1608,7 +1608,7 @@ if(getParamBool(parameters, "timing")) {
         }
 
         // Run create vector field
-        createVectorFieldKernel.setArg(0, blurredVolume);
+        createVectorFieldKernel.setArg(0, *blurredVolume);
         createVectorFieldKernel.setArg(1, vectorFieldSmall);
         createVectorFieldKernel.setArg(2, Fmax);
         createVectorFieldKernel.setArg(3, vectorSign);
@@ -1620,6 +1620,10 @@ if(getParamBool(parameters, "timing")) {
                 NDRange(4,4,4)
         );
 
+    if(smallBlurSigma > 0) {
+        delete blurredVolume;
+        blurredVolume = NULL;
+    }
     }
 
 
@@ -1710,7 +1714,7 @@ if(getParamBool(parameters, "timing")) {
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
 }
-    blurredVolume = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_FLOAT), size.x, size.y, size.z);
+    Image3D * blurredVolume = new Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_FLOAT), size.x, size.y, size.z);
     if(largeBlurSigma > 0) {
     	int maskSize = 1;
 		float * mask = createBlurMask(largeBlurSigma, &maskSize);
@@ -1739,7 +1743,7 @@ if(getParamBool(parameters, "timing")) {
 
 			ocl.queue.enqueueCopyBufferToImage(
 					blurredVolumeBuffer,
-					blurredVolume,
+					*blurredVolume,
 					0,
 					offset,
 					region
@@ -1747,7 +1751,7 @@ if(getParamBool(parameters, "timing")) {
     	} else {
 			// Run blurVolumeWithGaussian on processedVolume
 			blurVolumeWithGaussianKernel.setArg(0, *dataset);
-			blurVolumeWithGaussianKernel.setArg(1, blurredVolume);
+			blurVolumeWithGaussianKernel.setArg(1, *blurredVolume);
 			blurVolumeWithGaussianKernel.setArg(2, maskSize);
 			blurVolumeWithGaussianKernel.setArg(3, blurMask);
 			ocl.queue.enqueueNDRangeKernel(
@@ -1758,10 +1762,12 @@ if(getParamBool(parameters, "timing")) {
 			);
     	}
     } else {
-        blurredVolume = *dataset;
+        blurredVolume = dataset;
     }
-    delete dataset;
-    dataset = NULL;
+    if(largeBlurSigma > 0) {
+        delete dataset;
+        dataset = NULL;
+    }
 
 
 if(getParamBool(parameters, "timing")) {
@@ -1811,7 +1817,7 @@ if(getParamBool(parameters, "timing")) {
         }
 
         // Run create vector field
-        createVectorFieldKernel.setArg(0, blurredVolume);
+        createVectorFieldKernel.setArg(0, *blurredVolume);
         createVectorFieldKernel.setArg(1, vectorFieldBuffer);
         createVectorFieldKernel.setArg(2, vectorFieldBuffer2);
         createVectorFieldKernel.setArg(3, Fmax);
@@ -1825,6 +1831,9 @@ if(getParamBool(parameters, "timing")) {
                 NDRange(size.x,size.y,size.z),
                 NullRange
         );
+
+        delete blurredVolume;
+        blurredVolume = NULL;
 
         if(usingTwoBuffers) {
         	cl::size_t<3> region2;
@@ -1880,7 +1889,7 @@ if(getParamBool(parameters, "timing")) {
 
 
         // Run create vector field
-        createVectorFieldKernel.setArg(0, blurredVolume);
+        createVectorFieldKernel.setArg(0, *blurredVolume);
         createVectorFieldKernel.setArg(1, vectorField);
         createVectorFieldKernel.setArg(2, Fmax);
         createVectorFieldKernel.setArg(3, vectorSign);
@@ -1891,6 +1900,9 @@ if(getParamBool(parameters, "timing")) {
                 NDRange(size.x,size.y,size.z),
                 NDRange(4,4,4)
         );
+
+        delete blurredVolume;
+        blurredVolume = NULL;
 
     }
 
