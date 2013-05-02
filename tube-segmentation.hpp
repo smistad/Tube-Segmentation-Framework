@@ -30,7 +30,7 @@ typedef struct TubeSegmentation {
 
 class TSFOutput {
 public:
-	TSFOutput(OpenCL * ocl, SIPL::int3 * size);
+	TSFOutput(OpenCL * ocl, SIPL::int3 * size, bool TDFis16bit = false);
 	bool hasSegmentation() { return deviceHasSegmentation || hostHasSegmentation; };
 	bool hasCenterlineVoxels() { return deviceHasCenterlineVoxels || hostHasCenterlineVoxels; };
 	bool hasTDF() { return deviceHasTDF || hostHasTDF; };
@@ -58,6 +58,7 @@ private:
 	SIPL::int3* size;
 	SIPL::float3 spacing;
 	SIPL::int3 shiftVector;
+	bool TDFis16bit;
 	bool hostHasSegmentation;
 	bool hostHasCenterlineVoxels;
 	bool hostHasTDF;

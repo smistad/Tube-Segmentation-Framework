@@ -122,7 +122,7 @@ std::cout << "Max alloc size: " << (float)devices[0].getInfo<CL_DEVICE_MAX_MEM_A
 		START_TIMER
     }
     SIPL::int3 * size = new SIPL::int3();
-    TSFOutput * output = new TSFOutput(ocl, size);
+    TSFOutput * output = new TSFOutput(ocl, size, getParamBool(parameters, "16bit-vectors"));
     try {
         // Read dataset and transfer to device
         cl::Image3D * dataset = new cl::Image3D;
@@ -4992,7 +4992,8 @@ Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &par
     return convertedDataset;
 }
 
-TSFOutput::TSFOutput(OpenCL * ocl, SIPL::int3 * size) {
+TSFOutput::TSFOutput(OpenCL * ocl, SIPL::int3 * size, bool TDFis16bit) {
+	this->TDFis16bit = TDFis16bit;
 	this->ocl = ocl;
 	this->size = size;
 	hostHasCenterlineVoxels = false;
@@ -5067,8 +5068,19 @@ float * TSFOutput::getTDF() {
 		region[0] = size->x;
 		region[1] = size->y;
 		region[2] = size->z;
-		TDF = new float[size->x*size->y*size->z];
-		ocl->queue.enqueueReadImage(*oclTDF,CL_TRUE, origin, region, 0, 0, TDF);		hostHasTDF = true;
+		int totalSize = size->x*size->y*size->z;
+		TDF = new float[totalSize];
+		if(TDFis16bit) {
+			unsigned short * tempTDF = new unsigned short[totalSize];
+			ocl->queue.enqueueReadImage(*oclTDF,CL_TRUE, origin, region, 0, 0, tempTDF);
+			for(int i = 0; i < totalSize;i++) {
+				TDF[i] = (float)tempTDF[i] / 65535.0f;
+			}
+			delete[] tempTDF;
+		} else {
+			ocl->queue.enqueueReadImage(*oclTDF,CL_TRUE, origin, region, 0, 0, TDF);
+		}
+		hostHasTDF = true;
 		return TDF;
 	} else {
 		throw SIPL::SIPLException("Trying to fetch non existing data from TSFOutput", __LINE__, __FILE__);
