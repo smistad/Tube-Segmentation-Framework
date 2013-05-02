@@ -1477,7 +1477,7 @@ void runCircleFittingMethod(OpenCL &ocl, Image3D * dataset, SIPL::int3 size, par
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
 }
-    Image3D vectorFieldSmall;
+    Image3D * vectorFieldSmall;
     if(no3Dwrite) {
     	bool usingTwoBuffers = false;
     	int maxZ = size.z;
@@ -1534,14 +1534,14 @@ if(getParamBool(parameters, "timing")) {
         }
 
         if(getParamBool(parameters, "16bit-vectors")) {
-            vectorFieldSmall = Image3D(
+            vectorFieldSmall = new Image3D(
                 ocl.context, 
                 CL_MEM_READ_ONLY,
                 ImageFormat(CL_RGBA, CL_SNORM_INT16),
                 size.x,size.y,size.z
             );
         } else {
-            vectorFieldSmall = Image3D(
+            vectorFieldSmall = new Image3D(
                     ocl.context, 
                     CL_MEM_READ_ONLY,
                     ImageFormat(CL_RGBA, CL_FLOAT),
@@ -1556,18 +1556,12 @@ if(getParamBool(parameters, "timing")) {
 			if(getParamBool(parameters, "16bit-vectors")) {
 				limit = (float)maxBufferSize / (4*sizeof(short));
 			} else {
-                vectorFieldSmall = Image3D(
-                        ocl.context, 
-                        CL_MEM_READ_ONLY,
-                        ImageFormat(CL_RGBA, CL_FLOAT),
-                        size.x,size.y,size.z
-                );
 				limit = (float)maxBufferSize / (4*sizeof(float));
 			}
         	region2[2] = floor((float)limit/(size.x*size.y));
  			ocl.queue.enqueueCopyBufferToImage(
 					vectorFieldBuffer,
-					vectorFieldSmall,
+					*vectorFieldSmall,
 					0,
 					offset,
 					region2
@@ -1582,7 +1576,7 @@ if(getParamBool(parameters, "timing")) {
  			region3[2] = size.z-region2[2];
 			ocl.queue.enqueueCopyBufferToImage(
 					vectorFieldBuffer2,
-					vectorFieldSmall,
+					*vectorFieldSmall,
 					0,
 					offset2,
 					region3
@@ -1591,7 +1585,7 @@ if(getParamBool(parameters, "timing")) {
 			// Copy buffer contents to image
 			ocl.queue.enqueueCopyBufferToImage(
 					vectorFieldBuffer,
-					vectorFieldSmall,
+					*vectorFieldSmall,
 					0,
 					offset,
 					region
@@ -1601,15 +1595,15 @@ if(getParamBool(parameters, "timing")) {
     } else {
         if(getParamBool(parameters, "32bit-vectors")) {
             std::cout << "NOTE: Using 32 bit vectors" << std::endl;
-            vectorFieldSmall = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
+            vectorFieldSmall = new Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
         } else {
             std::cout << "NOTE: Using 16 bit vectors" << std::endl;
-            vectorFieldSmall = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
+            vectorFieldSmall = new Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
         }
 
         // Run create vector field
         createVectorFieldKernel.setArg(0, *blurredVolume);
-        createVectorFieldKernel.setArg(1, vectorFieldSmall);
+        createVectorFieldKernel.setArg(1, *vectorFieldSmall);
         createVectorFieldKernel.setArg(2, Fmax);
         createVectorFieldKernel.setArg(3, vectorSign);
 
@@ -1645,7 +1639,7 @@ if(getParamBool(parameters, "timing")) {
         TDFsmallBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
     }
     Buffer radiusSmallBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
-    circleFittingTDFKernel.setArg(0, vectorFieldSmall);
+    circleFittingTDFKernel.setArg(0, *vectorFieldSmall);
     circleFittingTDFKernel.setArg(1, TDFsmallBuffer);
     circleFittingTDFKernel.setArg(2, radiusSmallBuffer);
     circleFittingTDFKernel.setArg(3, radiusMin);
@@ -1685,8 +1679,11 @@ if(getParamBool(parameters, "timing")) {
 			offset,
 			region
 		);
-        vectorField = vectorFieldSmall;
+        vectorField = *vectorFieldSmall;
 		return;
+    } else {
+        delete vectorFieldSmall;
+        vectorFieldSmall = NULL;
     }
 
 	// Transfer result back to host
