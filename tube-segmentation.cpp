@@ -1695,14 +1695,15 @@ if(getParamBool(parameters, "timing")) {
 	// Transfer result back to host
     if(getParamBool(parameters, "16bit-vectors")) {
         TDFsmall = new unsigned short[totalSize];
-        ocl.queue.enqueueReadBuffer(*TDFsmallBuffer, CL_FALSE, 0, sizeof(short)*totalSize, TDFsmall);
+        ocl.queue.enqueueReadBuffer(*TDFsmallBuffer, CL_FALSE, 0, sizeof(short)*totalSize, (unsigned short*)TDFsmall);
     } else {
         TDFsmall = new float[totalSize];
-        ocl.queue.enqueueReadBuffer(*TDFsmallBuffer, CL_FALSE, 0, sizeof(float)*totalSize, TDFsmall);
+        ocl.queue.enqueueReadBuffer(*TDFsmallBuffer, CL_FALSE, 0, sizeof(float)*totalSize, (float*)TDFsmall);
     }
     radiusSmall = new float[totalSize];
     ocl.queue.enqueueReadBuffer(*radiusSmallBuffer, CL_FALSE, 0, sizeof(float)*totalSize, radiusSmall);
 
+    ocl.queue.finish(); // This finish statement is necessary. Incorrect combine result if not present.
     delete TDFsmallBuffer;
     delete radiusSmallBuffer;
     } // end if radiusMin < 2.5
@@ -1973,7 +1974,7 @@ if(getParamBool(parameters, "timing")) {
         Buffer TDFsmall2;
         if(getParamBool(parameters, "16bit-vectors")) {
             TDFsmall2 = Buffer(ocl.context, CL_MEM_READ_ONLY, sizeof(short)*totalSize);
-            ocl.queue.enqueueWriteBuffer(TDFsmall2, CL_FALSE, 0, sizeof(short)*totalSize, (short*)TDFsmall);
+            ocl.queue.enqueueWriteBuffer(TDFsmall2, CL_FALSE, 0, sizeof(short)*totalSize, (unsigned short*)TDFsmall);
         } else {
             TDFsmall2 = Buffer(ocl.context, CL_MEM_READ_ONLY, sizeof(float)*totalSize);
             ocl.queue.enqueueWriteBuffer(TDFsmall2, CL_FALSE, 0, sizeof(float)*totalSize, (float*)TDFsmall);
