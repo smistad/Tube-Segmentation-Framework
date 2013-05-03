@@ -1000,7 +1000,7 @@ Image3D runFastGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIP
     	if(getParamBool(parameters, "16bit-vectors"))
     		vectorFieldSize = sizeof(short);
         // Create auxillary buffers
-        Buffer vectorFieldBuffer = Buffer(
+        Buffer * vectorFieldBuffer = new Buffer(
                 ocl.context,
                 CL_MEM_READ_WRITE,
                 3*vectorFieldSize*totalSize
@@ -1013,7 +1013,7 @@ Image3D runFastGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIP
         //vectorFieldBuffer1->setDestructorCallback((void (__stdcall *)(cl_mem,void *))(notify), NULL);
 
         GVFInitKernel.setArg(0, *vectorField);
-        GVFInitKernel.setArg(1, vectorFieldBuffer);
+        GVFInitKernel.setArg(1, *vectorFieldBuffer);
         ocl.queue.enqueueNDRangeKernel(
                 GVFInitKernel,
                 NullRange,
@@ -1027,11 +1027,11 @@ Image3D runFastGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIP
 
         for(int i = 0; i < GVFIterations; i++) {
             if(i % 2 == 0) {
-                GVFIterationKernel.setArg(1, vectorFieldBuffer);
+                GVFIterationKernel.setArg(1, *vectorFieldBuffer);
                 GVFIterationKernel.setArg(2, *vectorFieldBuffer1);
             } else {
                 GVFIterationKernel.setArg(1, *vectorFieldBuffer1);
-                GVFIterationKernel.setArg(2, vectorFieldBuffer);
+                GVFIterationKernel.setArg(2, *vectorFieldBuffer);
             }
                 ocl.queue.enqueueNDRangeKernel(
                         GVFIterationKernel,
@@ -1050,7 +1050,7 @@ Image3D runFastGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIP
         );
 
         // Copy vector field to image
-        GVFFinishKernel.setArg(0, vectorFieldBuffer);
+        GVFFinishKernel.setArg(0, *vectorFieldBuffer);
         GVFFinishKernel.setArg(1, finalVectorFieldBuffer);
 
         ocl.queue.enqueueNDRangeKernel(
@@ -1059,6 +1059,7 @@ Image3D runFastGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIP
                 NDRange(size.x,size.y,size.z),
                 NDRange(4,4,4)
         );
+        delete vectorFieldBuffer;
 
 		cl::size_t<3> offset;
 		offset[0] = 0;
@@ -1084,7 +1085,7 @@ Image3D runFastGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIP
         );
 
     } else {
-        Image3D vectorField1, vectorField2;
+        Image3D vectorField1;
         Image3D initVectorField;
         if(getParamBool(parameters, "16bit-vectors")) {
             vectorField1 = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
