@@ -403,6 +403,17 @@ Buffer HistogramPyramid3DBuffer::createPositionBuffer() {
     return *positions;
 }
 
+void HistogramPyramid2D::deleteHPlevels() {
+    HPlevels.clear();
+}
+
+void HistogramPyramid3D::deleteHPlevels() {
+    HPlevels.clear();
+}
+
+void HistogramPyramid3DBuffer::deleteHPlevels() {
+    HPlevels.clear();
+}
 std::string insertHPOpenCLCode(std::string source, int size) {
 	return "";
 }

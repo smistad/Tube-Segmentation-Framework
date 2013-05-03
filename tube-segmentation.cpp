@@ -2727,7 +2727,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
     if(getParamBool(parameters, "timing")) {
         ocl.queue.enqueueMarker(&startEvent);
     }
-    Image3D centerpointsImage2 = Image3D(
+    Image3D * centerpointsImage2 = new Image3D(
             ocl.context,
             CL_MEM_READ_WRITE,
             ImageFormat(CL_R, CL_SIGNED_INT8),
@@ -2737,14 +2737,14 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
     int sum = 0;
 
     if(no3Dwrite) {
-        Buffer centerpoints = Buffer(
+        Buffer * centerpoints = new Buffer(
                 ocl.context,
                 CL_MEM_READ_WRITE,
                 sizeof(char)*totalSize
         );
 
         candidatesKernel.setArg(0, TDF);
-        candidatesKernel.setArg(1, centerpoints);
+        candidatesKernel.setArg(1, *centerpoints);
         candidatesKernel.setArg(2, Thigh);
         ocl.queue.enqueueNDRangeKernel(
                 candidatesKernel,
@@ -2754,7 +2754,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
         );
 
         HistogramPyramid3DBuffer hp3(ocl);
-        hp3.create(centerpoints, size.x, size.y, size.z);
+        hp3.create(*centerpoints, size.x, size.y, size.z);
 
         candidates2Kernel.setArg(0, TDF);
         candidates2Kernel.setArg(1, radius);
@@ -2778,20 +2778,22 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
         	throw SIPL::SIPLException("The number of candidate voxels is too low or too high. Something went wrong... Wrong parameters? Out of memory?", __LINE__, __FILE__);
         }
         hp3.traverse(candidates2Kernel, 4);
+        hp3.deleteHPlevels();
+        delete centerpoints;
         ocl.queue.enqueueCopyBufferToImage(
             centerpoints2,
-            centerpointsImage2,
+            *centerpointsImage2,
             0,
             offset,
             region
         );
 
 		if(getParamBool(parameters, "centerpoints-only")) {
-			return centerpointsImage2;
+			return *centerpointsImage2;
 		}
         ddKernel.setArg(0, vectorField);
         ddKernel.setArg(1, TDF);
-        ddKernel.setArg(2, centerpointsImage2);
+        ddKernel.setArg(2, *centerpointsImage2);
         ddKernel.setArg(4, cubeSize);
         Buffer centerpoints3 = Buffer(
                 ocl.context,
@@ -2821,9 +2823,10 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
 
         // Run createPositions kernel
         vertices = hp.createPositionBuffer();
+        hp.deleteHPlevels();
     } else {
         Kernel init3DImage(ocl.program, "init3DImage");
-        init3DImage.setArg(0, centerpointsImage2);
+        init3DImage.setArg(0, *centerpointsImage2);
         ocl.queue.enqueueNDRangeKernel(
             init3DImage,
             NullRange,
@@ -2860,8 +2863,9 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
         	throw SIPL::SIPLException("The number of candidate voxels is too or too high. Something went wrong... Wrong parameters? Out of memory?", __LINE__, __FILE__);
         }
 
-        candidates2Kernel.setArg(3, centerpointsImage2);
+        candidates2Kernel.setArg(3, *centerpointsImage2);
         hp3.traverse(candidates2Kernel, 4);
+        hp3.deleteHPlevels();
 
         Image3D centerpointsImage3 = Image3D(
                 ocl.context,
@@ -2878,11 +2882,11 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
         );
 
 		if(getParamBool(parameters, "centerpoints-only")) {
-			return centerpointsImage2;
+			return *centerpointsImage2;
 		}
         ddKernel.setArg(0, vectorField);
         ddKernel.setArg(1, TDF);
-        ddKernel.setArg(2, centerpointsImage2);
+        ddKernel.setArg(2, *centerpointsImage2);
         ddKernel.setArg(4, cubeSize);
         ddKernel.setArg(3, centerpointsImage3);
         ocl.queue.enqueueNDRangeKernel(
@@ -2891,6 +2895,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
                 NDRange(ceil((float)size.x/cubeSize),ceil((float)size.y/cubeSize),ceil((float)size.z/cubeSize)),
                 NullRange
         );
+        delete centerpointsImage2;
 
         // Construct HP of centerpointsImage
         HistogramPyramid3D hp(ocl);
@@ -2900,7 +2905,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
 
         // Run createPositions kernel
         vertices = hp.createPositionBuffer();
-
+        hp.deleteHPlevels();
     }
     if(sum < 8 || sum >= 16384) {
     	throw SIPL::SIPLException("Too many or too few vertices detected", __LINE__, __FILE__);
@@ -3055,6 +3060,7 @@ if(getParamBool(parameters, "timing")) {
 
     // Run create positions kernel on edges
     Buffer edges = hp2.createPositionBuffer();
+    hp2.deleteHPlevels();
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
