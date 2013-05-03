@@ -2759,12 +2759,12 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
         candidates2Kernel.setArg(0, TDF);
         candidates2Kernel.setArg(1, radius);
         candidates2Kernel.setArg(2, vectorField);
-        Buffer centerpoints2 = Buffer(
+        Buffer * centerpoints2 = new Buffer(
                 ocl.context,
                 CL_MEM_READ_WRITE,
                 sizeof(char)*totalSize
         );
-        initCharBuffer.setArg(0, centerpoints2);
+        initCharBuffer.setArg(0, *centerpoints2);
         ocl.queue.enqueueNDRangeKernel(
                 initCharBuffer,
                 NullRange,
@@ -2772,7 +2772,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
                 NullRange
         );
 
-        candidates2Kernel.setArg(3, centerpoints2);
+        candidates2Kernel.setArg(3, *centerpoints2);
         std::cout << "candidates: " << hp3.getSum() << std::endl;
         if(hp3.getSum() <= 0 || hp3.getSum() > 0.5*totalSize) {
         	throw SIPL::SIPLException("The number of candidate voxels is too low or too high. Something went wrong... Wrong parameters? Out of memory?", __LINE__, __FILE__);
@@ -2781,12 +2781,13 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
         hp3.deleteHPlevels();
         delete centerpoints;
         ocl.queue.enqueueCopyBufferToImage(
-            centerpoints2,
+            *centerpoints2,
             *centerpointsImage2,
             0,
             offset,
             region
         );
+        delete centerpoints2;
 
 		if(getParamBool(parameters, "centerpoints-only")) {
 			return *centerpointsImage2;
@@ -2795,35 +2796,37 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
         ddKernel.setArg(1, TDF);
         ddKernel.setArg(2, *centerpointsImage2);
         ddKernel.setArg(4, cubeSize);
-        Buffer centerpoints3 = Buffer(
+        Buffer * centerpoints3 = new Buffer(
                 ocl.context,
                 CL_MEM_READ_WRITE,
                 sizeof(char)*totalSize
         );
-        initCharBuffer.setArg(0, centerpoints3);
+        initCharBuffer.setArg(0, *centerpoints3);
         ocl.queue.enqueueNDRangeKernel(
                 initCharBuffer,
                 NullRange,
                 NDRange(totalSize),
                 NullRange
         );
-        ddKernel.setArg(3, centerpoints3);
+        ddKernel.setArg(3, *centerpoints3);
         ocl.queue.enqueueNDRangeKernel(
                 ddKernel,
                 NullRange,
                 NDRange(ceil((float)size.x/cubeSize),ceil((float)size.y/cubeSize),ceil((float)size.z/cubeSize)),
                 NullRange
         );
+        delete centerpointsImage2;
 
         // Construct HP of centerpointsImage
         HistogramPyramid3DBuffer hp(ocl);
-        hp.create(centerpoints3, size.x, size.y, size.z);
+        hp.create(*centerpoints3, size.x, size.y, size.z);
         sum = hp.getSum();
         std::cout << "number of vertices detected " << sum << std::endl;
 
         // Run createPositions kernel
         vertices = hp.createPositionBuffer();
         hp.deleteHPlevels();
+        delete centerpoints3;
     } else {
         Kernel init3DImage(ocl.program, "init3DImage");
         init3DImage.setArg(0, *centerpointsImage2);
@@ -2834,7 +2837,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
             NullRange
         );
 
-        Image3D centerpointsImage = Image3D(
+        Image3D * centerpointsImage = new Image3D(
                 ocl.context,
                 CL_MEM_READ_WRITE,
                 ImageFormat(CL_R, CL_SIGNED_INT8),
@@ -2842,7 +2845,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
         );
 
         candidatesKernel.setArg(0, TDF);
-        candidatesKernel.setArg(1, centerpointsImage);
+        candidatesKernel.setArg(1, *centerpointsImage);
         candidatesKernel.setArg(2, Thigh);
         ocl.queue.enqueueNDRangeKernel(
                 candidatesKernel,
@@ -2857,7 +2860,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
         candidates2Kernel.setArg(2, vectorField);
 
         HistogramPyramid3D hp3(ocl);
-        hp3.create(centerpointsImage, size.x, size.y, size.z);
+        hp3.create(*centerpointsImage, size.x, size.y, size.z);
         std::cout << "candidates: " << hp3.getSum() << std::endl;
 		if(hp3.getSum() <= 0 || hp3.getSum() > 0.5*totalSize) {
         	throw SIPL::SIPLException("The number of candidate voxels is too or too high. Something went wrong... Wrong parameters? Out of memory?", __LINE__, __FILE__);
@@ -2866,14 +2869,15 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
         candidates2Kernel.setArg(3, *centerpointsImage2);
         hp3.traverse(candidates2Kernel, 4);
         hp3.deleteHPlevels();
+        delete centerpointsImage;
 
-        Image3D centerpointsImage3 = Image3D(
+        Image3D * centerpointsImage3 = new Image3D(
                 ocl.context,
                 CL_MEM_READ_WRITE,
                 ImageFormat(CL_R, CL_SIGNED_INT8),
                 size.x, size.y, size.z
         );
-        init3DImage.setArg(0, centerpointsImage3);
+        init3DImage.setArg(0, *centerpointsImage3);
         ocl.queue.enqueueNDRangeKernel(
             init3DImage,
             NullRange,
@@ -2888,7 +2892,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
         ddKernel.setArg(1, TDF);
         ddKernel.setArg(2, *centerpointsImage2);
         ddKernel.setArg(4, cubeSize);
-        ddKernel.setArg(3, centerpointsImage3);
+        ddKernel.setArg(3, *centerpointsImage3);
         ocl.queue.enqueueNDRangeKernel(
                 ddKernel,
                 NullRange,
@@ -2899,13 +2903,14 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
 
         // Construct HP of centerpointsImage
         HistogramPyramid3D hp(ocl);
-        hp.create(centerpointsImage3, size.x, size.y, size.z);
+        hp.create(*centerpointsImage3, size.x, size.y, size.z);
         sum = hp.getSum();
         std::cout << "number of vertices detected " << sum << std::endl;
 
         // Run createPositions kernel
         vertices = hp.createPositionBuffer();
         hp.deleteHPlevels();
+        delete centerpointsImage3;
     }
     if(sum < 8 || sum >= 16384) {
     	throw SIPL::SIPLException("Too many or too few vertices detected", __LINE__, __FILE__);
