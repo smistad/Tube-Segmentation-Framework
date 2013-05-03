@@ -982,7 +982,7 @@ float * createBlurMask(float sigma, int * maskSizePointer) {
     return mask;
 }
 
-void runFastGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, SIPL::int3 &size) {
+Image3D runFastGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIPL::int3 &size) {
 
     const int GVFIterations = getParam(parameters, "gvf-iterations");
     const bool no3Dwrite = !getParamBool(parameters, "3d_write");
@@ -992,6 +992,7 @@ void runFastGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, SIPL::
     Kernel GVFInitKernel = Kernel(ocl.program, "GVF3DInit");
     Kernel GVFIterationKernel = Kernel(ocl.program, "GVF3DIteration");
     Kernel GVFFinishKernel = Kernel(ocl.program, "GVF3DFinish");
+    Image3D resultVectorField;
 
     std::cout << "Running GVF with " << GVFIterations << " iterations " << std::endl;
     if(no3Dwrite) {
@@ -1011,7 +1012,7 @@ void runFastGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, SIPL::
         );
         //vectorFieldBuffer1->setDestructorCallback((void (__stdcall *)(cl_mem,void *))(notify), NULL);
 
-        GVFInitKernel.setArg(0, vectorField);
+        GVFInitKernel.setArg(0, *vectorField);
         GVFInitKernel.setArg(1, vectorFieldBuffer);
         ocl.queue.enqueueNDRangeKernel(
                 GVFInitKernel,
@@ -1021,7 +1022,7 @@ void runFastGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, SIPL::
         );
 
         // Run iterations
-        GVFIterationKernel.setArg(0, vectorField);
+        GVFIterationKernel.setArg(0, *vectorField);
         GVFIterationKernel.setArg(3, MU);
 
         for(int i = 0; i < GVFIterations; i++) {
@@ -1040,6 +1041,7 @@ void runFastGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, SIPL::
                 );
         }
         delete vectorFieldBuffer1;
+        delete vectorField;
 
         Buffer finalVectorFieldBuffer = Buffer(
                 ocl.context,
@@ -1068,9 +1070,14 @@ void runFastGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, SIPL::
 		region[2] = size.z;
 
         // Copy buffer contents to image
+		if(getParamBool(parameters, "16bit-vectors")) {
+            resultVectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
+        } else {
+            resultVectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
+        }
         ocl.queue.enqueueCopyBufferToImage(
                 finalVectorFieldBuffer,
-                vectorField,
+                resultVectorField,
                 0,
                 offset,
                 region
@@ -1079,16 +1086,16 @@ void runFastGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, SIPL::
     } else {
         Image3D vectorField1, vectorField2;
         Image3D initVectorField;
-        if(getParamBool(parameters, "32bit-vectors")) {
-            vectorField1 = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
-            initVectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RG, CL_FLOAT), size.x, size.y, size.z);
-        } else {
+        if(getParamBool(parameters, "16bit-vectors")) {
             vectorField1 = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
             initVectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RG, CL_SNORM_INT16), size.x, size.y, size.z);
+        } else {
+            vectorField1 = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
+            initVectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RG, CL_FLOAT), size.x, size.y, size.z);
         }
 
         // init vectorField from image
-        GVFInitKernel.setArg(0, vectorField);
+        GVFInitKernel.setArg(0, *vectorField);
         GVFInitKernel.setArg(1, vectorField1);
         GVFInitKernel.setArg(2, initVectorField);
         ocl.queue.enqueueNDRangeKernel(
@@ -1104,9 +1111,9 @@ void runFastGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, SIPL::
         for(int i = 0; i < GVFIterations; i++) {
             if(i % 2 == 0) {
                 GVFIterationKernel.setArg(1, vectorField1);
-                GVFIterationKernel.setArg(2, vectorField);
+                GVFIterationKernel.setArg(2, *vectorField);
             } else {
-                GVFIterationKernel.setArg(1, vectorField);
+                GVFIterationKernel.setArg(1, *vectorField);
                 GVFIterationKernel.setArg(2, vectorField1);
             }
                 ocl.queue.enqueueNDRangeKernel(
@@ -1116,10 +1123,16 @@ void runFastGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, SIPL::
                         NDRange(4,4,4)
                 );
         }
+        delete vectorField;
 
         // Copy vector field to image
+		if(getParamBool(parameters, "16bit-vectors")) {
+            resultVectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
+        } else {
+            resultVectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
+        }
         GVFFinishKernel.setArg(0, vectorField1);
-        GVFFinishKernel.setArg(1, vectorField);
+        GVFFinishKernel.setArg(1, resultVectorField);
 
         ocl.queue.enqueueNDRangeKernel(
                 GVFFinishKernel,
@@ -1128,8 +1141,9 @@ void runFastGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, SIPL::
                 NDRange(4,4,4)
         );
     }
+    return resultVectorField;
 }
-void runLowMemoryGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, SIPL::int3 &size) {
+Image3D runLowMemoryGVF(OpenCL &ocl, Image3D * vectorField, paramList &parameters, SIPL::int3 &size) {
 
     const int GVFIterations = getParam(parameters, "gvf-iterations");
     const bool no3Dwrite = !getParamBool(parameters, "3d_write");
@@ -1140,16 +1154,19 @@ void runLowMemoryGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, S
     Kernel GVFIterationKernel = Kernel(ocl.program, "GVF3DIteration_one_component");
     Kernel GVFFinishKernel = Kernel(ocl.program, "GVF3DFinish_one_component");
 
+    Image3D resultVectorField;
     std::cout << "Running GVF with " << GVFIterations << " iterations " << std::endl;
     if(no3Dwrite) {
     	int vectorFieldSize = sizeof(float);
     	if(getParamBool(parameters, "16bit-vectors")) {
     		vectorFieldSize = sizeof(short);
     	}
-    	Buffer vectorFieldX, vectorFieldY, vectorFieldZ;
+    	Buffer *vectorFieldX;
+    	Buffer *vectorFieldY;
+    	Buffer *vectorFieldZ;
         for(int component = 1; component < 4; component++) {
 
-        	Buffer vectorField1 = Buffer(
+        	Buffer * vectorField1 = new Buffer(
                 ocl.context,
                 CL_MEM_READ_WRITE,
                 vectorFieldSize*totalSize
@@ -1160,8 +1177,8 @@ void runLowMemoryGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, S
                 2*vectorFieldSize*totalSize
 			);
 
-			GVFInitKernel.setArg(0, vectorField);
-			GVFInitKernel.setArg(1, vectorField1);
+			GVFInitKernel.setArg(0, *vectorField);
+			GVFInitKernel.setArg(1, *vectorField1);
 			GVFInitKernel.setArg(2, initVectorField);
 			GVFInitKernel.setArg(3, component);
 			ocl.queue.enqueueNDRangeKernel(
@@ -1184,11 +1201,11 @@ void runLowMemoryGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, S
 
 			for(int i = 0; i < GVFIterations; i++) {
 				if(i % 2 == 0) {
-					GVFIterationKernel.setArg(1, vectorField1);
+					GVFIterationKernel.setArg(1, *vectorField1);
 					GVFIterationKernel.setArg(2, vectorField2);
 				} else {
 					GVFIterationKernel.setArg(1, vectorField2);
-					GVFIterationKernel.setArg(2, vectorField1);
+					GVFIterationKernel.setArg(2, *vectorField1);
 				}
 					ocl.queue.enqueueNDRangeKernel(
 							GVFIterationKernel,
@@ -1207,6 +1224,7 @@ void runLowMemoryGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, S
 			ocl.queue.finish();
 			std::cout << "finished component " << component << std::endl;
         }
+        delete vectorField;
 
 
 		bool usingTwoBuffers = false;
@@ -1243,9 +1261,9 @@ void runLowMemoryGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, S
         }
 
         // Copy vector field to image
-        GVFFinishKernel.setArg(0, vectorFieldX);
-        GVFFinishKernel.setArg(1, vectorFieldY);
-        GVFFinishKernel.setArg(2, vectorFieldZ);
+        GVFFinishKernel.setArg(0, *vectorFieldX);
+        GVFFinishKernel.setArg(1, *vectorFieldY);
+        GVFFinishKernel.setArg(2, *vectorFieldZ);
         GVFFinishKernel.setArg(3, vectorFieldBuffer);
         GVFFinishKernel.setArg(4, vectorFieldBuffer2);
         GVFFinishKernel.setArg(5, maxZ);
@@ -1257,6 +1275,10 @@ void runLowMemoryGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, S
                 NullRange
         );
 
+        delete vectorFieldX;
+        delete vectorFieldY;
+        delete vectorFieldZ;
+
 		cl::size_t<3> offset;
 		offset[0] = 0;
 		offset[1] = 0;
@@ -1266,6 +1288,11 @@ void runLowMemoryGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, S
 		region[1] = size.y;
 		region[2] = size.z;
 
+		if(getParamBool(parameters, "16bit-vectors")) {
+            resultVectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
+        } else {
+            resultVectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
+        }
 		if(usingTwoBuffers) {
 			cl::size_t<3> region2;
 			region2[0] = size.x;
@@ -1279,7 +1306,7 @@ void runLowMemoryGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, S
 			region2[2] = floor((float)limit/(size.x*size.y));
 			ocl.queue.enqueueCopyBufferToImage(
 					vectorFieldBuffer,
-					vectorField,
+					resultVectorField,
 					0,
 					offset,
 					region2
@@ -1294,7 +1321,7 @@ void runLowMemoryGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, S
 			region3[2] = size.z-region2[2];
 			ocl.queue.enqueueCopyBufferToImage(
 					vectorFieldBuffer2,
-					vectorField,
+					resultVectorField,
 					0,
 					offset2,
 					region3
@@ -1303,7 +1330,7 @@ void runLowMemoryGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, S
 			// Copy buffer contents to image
 			ocl.queue.enqueueCopyBufferToImage(
 					vectorFieldBuffer,
-					vectorField,
+					resultVectorField,
 					0,
 					offset,
 					region
@@ -1366,11 +1393,16 @@ void runLowMemoryGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, S
 			std::cout << "finished component " << component << std::endl;
         }
 
+		if(getParamBool(parameters, "16bit-vectors")) {
+            resultVectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
+        } else {
+            resultVectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
+        }
         // Copy vector fields to image
         GVFFinishKernel.setArg(0, vectorFieldX);
         GVFFinishKernel.setArg(1, vectorFieldY);
         GVFFinishKernel.setArg(2, vectorFieldZ);
-        GVFFinishKernel.setArg(3, vectorField);
+        GVFFinishKernel.setArg(3, resultVectorField);
 
         ocl.queue.enqueueNDRangeKernel(
                 GVFFinishKernel,
@@ -1379,17 +1411,19 @@ void runLowMemoryGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, S
                 NDRange(4,4,4)
         );
     }
+
+    return resultVectorField;
 }
 
 
-void runGVF(OpenCL &ocl, Image3D &vectorField, paramList &parameters, SIPL::int3 &size, bool useLessMemory) {
+Image3D runGVF(OpenCL &ocl, Image3D * vectorField, paramList &parameters, SIPL::int3 &size, bool useLessMemory) {
 
 	if(useLessMemory) {
 		std::cout << "NOTE: Running slow GVF that uses less memory." << std::endl;
-		runLowMemoryGVF(ocl,vectorField,parameters,size);
+		return runLowMemoryGVF(ocl,vectorField,parameters,size);
 	} else {
 		std::cout << "NOTE: Running fast GVF." << std::endl;
-		runFastGVF(ocl,vectorField,parameters,size);
+		return runFastGVF(ocl,vectorField,parameters,size);
 	}
 }
 
@@ -1786,6 +1820,7 @@ if(getParamBool(parameters, "timing")) {
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
 }
+	Image3D * initVectorField;
    if(no3Dwrite) {
 		bool usingTwoBuffers = false;
     	int maxZ = size.z;
@@ -1793,7 +1828,7 @@ if(getParamBool(parameters, "timing")) {
         Buffer vectorFieldBuffer, vectorFieldBuffer2;
         unsigned int maxBufferSize = ocl.device.getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE>();
         if(getParamBool(parameters, "16bit-vectors")) {
-			vectorField = Image3D(ocl.context, CL_MEM_READ_ONLY, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
+			initVectorField = new Image3D(ocl.context, CL_MEM_READ_ONLY, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
 			if(4*sizeof(short)*totalSize < maxBufferSize) {
 				vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(short)*totalSize);
 			} else {
@@ -1807,7 +1842,7 @@ if(getParamBool(parameters, "timing")) {
 				usingTwoBuffers = true;
 			}
         } else {
-			vectorField = Image3D(ocl.context, CL_MEM_READ_ONLY, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
+			initVectorField = new Image3D(ocl.context, CL_MEM_READ_ONLY, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
 			if(4*sizeof(float)*totalSize < maxBufferSize) {
 				vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(float)*totalSize);
 			} else {
@@ -1854,7 +1889,7 @@ if(getParamBool(parameters, "timing")) {
         	region2[2] = floor((float)limit/(size.x*size.y));
  			ocl.queue.enqueueCopyBufferToImage(
 					vectorFieldBuffer,
-					vectorField,
+					*initVectorField,
 					0,
 					offset,
 					region2
@@ -1869,7 +1904,7 @@ if(getParamBool(parameters, "timing")) {
  			region3[2] = size.z-region2[2];
 			ocl.queue.enqueueCopyBufferToImage(
 					vectorFieldBuffer2,
-					vectorField,
+					*initVectorField,
 					0,
 					offset2,
 					region3
@@ -1878,7 +1913,7 @@ if(getParamBool(parameters, "timing")) {
 			// Copy buffer contents to image
 			ocl.queue.enqueueCopyBufferToImage(
 					vectorFieldBuffer,
-					vectorField,
+					*initVectorField,
 					0,
 					offset,
 					region
@@ -1888,15 +1923,15 @@ if(getParamBool(parameters, "timing")) {
 
     } else {
         if(getParamBool(parameters, "32bit-vectors")) {
-            vectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
+            initVectorField = new Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
         } else {
-            vectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
+            initVectorField = new Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
         }
 
 
         // Run create vector field
         createVectorFieldKernel.setArg(0, *blurredVolume);
-        createVectorFieldKernel.setArg(1, vectorField);
+        createVectorFieldKernel.setArg(1, *initVectorField);
         createVectorFieldKernel.setArg(2, Fmax);
         createVectorFieldKernel.setArg(3, vectorSign);
 
@@ -1922,8 +1957,25 @@ if(getParamBool(parameters, "timing")) {
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
 }
-
-	runGVF(ocl, vectorField, parameters, size, false);
+	// Determine whether to use the slow GVF that use less memory or not
+	bool useSlowGVF = false;
+	if(no3Dwrite) {
+        unsigned int maxBufferSize = ocl.device.getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE>();
+		if(getParamBool(parameters, "16bit-vectors")) {
+			if(4*sizeof(short)*totalSize > maxBufferSize) {
+				useSlowGVF = true;
+			}
+		} else {
+			if(4*sizeof(float)*totalSize > maxBufferSize) {
+				useSlowGVF = true;
+			}
+		}
+	}
+	if(useSlowGVF) {
+		vectorField = runGVF(ocl, initVectorField, parameters, size, true);
+	} else {
+		vectorField = runGVF(ocl, initVectorField, parameters, size, false);
+	}
 
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
