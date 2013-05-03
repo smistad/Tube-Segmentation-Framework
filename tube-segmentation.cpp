@@ -1922,27 +1922,8 @@ if(getParamBool(parameters, "timing")) {
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
 }
-	// Determine whether to use the slow GVF that use less memory or not
-	bool useSlowGVF = false;
-	if(no3Dwrite) {
-        unsigned int maxBufferSize = ocl.device.getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE>();
-		if(getParamBool(parameters, "16bit-vectors")) {
-			if(4*sizeof(short)*totalSize > maxBufferSize) {
-				useSlowGVF = true;
-			}
-		} else {
-			if(4*sizeof(float)*totalSize > maxBufferSize) {
-				useSlowGVF = true;
-			}
-		}
-	}
-	if(useSlowGVF) {
-		runGVF(ocl, vectorField, parameters, size, true);
-	} else {
-			// As this is the most memory intensity step, two calls to queue.finish
-			// is performed to ensure that any unnecessary data is moved away from the GPU
-			runGVF(ocl, vectorField, parameters, size, false);
-	}
+
+	runGVF(ocl, vectorField, parameters, size, false);
 
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
