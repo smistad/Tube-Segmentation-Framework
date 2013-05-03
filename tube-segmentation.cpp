@@ -2946,7 +2946,7 @@ if(getParamBool(parameters, "timing")) {
     while(globalSize % 64 != 0) globalSize++;
 
     // Create lengths image
-    Image2D lengths = Image2D(
+    Image2D * lengths = new Image2D(
             ocl.context,
             CL_MEM_READ_WRITE,
             ImageFormat(CL_R, CL_FLOAT),
@@ -2956,7 +2956,7 @@ if(getParamBool(parameters, "timing")) {
     // Run linkLengths kernel
     Kernel linkLengths(ocl.program, "linkLengths");
     linkLengths.setArg(0, vertices);
-    linkLengths.setArg(1, lengths);
+    linkLengths.setArg(1, *lengths);
     ocl.queue.enqueueNDRangeKernel(
             linkLengths,
             NullRange,
@@ -2966,7 +2966,7 @@ if(getParamBool(parameters, "timing")) {
 
     // Create and init compacted_lengths image
     float * cl = new float[sum*sum*2]();
-    Image2D compacted_lengths = Image2D(
+    Image2D * compacted_lengths = new Image2D(
             ocl.context,
             CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
             ImageFormat(CL_RG, CL_FLOAT),
@@ -2974,6 +2974,7 @@ if(getParamBool(parameters, "timing")) {
             0,
             cl
     );
+    delete[] cl;
 
     // Create and initialize incs buffer
     Buffer incs = Buffer(
@@ -2993,9 +2994,9 @@ if(getParamBool(parameters, "timing")) {
 
     // Run compact kernel
     Kernel compactLengths(ocl.program, "compact");
-    compactLengths.setArg(0, lengths);
+    compactLengths.setArg(0, *lengths);
     compactLengths.setArg(1, incs);
-    compactLengths.setArg(2, compacted_lengths);
+    compactLengths.setArg(2, *compacted_lengths);
     compactLengths.setArg(3, maxDistance);
     ocl.queue.enqueueNDRangeKernel(
             compactLengths,
@@ -3003,6 +3004,7 @@ if(getParamBool(parameters, "timing")) {
             NDRange(sum, sum),
             NullRange
     );
+    delete lengths;
 
     Kernel linkingKernel(ocl.program, "linkCenterpoints");
     linkingKernel.setArg(0, TDF);
@@ -3010,7 +3012,7 @@ if(getParamBool(parameters, "timing")) {
     linkingKernel.setArg(2, vertices);
     linkingKernel.setArg(3, edgeTuples);
     linkingKernel.setArg(4, vectorField);
-    linkingKernel.setArg(5, compacted_lengths);
+    linkingKernel.setArg(5, *compacted_lengths);
     linkingKernel.setArg(6, sum);
     linkingKernel.setArg(7, Tmean);
     linkingKernel.setArg(8, maxDistance);
@@ -3020,6 +3022,7 @@ if(getParamBool(parameters, "timing")) {
             NDRange(globalSize),
             NDRange(64)
     );
+    delete compacted_lengths;
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
