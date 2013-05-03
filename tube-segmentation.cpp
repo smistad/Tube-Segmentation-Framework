@@ -1040,6 +1040,7 @@ Image3D runFastGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIP
                         NDRange(4,4,4)
                 );
         }
+        ocl.queue.finish(); //This finish is necessary
         delete vectorFieldBuffer1;
         delete vectorField;
 
@@ -1072,9 +1073,9 @@ Image3D runFastGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIP
 
         // Copy buffer contents to image
 		if(getParamBool(parameters, "16bit-vectors")) {
-            resultVectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
+            resultVectorField = Image3D(ocl.context, CL_MEM_READ_ONLY, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
         } else {
-            resultVectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
+            resultVectorField = Image3D(ocl.context, CL_MEM_READ_ONLY, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
         }
         ocl.queue.enqueueCopyBufferToImage(
                 finalVectorFieldBuffer,
