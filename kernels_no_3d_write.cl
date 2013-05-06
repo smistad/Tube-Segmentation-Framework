@@ -752,7 +752,6 @@ __kernel void compact(
 
 __kernel void linkCenterpoints(
         __read_only image3d_t TDF,
-        __read_only image3d_t radius,
         __global int const * restrict positions,
         __write_only image2d_t edges,
         __read_only image3d_t intensity,
@@ -998,7 +997,6 @@ __kernel void removeDuplicateEdges(
 #define SQR_MAG(pos) read_imagef(vectorField, sampler, pos).w
 
 __kernel void dd(
-    __read_only image3d_t vectorField,
     __read_only image3d_t TDF,
     __read_only image3d_t centerpointCandidates,
     __global uchar * centerpoints,
@@ -1006,7 +1004,7 @@ __kernel void dd(
     ) {
 
     int4 bestPos;
-    float bestGVF = 0.0f;
+    float bestTDF = 0.0f;
     int4 readPos = {
         get_global_id(0)*cubeSize,
         get_global_id(1)*cubeSize,
@@ -1019,10 +1017,10 @@ __kernel void dd(
     for(int c = 0; c < cubeSize; c++) {
         int4 pos = readPos + (int4)(a,b,c,0);
         if(read_imagei(centerpointCandidates, sampler, pos).x == 1) {
-            float GVF = read_imagef(TDF, sampler, pos).x;
-            if(GVF > bestGVF) {
+            float tdf = read_imagef(TDF, sampler, pos).x;
+            if(tdf > bestTDF) {
                 found = true;
-                bestGVF = GVF;
+                bestTDF = tdf;
                 bestPos = pos;
             }
         }

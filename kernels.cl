@@ -352,7 +352,6 @@ __kernel void compact(
 
 __kernel void linkCenterpoints(
         __read_only image3d_t TDF,
-        __read_only image3d_t radius,
         __global int const * restrict positions,
         __write_only image2d_t edges,
         __read_only image3d_t vectorField,
@@ -1202,7 +1201,6 @@ __kernel void circleFittingTDF(
 
 
 __kernel void dd(
-    __read_only image3d_t vectorField,
     __read_only image3d_t TDF,
     __read_only image3d_t centerpointCandidates,
     __write_only image3d_t centerpoints,
