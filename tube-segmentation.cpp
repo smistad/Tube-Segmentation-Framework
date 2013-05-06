@@ -2887,11 +2887,10 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
 		if(getParamBool(parameters, "centerpoints-only")) {
 			return *centerpointsImage2;
 		}
-        ddKernel.setArg(0, vectorField);
-        ddKernel.setArg(1, TDF);
-        ddKernel.setArg(2, *centerpointsImage2);
-        ddKernel.setArg(4, cubeSize);
-        ddKernel.setArg(3, *centerpointsImage3);
+        ddKernel.setArg(0, TDF);
+        ddKernel.setArg(1, *centerpointsImage2);
+        ddKernel.setArg(3, cubeSize);
+        ddKernel.setArg(2, *centerpointsImage3);
         ocl.queue.enqueueNDRangeKernel(
                 ddKernel,
                 NullRange,
@@ -3009,11 +3008,10 @@ if(getParamBool(parameters, "timing")) {
     linkingKernel.setArg(0, TDF);
     linkingKernel.setArg(1, vertices);
     linkingKernel.setArg(2, edgeTuples);
-    linkingKernel.setArg(3, vectorField);
-    linkingKernel.setArg(4, *compacted_lengths);
-    linkingKernel.setArg(5, sum);
-    linkingKernel.setArg(6, Tmean);
-    linkingKernel.setArg(7, maxDistance);
+    linkingKernel.setArg(3, *compacted_lengths);
+    linkingKernel.setArg(4, sum);
+    linkingKernel.setArg(5, Tmean);
+    linkingKernel.setArg(6, maxDistance);
     ocl.queue.enqueueNDRangeKernel(
             linkingKernel,
             NullRange,

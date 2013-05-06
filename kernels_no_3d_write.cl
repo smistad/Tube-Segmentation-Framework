@@ -754,7 +754,6 @@ __kernel void linkCenterpoints(
         __read_only image3d_t TDF,
         __global int const * restrict positions,
         __write_only image2d_t edges,
-        __read_only image3d_t intensity,
         __read_only image2d_t compacted_lengths,
         __private int sum,
         __private float minAvgTDF,
@@ -809,31 +808,18 @@ __kernel void linkCenterpoints(
         // Check TDF
         float avgTDF = 0.0f;
         float avgIntensity = 0.0f;
-        bool invalid = false;
-        //printf("%d - %d \n", db, dc);
         for(int k = 0; k <= db; k++) {
             float alpha = (float)k/db;
 float3 p = xa+ab*alpha;
             float t = read_imagef(TDF, interpolationSampler, p.xyzz).x; 
-            float i = read_imagef(intensity, interpolationSampler, p.xyzz).x; 
-            avgIntensity += i;
             avgTDF += t;
-            if(i > maxIntensity || t < minTDF) {
-                invalid = true;
-                break;
-            }
         }
-        if(invalid)
-            continue;
         avgTDF /= db+1;
-        avgIntensity /= db+1;
         if(avgTDF < minAvgTDF)
             continue;
-        if(avgIntensity > maxAvgIntensity)
-            continue;
 
+/*
         float varTDF = 0.0f;
-        float varIntensity = 0.0f;
         for(int k = 0; k <= db; k++) {
             float alpha = (float)k/db;
 float3 p = xa+ab*alpha;
@@ -849,39 +835,27 @@ float3 p = xa+ab*alpha;
         if(invalid)
             continue;
 
-        if(db > 4 && varIntensity / (db+1) > maxVarIntensity)
-            continue;
         if(db > 4 && varTDF / (db+1) > maxVarTDF)
             continue;
+            */
 
         avgTDF = 0.0f;
-        avgIntensity = 0.0f;
-        varTDF = 0.0f;
-        varIntensity = 0.0f;
         for(int k = 0; k <= dc; k++) {
             float alpha = (float)k/dc;
-
-float3 p = xa+ac*alpha;
+            float3 p = xa+ac*alpha;
             float t = read_imagef(TDF, interpolationSampler, p.xyzz).x; 
-            float i = read_imagef(intensity, interpolationSampler, p.xyzz).x; 
             avgTDF += t;
-            avgIntensity += i;
         }
         avgTDF /= dc+1;
-        avgIntensity /= dc+1;
 
         if(avgTDF < minAvgTDF)
             continue;
 
-        if(avgIntensity > maxAvgIntensity)
-            continue;
-
+    /*
         for(int k = 0; k <= dc; k++) {
             float alpha = (float)k/dc;
 float3 p = xa+ac*alpha;
             float t = read_imagef(TDF, interpolationSampler, p.xyzz).x; 
-            float i = read_imagef(intensity, interpolationSampler, p.xyzz).x; 
-            varIntensity += (i-avgIntensity)*(i-avgIntensity);
             varTDF += (t-avgTDF)*(t-avgTDF);
         }
 
@@ -889,10 +863,7 @@ float3 p = xa+ac*alpha;
             continue;
         if(dc > 4 && varTDF / (dc+1) > maxVarTDF)
             continue;
-        //printf("avg i: %f\n", avgIntensity );
-        //printf("avg tdf: %f\n", avgTDF );
-        //printf("var i: %f\n", varIntensity / (dc+1));
-        //printf("var tdf: %f\n", varTDF / (dc+1));
+            */
 
         validPairFound = true;
         bestPair.x = cl.y;
