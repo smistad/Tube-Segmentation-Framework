@@ -4448,7 +4448,8 @@ void runCircleFittingAndRidgeTraversal(OpenCL * ocl, Image3D * dataset, SIPL::in
     TS.Fx = new float[totalSize];
     TS.Fy = new float[totalSize];
     TS.Fz = new float[totalSize];
-    if(no3Dwrite || getParamBool(parameters, "32bit-vectors")) {
+    TS.TDF = new float[totalSize];
+    if(!getParamBool(parameters, "16bit-vectors")) {
     	// 32 bit vector fields
         float * Fs = new float[totalSize*4];
         ocl->queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
@@ -4459,6 +4460,7 @@ void runCircleFittingAndRidgeTraversal(OpenCL * ocl, Image3D * dataset, SIPL::in
             TS.Fz[i] = Fs[i*4+2];
         }
         delete[] Fs;
+        ocl->queue.enqueueReadImage(*TDF, CL_TRUE, offset, region, 0, 0, TS.TDF);
     } else {
     	// 16 bit vector fields
         short * Fs = new short[totalSize*4];
@@ -4470,10 +4472,17 @@ void runCircleFittingAndRidgeTraversal(OpenCL * ocl, Image3D * dataset, SIPL::in
             TS.Fz[i] = MAX(-1.0f, Fs[i*4+2] / 32767.0f);
         }
         delete[] Fs;
+
+        // Convert 16 bit TDF to 32 bit
+        unsigned short * tempTDF = new unsigned short[totalSize];
+        ocl->queue.enqueueReadImage(*TDF, CL_TRUE, offset, region, 0, 0, tempTDF);
+#pragma omp parallel for
+        for(int i = 0; i < totalSize; i++) {
+            TS.TDF[i] = (float)tempTDF[i] / 65535.0f;
+        }
+        delete[] tempTDF;
     }
     TS.radius = new float[totalSize];
-    TS.TDF = new float[totalSize];
-    ocl->queue.enqueueReadImage(*TDF, CL_TRUE, offset, region, 0, 0, TS.TDF);
     output->setTDF(TS.TDF);
     ocl->queue.enqueueReadImage(radius, CL_TRUE, offset, region, 0, 0, TS.radius);
     std::stack<CenterlinePoint> centerlineStack;
