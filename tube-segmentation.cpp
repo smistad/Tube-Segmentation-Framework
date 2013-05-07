@@ -1060,6 +1060,7 @@ Image3D runFastGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIP
                 NDRange(size.x,size.y,size.z),
                 NDRange(4,4,4)
         );
+        ocl.queue.finish();
         delete vectorFieldBuffer;
 
 		cl::size_t<3> offset;
@@ -1125,6 +1126,7 @@ Image3D runFastGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIP
                         NDRange(4,4,4)
                 );
         }
+        ocl.queue.finish();
         delete vectorField;
 
         // Copy vector field to image
@@ -1277,6 +1279,7 @@ Image3D runLowMemoryGVF(OpenCL &ocl, Image3D * vectorField, paramList &parameter
                 NullRange
         );
 
+        ocl.queue.finish();
         delete vectorFieldX;
         delete vectorFieldY;
         delete vectorFieldZ;
@@ -1468,7 +1471,7 @@ void runCircleFittingMethod(OpenCL &ocl, Image3D * dataset, SIPL::int3 size, par
     	int maskSize = 1;
 		float * mask = createBlurMask(smallBlurSigma, &maskSize);
 		Buffer blurMask = Buffer(ocl.context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(float)*(maskSize*2+1)*(maskSize*2+1)*(maskSize*2+1), mask);
-		blurMask.setDestructorCallback((void (__stdcall *)(cl_mem,void *))(freeData<float>), (void *)mask);
+        blurMask.setDestructorCallback((void (__stdcall *)(cl_mem,void *))(freeData<float>), (void *)mask);
     	if(no3Dwrite) {
 			// Create auxillary buffer
 			Buffer blurredVolumeBuffer = Buffer(
@@ -1569,6 +1572,7 @@ if(getParamBool(parameters, "timing")) {
         );
 
         if(smallBlurSigma > 0) {
+            ocl.queue.finish();
             delete blurredVolume;
             blurredVolume = NULL;
         }
@@ -1655,6 +1659,7 @@ if(getParamBool(parameters, "timing")) {
         );
 
     if(smallBlurSigma > 0) {
+        ocl.queue.finish();
         delete blurredVolume;
         blurredVolume = NULL;
     }
@@ -1723,6 +1728,7 @@ if(getParamBool(parameters, "timing")) {
         vectorField = *vectorFieldSmall;
 		return;
     } else {
+        ocl.queue.finish();
         delete vectorFieldSmall;
         vectorFieldSmall = NULL;
     }
@@ -1761,8 +1767,8 @@ if(getParamBool(parameters, "timing")) {
     if(largeBlurSigma > 0) {
     	int maskSize = 1;
 		float * mask = createBlurMask(largeBlurSigma, &maskSize);
-		Buffer blurMask = Buffer(ocl.context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(float)*(maskSize*2+1)*(maskSize*2+1)*(maskSize*2+1), mask);
-		blurMask.setDestructorCallback((void (__stdcall *)(cl_mem,void *))(freeData<float>), (void *)mask);
+	    Buffer blurMask = Buffer(ocl.context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(float)*(maskSize*2+1)*(maskSize*2+1)*(maskSize*2+1), mask);
+        blurMask.setDestructorCallback((void (__stdcall *)(cl_mem,void *))(freeData<float>), (void *)mask);
     	if(no3Dwrite) {
 			// Create auxillary buffer
 			Buffer blurredVolumeBuffer = Buffer(
@@ -1808,6 +1814,7 @@ if(getParamBool(parameters, "timing")) {
         blurredVolume = dataset;
     }
     if(largeBlurSigma > 0) {
+        ocl.queue.finish();
         delete dataset;
         dataset = NULL;
     }
@@ -1876,6 +1883,7 @@ if(getParamBool(parameters, "timing")) {
                 NullRange
         );
 
+        ocl.queue.finish();
         delete blurredVolume;
         blurredVolume = NULL;
 
@@ -1945,6 +1953,7 @@ if(getParamBool(parameters, "timing")) {
                 NDRange(4,4,4)
         );
 
+        ocl.queue.finish();
         delete blurredVolume;
         blurredVolume = NULL;
 
@@ -2778,6 +2787,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
         	throw SIPL::SIPLException("The number of candidate voxels is too low or too high. Something went wrong... Wrong parameters? Out of memory?", __LINE__, __FILE__);
         }
         hp3.traverse(candidates2Kernel, 4);
+        ocl.queue.finish();
         hp3.deleteHPlevels();
         delete centerpoints;
         ocl.queue.enqueueCopyBufferToImage(
@@ -2787,6 +2797,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
             offset,
             region
         );
+        ocl.queue.finish();
         delete centerpoints2;
 
 		if(getParamBool(parameters, "centerpoints-only")) {
@@ -2814,6 +2825,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
                 NDRange(ceil((float)size.x/cubeSize),ceil((float)size.y/cubeSize),ceil((float)size.z/cubeSize)),
                 NullRange
         );
+        ocl.queue.finish();
         delete centerpointsImage2;
 
         // Construct HP of centerpointsImage
@@ -2824,6 +2836,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
 
         // Run createPositions kernel
         vertices = hp.createPositionBuffer();
+        ocl.queue.finish();
         hp.deleteHPlevels();
         delete centerpoints3;
     } else {
@@ -2867,6 +2880,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
 
         candidates2Kernel.setArg(3, *centerpointsImage2);
         hp3.traverse(candidates2Kernel, 4);
+        ocl.queue.finish();
         hp3.deleteHPlevels();
         delete centerpointsImage;
 
@@ -2897,6 +2911,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
                 NDRange(ceil((float)size.x/cubeSize),ceil((float)size.y/cubeSize),ceil((float)size.z/cubeSize)),
                 NullRange
         );
+        ocl.queue.finish();
         delete centerpointsImage2;
 
         // Construct HP of centerpointsImage
@@ -2907,6 +2922,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
 
         // Run createPositions kernel
         vertices = hp.createPositionBuffer();
+        ocl.queue.finish();
         hp.deleteHPlevels();
         delete centerpointsImage3;
     }
@@ -3002,6 +3018,7 @@ if(getParamBool(parameters, "timing")) {
             NDRange(sum, sum),
             NullRange
     );
+    ocl.queue.finish();
     delete lengths;
 
     Kernel linkingKernel(ocl.program, "linkCenterpoints");
@@ -3018,6 +3035,7 @@ if(getParamBool(parameters, "timing")) {
             NDRange(globalSize),
             NDRange(64)
     );
+    ocl.queue.finish();
     delete compacted_lengths;
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
@@ -3064,6 +3082,7 @@ if(getParamBool(parameters, "timing")) {
 
     // Run create positions kernel on edges
     Buffer edges = hp2.createPositionBuffer();
+    ocl.queue.finish();
     hp2.deleteHPlevels();
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
