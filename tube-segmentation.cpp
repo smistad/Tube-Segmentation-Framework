@@ -959,9 +959,9 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList &parame
 
 float * createBlurMask(float sigma, int * maskSizePointer) {
     int maskSize = (int)ceil(sigma/0.5f);
-    if(maskSize < 1) // cap min mask size at 3x3
+    if(maskSize < 1) // cap min mask size at 3x3x3
     	maskSize = 1;
-    if(maskSize > 5) // cap mask size at 11x11
+    if(maskSize > 5) // cap mask size at 11x11x11
     	maskSize = 5;
     float * mask = new float[(maskSize*2+1)*(maskSize*2+1)*(maskSize*2+1)];
     float sum = 0.0f;
@@ -2595,6 +2595,9 @@ void removeLoops(
 
 	// Do MST with edge distance as cost
 	int sizeBeforeMST = graph.size();
+	if(sizeBeforeMST == 0) {
+	    throw SIPL::SIPLException("Centerline graph size is 0! Can't continue. Maybe lower min-tree-length?", __LINE__,__FILE__);
+	}
 	unordered_set<int> visited;
 	std::vector<Node *> newGraph = minimumSpanningTreePCE(0, graph, size, visited);
 	int sizeAfterMST = newGraph.size();

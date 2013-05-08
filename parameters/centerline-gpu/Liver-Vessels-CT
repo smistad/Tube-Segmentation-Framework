@@ -10,7 +10,6 @@ min-mean-tdf 0.4
 min-scan-lines-threshold 47
 min-tree-length 15
 minimum 1100
-parameters Liver-Vessels-CT
 radius-max 3
 radius-min 1
 radius-step 0.5
