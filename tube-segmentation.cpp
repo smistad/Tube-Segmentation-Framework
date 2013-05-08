@@ -91,7 +91,7 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
     // Query the size of available memory
     unsigned int memorySize = devices[0].getInfo<CL_DEVICE_GLOBAL_MEM_SIZE>();
     std::cout << "Available memory on selected device " << (double)memorySize/(1024*1024) << " MB "<< std::endl;
-std::cout << "Max alloc size: " << (float)devices[0].getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE>()/(1024*1024) << " MB " << std::endl;
+    std::cout << "Max alloc size: " << (float)devices[0].getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE>()/(1024*1024) << " MB " << std::endl;
 
     // Compile and create program
     if(!getParamBool(parameters, "buffers-only") && (int)devices[0].getInfo<CL_DEVICE_EXTENSIONS>().find("cl_khr_3d_image_writes") > -1) {
@@ -127,6 +127,16 @@ std::cout << "Max alloc size: " << (float)devices[0].getInfo<CL_DEVICE_MAX_MEM_A
         // Read dataset and transfer to device
         cl::Image3D * dataset = new cl::Image3D;
         *dataset = readDatasetAndTransfer(*ocl, filename, parameters, size, output);
+
+        // Calculate maximum memory usage
+        double totalSize = size->x*size->y*size->z;
+        double vectorTypeSize = getParamBool(parameters, "16bit-vectors") ? sizeof(short):sizeof(float);
+        double peakSize = totalSize*10.0*vectorTypeSize;
+        std::cout << "NOTE: Peak memory usage with current dataset size is: " << (double)peakSize/(1024*1024) << " MB " << std::endl;
+        if(peakSize > memorySize) {
+            std::cout << "WARNING: There may not be enough space available on the GPU to process this volume." << std::endl;
+            std::cout << "WARNING: Shrink volume with " << (double)(peakSize-memorySize)*100.0/peakSize << "% (" << (double)(peakSize-memorySize)/(1024*1024) << " MB) " << std::endl;
+        }
 
         // Run specified method on dataset
         if(getParamStr(parameters, "centerline-method") == "ridge") {
