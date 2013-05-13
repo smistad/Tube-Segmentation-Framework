@@ -67,7 +67,7 @@ void print(paramList parameters){
 }
 
 TSFGarbageCollector * GC;
-
+int runCounter = 0;
 TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_dir) {
 
     INIT_TIMER
@@ -155,6 +155,12 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
         GC->deleteAllMemObjects();
         delete GC;
         delete output;
+
+        if(e.err() == CL_INVALID_COMMAND_QUEUE && runCounter < 2) {
+            runCounter++;
+            return run(filename,parameters,kernel_dir);
+        }
+
         throw SIPL::SIPLException(str.c_str());
     }
     ocl->queue.finish();
