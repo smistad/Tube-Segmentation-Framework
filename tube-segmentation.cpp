@@ -66,6 +66,8 @@ void print(paramList parameters){
 	}
 }
 
+TSFGarbageCollector * GC;
+
 TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_dir) {
 
     INIT_TIMER
@@ -122,6 +124,7 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
 		START_TIMER
     }
     SIPL::int3 * size = new SIPL::int3();
+    GC = new TSFGarbageCollector;
     TSFOutput * output = new TSFOutput(ocl, size, getParamBool(parameters, "16bit-vectors"));
     try {
         // Read dataset and transfer to device
@@ -148,12 +151,17 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
         }
     } catch(cl::Error e) {
     	std::string str = "OpenCL error: " + std::string(getCLErrorString(e.err()));
+        GC->deleteAllMemObjects();
+        delete GC;
+        delete output;
         throw SIPL::SIPLException(str.c_str());
     }
     ocl->queue.finish();
     if(getParamBool(parameters, "timer-total")) {
 		STOP_TIMER("total")
     }
+    GC->deleteAllMemObjects();
+    delete GC;
     return output;
 }
 
@@ -1015,12 +1023,13 @@ Image3D runFastGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIP
                 CL_MEM_READ_WRITE,
                 3*vectorFieldSize*totalSize
         );
+        GC->addMemObject(vectorFieldBuffer);
         Buffer * vectorFieldBuffer1 = new Buffer(
                 ocl.context,
                 CL_MEM_READ_WRITE,
                 3*vectorFieldSize*totalSize
         );
-        //vectorFieldBuffer1->setDestructorCallback((void (__stdcall *)(cl_mem,void *))(notify), NULL);
+        GC->addMemObject(vectorFieldBuffer1);
 
         GVFInitKernel.setArg(0, *vectorField);
         GVFInitKernel.setArg(1, *vectorFieldBuffer);
@@ -1051,8 +1060,8 @@ Image3D runFastGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIP
                 );
         }
         ocl.queue.finish(); //This finish is necessary
-        delete vectorFieldBuffer1;
-        delete vectorField;
+        GC->deleteMemObject(vectorFieldBuffer1);
+        GC->deleteMemObject(vectorField);
 
         Buffer finalVectorFieldBuffer = Buffer(
                 ocl.context,
@@ -1071,7 +1080,7 @@ Image3D runFastGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIP
                 NDRange(4,4,4)
         );
         ocl.queue.finish();
-        delete vectorFieldBuffer;
+        GC->deleteMemObject(vectorFieldBuffer);
 
 		cl::size_t<3> offset;
 		offset[0] = 0;
@@ -1137,7 +1146,7 @@ Image3D runFastGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIP
                 );
         }
         ocl.queue.finish();
-        delete vectorField;
+        GC->deleteMemObject(vectorField);
 
         // Copy vector field to image
 		if(getParamBool(parameters, "16bit-vectors")) {
@@ -1185,6 +1194,7 @@ Image3D runLowMemoryGVF(OpenCL &ocl, Image3D * vectorField, paramList &parameter
                 CL_MEM_READ_WRITE,
                 vectorFieldSize*totalSize
 			);
+            GC->addMemObject(vectorField1);
 			Buffer initVectorField = Buffer(
                 ocl.context,
                 CL_MEM_READ_WRITE,
@@ -1238,7 +1248,7 @@ Image3D runLowMemoryGVF(OpenCL &ocl, Image3D * vectorField, paramList &parameter
 			ocl.queue.finish();
 			std::cout << "finished component " << component << std::endl;
         }
-        delete vectorField;
+        GC->deleteMemObject(vectorField);
 
 
 		bool usingTwoBuffers = false;
@@ -1290,9 +1300,9 @@ Image3D runLowMemoryGVF(OpenCL &ocl, Image3D * vectorField, paramList &parameter
         );
 
         ocl.queue.finish();
-        delete vectorFieldX;
-        delete vectorFieldY;
-        delete vectorFieldZ;
+        GC->deleteMemObject(vectorFieldX);
+        GC->deleteMemObject(vectorFieldY);
+        GC->deleteMemObject(vectorFieldZ);
 
 		cl::size_t<3> offset;
 		offset[0] = 0;
@@ -1477,6 +1487,7 @@ void runCircleFittingMethod(OpenCL &ocl, Image3D * dataset, SIPL::int3 size, par
     float * radiusSmall;
     if(radiusMin < 2.5f) {
         Image3D * blurredVolume = new Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_FLOAT), size.x, size.y, size.z);
+        GC->addMemObject(blurredVolume);
     if(smallBlurSigma > 0) {
     	int maskSize = 1;
 		float * mask = createBlurMask(smallBlurSigma, &maskSize);
@@ -1583,8 +1594,7 @@ if(getParamBool(parameters, "timing")) {
 
         if(smallBlurSigma > 0) {
             ocl.queue.finish();
-            delete blurredVolume;
-            blurredVolume = NULL;
+            GC->deleteMemObject(blurredVolume);
         }
 
         if(getParamBool(parameters, "16bit-vectors")) {
@@ -1670,8 +1680,7 @@ if(getParamBool(parameters, "timing")) {
 
     if(smallBlurSigma > 0) {
         ocl.queue.finish();
-        delete blurredVolume;
-        blurredVolume = NULL;
+        GC->deleteMemObject(blurredVolume);
     }
     }
 
@@ -5256,4 +5265,8 @@ void TSFGarbageCollector::deleteAllMemObjects() {
         mem = NULL;
     }
     memObjects.clear();
+}
+
+TSFGarbageCollector::~TSFGarbageCollector() {
+    deleteAllMemObjects();
 }

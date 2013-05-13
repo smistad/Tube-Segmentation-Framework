@@ -77,6 +77,7 @@ class TSFGarbageCollector {
         void addMemObject(cl::Memory * mem);
         void deleteMemObject(cl::Memory * mem);
         void deleteAllMemObjects();
+        ~TSFGarbageCollector();
     private:
         std::set<cl::Memory *> memObjects;
 };
