@@ -1612,6 +1612,7 @@ if(getParamBool(parameters, "timing")) {
                 size.x,size.y,size.z
             );
         }
+        GC->addMemObject(vectorFieldSmall);
         if(usingTwoBuffers) {
         	cl::size_t<3> region2;
         	region2[0] = size.x;
@@ -1664,6 +1665,7 @@ if(getParamBool(parameters, "timing")) {
             std::cout << "NOTE: Using 16 bit vectors" << std::endl;
             vectorFieldSmall = new Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
         }
+        GC->addMemObject(vectorFieldSmall);
 
         // Run create vector field
         createVectorFieldKernel.setArg(0, *blurredVolume);
@@ -1702,7 +1704,9 @@ if(getParamBool(parameters, "timing")) {
     } else {
         TDFsmallBuffer = new Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
     }
+    GC->addMemObject(TDFsmallBuffer);
     Buffer * radiusSmallBuffer = new Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
+    GC->addMemObject(radiusSmallBuffer);
     circleFittingTDFKernel.setArg(0, *vectorFieldSmall);
     circleFittingTDFKernel.setArg(1, *TDFsmallBuffer);
     circleFittingTDFKernel.setArg(2, *radiusSmallBuffer);
@@ -1748,8 +1752,7 @@ if(getParamBool(parameters, "timing")) {
 		return;
     } else {
         ocl.queue.finish();
-        delete vectorFieldSmall;
-        vectorFieldSmall = NULL;
+        GC->deleteMemObject(vectorFieldSmall);
     }
 
     // TODO: cleanup the two arrays below!!!!!!!!
@@ -1765,8 +1768,8 @@ if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueReadBuffer(*radiusSmallBuffer, CL_FALSE, 0, sizeof(float)*totalSize, radiusSmall);
 
     ocl.queue.finish(); // This finish statement is necessary. Incorrect combine result if not present.
-    delete TDFsmallBuffer;
-    delete radiusSmallBuffer;
+    GC->deleteMemObject(TDFsmallBuffer);
+    GC->deleteMemObject(radiusSmallBuffer);
     } // end if radiusMin < 2.5
 
 
@@ -1783,6 +1786,7 @@ if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
 }
     Image3D * blurredVolume = new Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_FLOAT), size.x, size.y, size.z);
+    GC->addMemObject(blurredVolume);
     if(largeBlurSigma > 0) {
     	int maskSize = 1;
 		float * mask = createBlurMask(largeBlurSigma, &maskSize);
@@ -1903,8 +1907,7 @@ if(getParamBool(parameters, "timing")) {
         );
 
         ocl.queue.finish();
-        delete blurredVolume;
-        blurredVolume = NULL;
+        GC->deleteMemObject(blurredVolume);
 
         if(usingTwoBuffers) {
         	cl::size_t<3> region2;
@@ -1973,9 +1976,7 @@ if(getParamBool(parameters, "timing")) {
         );
 
         ocl.queue.finish();
-        delete blurredVolume;
-        blurredVolume = NULL;
-
+        GC->deleteMemObject(blurredVolume);
     }
 
 if(getParamBool(parameters, "timing")) {
