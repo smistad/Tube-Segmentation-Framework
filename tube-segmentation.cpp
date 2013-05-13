@@ -129,6 +129,7 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
     try {
         // Read dataset and transfer to device
         cl::Image3D * dataset = new cl::Image3D;
+        GC->addMemObject(dataset);
         *dataset = readDatasetAndTransfer(*ocl, filename, parameters, size, output);
 
         // Calculate maximum memory usage
@@ -1749,6 +1750,8 @@ if(getParamBool(parameters, "timing")) {
 			region
 		);
         vectorField = *vectorFieldSmall;
+        ocl.queue.finish();
+        GC->deleteMemObject(dataset);
 		return;
     } else {
         ocl.queue.finish();
@@ -1838,8 +1841,7 @@ if(getParamBool(parameters, "timing")) {
     }
     if(largeBlurSigma > 0) {
         ocl.queue.finish();
-        delete dataset;
-        dataset = NULL;
+        GC->deleteMemObject(dataset);
     }
 
 
@@ -1862,6 +1864,7 @@ if(getParamBool(parameters, "timing")) {
         unsigned int maxBufferSize = ocl.device.getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE>();
         if(getParamBool(parameters, "16bit-vectors")) {
 			initVectorField = new Image3D(ocl.context, CL_MEM_READ_ONLY, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
+			GC->addMemObject(initVectorField);
 			if(4*sizeof(short)*totalSize < maxBufferSize) {
 				vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(short)*totalSize);
 			} else {
@@ -1876,6 +1879,7 @@ if(getParamBool(parameters, "timing")) {
 			}
         } else {
 			initVectorField = new Image3D(ocl.context, CL_MEM_READ_ONLY, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
+			GC->addMemObject(initVectorField);
 			if(4*sizeof(float)*totalSize < maxBufferSize) {
 				vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(float)*totalSize);
 			} else {
@@ -1960,6 +1964,7 @@ if(getParamBool(parameters, "timing")) {
         } else {
             initVectorField = new Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
         }
+        GC->addMemObject(initVectorField);
 
 
         // Run create vector field
@@ -2765,6 +2770,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
             ImageFormat(CL_R, CL_SIGNED_INT8),
             size.x, size.y, size.z
     );
+    GC->addMemObject(centerpointsImage2);
     Buffer vertices;
     int sum = 0;
 
@@ -2774,6 +2780,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
                 CL_MEM_READ_WRITE,
                 sizeof(char)*totalSize
         );
+        GC->addMemObject(centerpoints);
 
         candidatesKernel.setArg(0, TDF);
         candidatesKernel.setArg(1, *centerpoints);
@@ -2796,6 +2803,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
                 CL_MEM_READ_WRITE,
                 sizeof(char)*totalSize
         );
+        GC->addMemObject(centerpoints2);
         initCharBuffer.setArg(0, *centerpoints2);
         ocl.queue.enqueueNDRangeKernel(
                 initCharBuffer,
@@ -2812,7 +2820,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
         hp3.traverse(candidates2Kernel, 4);
         ocl.queue.finish();
         hp3.deleteHPlevels();
-        delete centerpoints;
+        GC->deleteMemObject(centerpoints);
         ocl.queue.enqueueCopyBufferToImage(
             *centerpoints2,
             *centerpointsImage2,
@@ -2821,7 +2829,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
             region
         );
         ocl.queue.finish();
-        delete centerpoints2;
+        GC->deleteMemObject(centerpoints2);
 
 		if(getParamBool(parameters, "centerpoints-only")) {
 			return *centerpointsImage2;
@@ -2834,6 +2842,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
                 CL_MEM_READ_WRITE,
                 sizeof(char)*totalSize
         );
+        GC->addMemObject(centerpoints3);
         initCharBuffer.setArg(0, *centerpoints3);
         ocl.queue.enqueueNDRangeKernel(
                 initCharBuffer,
@@ -2849,7 +2858,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
                 NullRange
         );
         ocl.queue.finish();
-        delete centerpointsImage2;
+        GC->deleteMemObject(centerpointsImage2);
 
         // Construct HP of centerpointsImage
         HistogramPyramid3DBuffer hp(ocl);
@@ -2861,7 +2870,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
         vertices = hp.createPositionBuffer();
         ocl.queue.finish();
         hp.deleteHPlevels();
-        delete centerpoints3;
+        GC->deleteMemObject(centerpoints3);
     } else {
         Kernel init3DImage(ocl.program, "init3DImage");
         init3DImage.setArg(0, *centerpointsImage2);
@@ -2878,6 +2887,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
                 ImageFormat(CL_R, CL_SIGNED_INT8),
                 size.x, size.y, size.z
         );
+        GC->addMemObject(centerpointsImage);
 
         candidatesKernel.setArg(0, TDF);
         candidatesKernel.setArg(1, *centerpointsImage);
@@ -2905,7 +2915,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
         hp3.traverse(candidates2Kernel, 4);
         ocl.queue.finish();
         hp3.deleteHPlevels();
-        delete centerpointsImage;
+        GC->deleteMemObject(centerpointsImage);
 
         Image3D * centerpointsImage3 = new Image3D(
                 ocl.context,
@@ -2913,6 +2923,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
                 ImageFormat(CL_R, CL_SIGNED_INT8),
                 size.x, size.y, size.z
         );
+        GC->addMemObject(centerpointsImage3);
         init3DImage.setArg(0, *centerpointsImage3);
         ocl.queue.enqueueNDRangeKernel(
             init3DImage,
@@ -2935,7 +2946,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
                 NullRange
         );
         ocl.queue.finish();
-        delete centerpointsImage2;
+        GC->deleteMemObject(centerpointsImage2);
 
         // Construct HP of centerpointsImage
         HistogramPyramid3D hp(ocl);
@@ -2947,7 +2958,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
         vertices = hp.createPositionBuffer();
         ocl.queue.finish();
         hp.deleteHPlevels();
-        delete centerpointsImage3;
+        GC->deleteMemObject(centerpointsImage3);
     }
     if(sum < 8 || sum >= 16384) {
     	throw SIPL::SIPLException("Too many or too few vertices detected", __LINE__, __FILE__);
@@ -2989,6 +3000,7 @@ if(getParamBool(parameters, "timing")) {
             ImageFormat(CL_R, CL_FLOAT),
             sum, sum
     );
+    GC->addMemObject(lengths);
 
     // Run linkLengths kernel
     Kernel linkLengths(ocl.program, "linkLengths");
@@ -3011,6 +3023,7 @@ if(getParamBool(parameters, "timing")) {
             0,
             cl
     );
+    GC->addMemObject(compacted_lengths);
     delete[] cl;
 
     // Create and initialize incs buffer
@@ -3042,7 +3055,7 @@ if(getParamBool(parameters, "timing")) {
             NullRange
     );
     ocl.queue.finish();
-    delete lengths;
+    GC->deleteMemObject(lengths);
 
     Kernel linkingKernel(ocl.program, "linkCenterpoints");
     linkingKernel.setArg(0, TDF);
@@ -3059,7 +3072,7 @@ if(getParamBool(parameters, "timing")) {
             NDRange(64)
     );
     ocl.queue.finish();
-    delete compacted_lengths;
+    GC->deleteMemObject(compacted_lengths);
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
