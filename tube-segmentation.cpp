@@ -157,6 +157,7 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
         delete output;
 
         if(e.err() == CL_INVALID_COMMAND_QUEUE && runCounter < 2) {
+            std::cout << "OpenCL error: Invalid Command Queue. Retrying..." << std::endl;
             runCounter++;
             return run(filename,parameters,kernel_dir);
         }
