@@ -1163,7 +1163,7 @@ __kernel void grow(
 		FNY.x /= FNY.w;
 		FNY.y /= FNY.w;
 		FNY.z /= FNY.w;
-	    if(FNY.w > FNXw || FNXw < 0.1f) {
+	    if(FNY.w > FNXw /*|| FNXw < 0.1f*/) {
 
 		int4 Z;
 		float maxDotProduct = -2.0f;
