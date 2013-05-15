@@ -7,6 +7,7 @@
 #include "SIPL/Types.hpp"
 #include <iostream>
 #include <string>
+#include <set>
 #ifdef CPP11
 #include <unordered_map>
 using std::unordered_map;
@@ -70,6 +71,17 @@ private:
 	float* TDF;
 	OpenCL* ocl;
 };
+
+class TSFGarbageCollector {
+    public:
+        void addMemObject(cl::Memory * mem);
+        void deleteMemObject(cl::Memory * mem);
+        void deleteAllMemObjects();
+        ~TSFGarbageCollector();
+    private:
+        std::set<cl::Memory *> memObjects;
+};
+
 /*
  * For debugging.
  */
