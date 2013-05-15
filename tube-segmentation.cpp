@@ -2967,8 +2967,10 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
         hp.deleteHPlevels();
         GC->deleteMemObject(centerpointsImage3);
     }
-    if(sum < 8 || sum >= 16384) {
-    	throw SIPL::SIPLException("Too many or too few vertices detected", __LINE__, __FILE__);
+    if(sum < 8) {
+    	throw SIPL::SIPLException("Too few vertices detected. Revise parameters.", __LINE__, __FILE__);
+    } else if(sum >= 16384) {
+    	throw SIPL::SIPLException("Too many vertices detected. More cropping of dataset is probably needed.", __LINE__, __FILE__);
     }
 
 if(getParamBool(parameters, "timing")) {
