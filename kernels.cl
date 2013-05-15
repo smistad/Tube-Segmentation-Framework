@@ -589,7 +589,7 @@ __kernel void initGrowing(
             n.x = pos.x + a;
             n.y = pos.y + b;
             n.z = pos.z + c;
-	    if(read_imagei(centerline, sampler, n).x == 0 && length((float3)(a,b,c)) <= N)
+	    if(read_imagei(centerline, sampler, n).x == 0 /*&& length((float3)(a,b,c)) <= N*/)
 	    write_imagei(initSegmentation, n, 2);
         }}}
 	}

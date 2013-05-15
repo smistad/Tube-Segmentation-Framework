@@ -1163,7 +1163,7 @@ __kernel void grow(
 		FNY.x /= FNY.w;
 		FNY.y /= FNY.w;
 		FNY.z /= FNY.w;
-	    if(FNY.w > FNXw || FNXw < 0.1f) {
+	    if(FNY.w > FNXw /*|| FNXw < 0.1f*/) {
 
 		int4 Z;
 		float maxDotProduct = -2.0f;
@@ -1467,7 +1467,7 @@ __kernel void blurVolumeWithGaussian(
 }
 
 #define SELECT_BUFFER(vec1,vec2,z,maxZ) z < maxZ ? vec1:vec2
-#define SELECT_POS(pos,maxZ) pos.z < maxZ ? LPOS(pos) : LPOS((int4)(pos.x,pos.y,pos.z-maxZ,0))
+#define SELECT_POS(pos,maxZ) pos.z < maxZ ?  pos.x+pos.y*get_global_size(0)+pos.z*get_global_size(0)*get_global_size(1) : pos.x + pos.y*get_global_size(0) + (pos.z-maxZ)*get_global_size(0)*get_global_size(1)
 
 __kernel void createVectorField(
         __read_only image3d_t volume, 
