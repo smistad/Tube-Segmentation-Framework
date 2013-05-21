@@ -2772,7 +2772,7 @@ Image3D runNewCenterlineAlgWithoutOpenCL(OpenCL &ocl, SIPL::int3 size, paramList
     if(!getParamBool(parameters, "16bit-vectors")) {
     	// 32 bit vector fields
         float * Fs = new float[totalSize*4];
-        ocl->queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
+        ocl.queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
 #pragma omp parallel for
         for(int i = 0; i < totalSize; i++) {
             TS.Fx[i] = Fs[i*4];
@@ -2780,11 +2780,11 @@ Image3D runNewCenterlineAlgWithoutOpenCL(OpenCL &ocl, SIPL::int3 size, paramList
             TS.Fz[i] = Fs[i*4+2];
         }
         delete[] Fs;
-        ocl->queue.enqueueReadImage(*TDF, CL_TRUE, offset, region, 0, 0, TS.TDF);
+        ocl.queue.enqueueReadImage(TDF, CL_TRUE, offset, region, 0, 0, TS.TDF);
     } else {
     	// 16 bit vector fields
         short * Fs = new short[totalSize*4];
-        ocl->queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
+        ocl.queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
 #pragma omp parallel for
         for(int i = 0; i < totalSize; i++) {
             TS.Fx[i] = MAX(-1.0f, Fs[i*4] / 32767.0f);
@@ -2795,7 +2795,7 @@ Image3D runNewCenterlineAlgWithoutOpenCL(OpenCL &ocl, SIPL::int3 size, paramList
 
         // Convert 16 bit TDF to 32 bit
         unsigned short * tempTDF = new unsigned short[totalSize];
-        ocl->queue.enqueueReadImage(*TDF, CL_TRUE, offset, region, 0, 0, tempTDF);
+        ocl.queue.enqueueReadImage(TDF, CL_TRUE, offset, region, 0, 0, tempTDF);
 #pragma omp parallel for
         for(int i = 0; i < totalSize; i++) {
             TS.TDF[i] = (float)tempTDF[i] / 65535.0f;
@@ -2803,9 +2803,23 @@ Image3D runNewCenterlineAlgWithoutOpenCL(OpenCL &ocl, SIPL::int3 size, paramList
         delete[] tempTDF;
     }
     TS.radius = new float[totalSize];
-    ocl->queue.enqueueReadImage(radius, CL_TRUE, offset, region, 0, 0, TS.radius);
+    ocl.queue.enqueueReadImage(radius, CL_TRUE, offset, region, 0, 0, TS.radius);
 
-    // Get candidate points and filter
+    // Get candidate points
+    std::stack<int3> candidatePoints;
+#pragma omp parallel for
+    for(int z = 0; z < size.z; z++) {
+    for(int y = 0; y < size.y; y++) {
+    for(int x = 0; x < size.x; x++) {
+       int3 pos(x,y,z);
+       if(TS.TDF[POS(pos)] >= Thigh) {
+#pragma omp critical
+           candidatePoints.push(pos);
+       }
+    }}}
+    std::cout << "candidate points: " << candidatePoints.size() << std::endl;
+
+    // Filter candidate points
 
     // Do linking
 
@@ -2819,10 +2833,10 @@ Image3D runNewCenterlineAlgWithoutOpenCL(OpenCL &ocl, SIPL::int3 size, paramList
 }
 
 Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radius) {
-    if(ocl.platform.getInfo<CL_PLATFORM_VENDOR>().substr(0,5) == "Apple") {
+    //if(ocl.platform.getInfo<CL_PLATFORM_VENDOR>().substr(0,5) == "Apple") {
         std::cout << "Apple platform detected. Running centerline extraction without OpenCL." << std::endl;
         return runNewCenterlineAlgWithoutOpenCL(ocl,size,parameters,vectorField,TDF,radius);
-    }
+    //}
     const int totalSize = size.x*size.y*size.z;
 	const bool no3Dwrite = !getParamBool(parameters, "3d_write");
     const int cubeSize = getParam(parameters, "cube-size");
