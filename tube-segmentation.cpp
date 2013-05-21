@@ -2808,9 +2808,9 @@ Image3D runNewCenterlineAlgWithoutOpenCL(OpenCL &ocl, SIPL::int3 size, paramList
     // Get candidate points
     std::vector<int3> candidatePoints;
 #pragma omp parallel for
-    for(int z = 0; z < size.z; z++) {
-    for(int y = 0; y < size.y; y++) {
-    for(int x = 0; x < size.x; x++) {
+    for(int z = 1; z < size.z-1; z++) {
+    for(int y = 1; y < size.y-1; y++) {
+    for(int x = 1; x < size.x-1; x++) {
        int3 pos(x,y,z);
        if(T.TDF[POS(pos)] >= Thigh) {
 #pragma omp critical
@@ -2980,6 +2980,78 @@ Image3D runNewCenterlineAlgWithoutOpenCL(OpenCL &ocl, SIPL::int3 size, paramList
     // Create VTK file
     // Create centerline image
 
+    /*
+    std::vector<SIPL::int2> edges;
+    int maxEdgeDistance = getParam(parameters, "max-edge-distance");
+    for(int i = 0; i < sum2; i++) {
+        if(SArray[CArray[edgesArray[i*2]]] >= minTreeLength && SArray[CArray[edgesArray[i*2+1]]] >= minTreeLength ) {
+            // Check length of edge
+            int3 A = vertices[indexes[edgesArray[i*2]]];
+            int3 B = vertices[indexes[edgesArray[i*2+1]]];
+            float distance = A.distance(B);
+            if(getParamStr(parameters, "centerline-vtk-file") != "off" &&
+                    distance > maxEdgeDistance) {
+                float3 direction(B.x-A.x,B.y-A.y,B.z-A.z);
+                float3 Af(A.x,A.y,A.z);
+                int previous = indexes[edgesArray[i*2]];
+                for(int j = maxEdgeDistance; j < distance; j += maxEdgeDistance) {
+                    float3 newPos = Af + ((float)j/distance)*direction;
+                    int3 newVertex(round(newPos.x), round(newPos.y), round(newPos.z));
+                    // Create new vertex
+                    vertices.push_back(newVertex);
+                    // Add new edge
+                    SIPL::int2 edge(previous, counter);
+                    edges.push_back(edge);
+                    previous = counter;
+                    counter++;
+                }
+                // Connect previous vertex to B
+                SIPL::int2 edge(previous, indexes[edgesArray[i*2+1]]);
+                edges.push_back(edge);
+            } else {
+                SIPL::int2 v(indexes[edgesArray[i*2]],indexes[edgesArray[i*2+1]]);
+                edges.push_back(v);
+            }
+        }
+    }
+    */
+    std::vector<int3> vertices = centerpoints;
+
+    // Remove loops from graph
+    if(getParamBool(parameters, "loop-removal"))
+        removeLoops(vertices, edges, size);
+
+    ocl.queue.finish();
+    char * centerlinesData = createCenterlineVoxels(vertices, edges, T.radius, size);
+    Image3D centerlines= Image3D(
+        ocl.context,
+        CL_MEM_READ_WRITE,
+        ImageFormat(CL_R, CL_SIGNED_INT8),
+        size.x, size.y, size.z
+    );
+
+    ocl.queue.enqueueWriteImage(
+            centerlines,
+            CL_FALSE,
+            offset,
+            region,
+            0, 0,
+            centerlinesData
+    );
+    ocl.queue.enqueueWriteImage(
+            radius,
+            CL_FALSE,
+            offset,
+            region,
+            0, 0,
+            T.radius
+    );
+
+    if(getParamStr(parameters, "centerline-vtk-file") != "off") {
+        writeToVtkFile(parameters, vertices, edges);
+    }
+
+    return centerlines;
 }
 
 Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radius) {
