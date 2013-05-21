@@ -2750,7 +2750,7 @@ Image3D runNewCenterlineAlgWithoutOpenCL(OpenCL &ocl, SIPL::int3 size, paramList
     const int cubeSize = getParam(parameters, "cube-size");
     const int minTreeLength = getParam(parameters, "min-tree-length");
     const float Thigh = getParam(parameters, "tdf-high");
-    const float Tmean = getParam(parameters, "min-mean-tdf");
+    const float minAvgTDF = getParam(parameters, "min-mean-tdf");
     const float maxDistance = getParam(parameters, "max-distance");
 
     cl::size_t<3> offset;
@@ -2893,9 +2893,85 @@ Image3D runNewCenterlineAlgWithoutOpenCL(OpenCL &ocl, SIPL::int3 size, paramList
         }
     }}}
 
-    std::cout << "filtered points: " << centerpoints.size() << std::endl;
+    int points = centerpoints.size();
+    std::cout << "filtered points: " <<points<< std::endl;
+    std::vector<SIPL::int2> edges;
 
     // Do linking
+    for(int i = 0; i < points;i++) {
+        int3 xa = centerpoints[i];
+        SIPL::int2 bestPair;
+        float shortestDistance = maxDistance*2;
+        bool validPairFound = false;
+
+        for(int j = 0; j < points;j++) {
+            if(i == j)
+                continue;
+            int3 xb = centerpoints[j];
+
+            int db = round(xa.distance(xb));
+            if(db >= shortestDistance)
+                continue;
+            for(int k = 0; k < j;k++) {
+                if(k == i)
+                    continue;
+                int3 xc = centerpoints[k];
+
+                int dc = round(xa.distance(xc));
+
+                if(db+dc < shortestDistance) {
+                    // Check angle
+                    int3 ab = (xb-xa);
+                    int3 ac = (xc-xa);
+                    float angle = acos(ab.normalize().dot(ac.normalize()));
+                    //printf("angle: %f\n", angle);
+                    if(angle < 2.0f) // 120 degrees
+                    //if(angle < 1.57f) // 90 degrees
+                        continue;
+
+                    // Check avg TDF for a-b
+                    float avgTDF = 0.0f;
+                    for(int l = 0; l <= db; l++) {
+                        float alpha = (float)l/db;
+                        int3 p((int)round(xa.x+ab.x*alpha),(int)round(xa.y+ab.y*alpha),(int)round(xa.z+ab.z*alpha));
+                        float t = T.TDF[POS(p)];
+                        avgTDF += t;
+                    }
+                    avgTDF /= db+1;
+                    if(avgTDF < minAvgTDF)
+                        continue;
+
+                    avgTDF = 0.0f;
+
+                    // Check avg TDF for a-c
+                    for(int l = 0; l <= dc; l++) {
+                        float alpha = (float)l/dc;
+                        int3 p((int)round(xa.x+ac.x*alpha),(int)round(xa.y+ac.y*alpha),(int)round(xa.z+ac.z*alpha));
+                        float t = T.TDF[POS(p)];
+                        avgTDF += t;
+                    }
+                    avgTDF /= dc+1;
+
+                    if(avgTDF < minAvgTDF)
+                        continue;
+
+                    validPairFound = true;
+                    bestPair.x = j;
+                    bestPair.y = k;
+                    shortestDistance = db+dc;
+                }
+            } // k
+        }// j
+
+        if(validPairFound) {
+            // Store edges
+            SIPL::int2 edge(i, bestPair.x);
+            SIPL::int2 edge2(i, bestPair.y);
+            edges.push_back(edge);
+            edges.push_back(edge2);
+        }
+    } // i
+    std::cout << "nr of edges: " << edges.size() << std::endl;
 
     // Do graph component labeling
 
