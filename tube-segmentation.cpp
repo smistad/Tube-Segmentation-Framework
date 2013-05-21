@@ -79,6 +79,7 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
     	type = CL_DEVICE_TYPE_CPU;
     }
 	ocl->context = createCLContext(type);
+	ocl->platform = getPlatform(type, VENDOR_ANY);
 
     // Select first device
     VECTOR_CLASS<cl::Device> devices = ocl->context.getInfo<CL_CONTEXT_DEVICES>();
@@ -2968,9 +2969,9 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
         GC->deleteMemObject(centerpointsImage3);
     }
     if(sum < 8) {
-    	throw SIPL::SIPLException("Too few vertices detected. Revise parameters.", __LINE__, __FILE__);
+    	throw SIPL::SIPLException("Too few centerpoints detected. Revise parameters.", __LINE__, __FILE__);
     } else if(sum >= 16384) {
-    	throw SIPL::SIPLException("Too many vertices detected. More cropping of dataset is probably needed.", __LINE__, __FILE__);
+    	throw SIPL::SIPLException("Too many centerpoints detected. More cropping of dataset is probably needed.", __LINE__, __FILE__);
     }
 
 if(getParamBool(parameters, "timing")) {
