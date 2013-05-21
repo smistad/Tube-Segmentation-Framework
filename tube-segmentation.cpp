@@ -2819,7 +2819,7 @@ Image3D runNewCenterlineAlgWithoutOpenCL(OpenCL &ocl, SIPL::int3 size, paramList
     }}}
     std::cout << "candidate points: " << candidatePoints.size() << std::endl;
 
-    std::vector<int3> filteredPoints;
+    unordered_set<int> filteredPoints;
 #pragma omp parallel for
     for(int i = 0; i < candidatePoints.size(); i++) {
         int3 pos = candidatePoints[i];
@@ -2850,18 +2850,50 @@ Image3D runNewCenterlineAlgWithoutOpenCL(OpenCL &ocl, SIPL::int3 size, paramList
                 if(SQR_MAG(n) < SQR_MAG(pos)) {
                     invalid = true;
                     break;
-                //}
                 }
 
             }
         }}}
         if(!invalid) {
 #pragma omp critical
-            filteredPoints.push_back(pos);
+            filteredPoints.insert(POS(pos));
         }
     }
     candidatePoints.clear();
     std::cout << "filtered points: " << filteredPoints.size() << std::endl;
+
+    std::vector<int3> centerpoints;
+    for(int z = 0; z < size.z/cubeSize; z++) {
+    for(int y = 0; y < size.y/cubeSize; y++) {
+    for(int x = 0; x < size.x/cubeSize; x++) {
+        int3 bestPos;
+        float bestTDF = 0.0f;
+        int3 readPos(
+            x*cubeSize,
+            y*cubeSize,
+            z*cubeSize
+        );
+        bool found = false;
+        for(int a = 0; a < cubeSize; a++) {
+        for(int b = 0; b < cubeSize; b++) {
+        for(int c = 0; c < cubeSize; c++) {
+            int3 pos = readPos + int3(a,b,c);
+            if(filteredPoints.find(POS(pos)) != filteredPoints.end()) {
+                float tdf = T.TDF[POS(pos)];
+                if(tdf > bestTDF) {
+                    found = true;
+                    bestTDF = tdf;
+                    bestPos = pos;
+                }
+            }
+        }}}
+        if(found) {
+#pragma omp critical
+            centerpoints.push_back(bestPos);
+        }
+    }}}
+
+    std::cout << "filtered points: " << centerpoints.size() << std::endl;
 
     // Do linking
 
