@@ -2763,11 +2763,11 @@ Image3D runNewCenterlineAlgWithoutOpenCL(OpenCL &ocl, SIPL::int3 size, paramList
     region[2] = size.z;
 
     // Transfer TDF, vectorField and radius to host
-    TubeSegmentation TS;
-    TS.Fx = new float[totalSize];
-    TS.Fy = new float[totalSize];
-    TS.Fz = new float[totalSize];
-    TS.TDF = new float[totalSize];
+    TubeSegmentation T;
+    T.Fx = new float[totalSize];
+    T.Fy = new float[totalSize];
+    T.Fz = new float[totalSize];
+    T.TDF = new float[totalSize];
 
     if(!getParamBool(parameters, "16bit-vectors")) {
     	// 32 bit vector fields
@@ -2775,21 +2775,21 @@ Image3D runNewCenterlineAlgWithoutOpenCL(OpenCL &ocl, SIPL::int3 size, paramList
         ocl.queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
 #pragma omp parallel for
         for(int i = 0; i < totalSize; i++) {
-            TS.Fx[i] = Fs[i*4];
-            TS.Fy[i] = Fs[i*4+1];
-            TS.Fz[i] = Fs[i*4+2];
+            T.Fx[i] = Fs[i*4];
+            T.Fy[i] = Fs[i*4+1];
+            T.Fz[i] = Fs[i*4+2];
         }
         delete[] Fs;
-        ocl.queue.enqueueReadImage(TDF, CL_TRUE, offset, region, 0, 0, TS.TDF);
+        ocl.queue.enqueueReadImage(TDF, CL_TRUE, offset, region, 0, 0, T.TDF);
     } else {
     	// 16 bit vector fields
         short * Fs = new short[totalSize*4];
         ocl.queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
 #pragma omp parallel for
         for(int i = 0; i < totalSize; i++) {
-            TS.Fx[i] = MAX(-1.0f, Fs[i*4] / 32767.0f);
-            TS.Fy[i] = MAX(-1.0f, Fs[i*4+1] / 32767.0f);;
-            TS.Fz[i] = MAX(-1.0f, Fs[i*4+2] / 32767.0f);
+            T.Fx[i] = MAX(-1.0f, Fs[i*4] / 32767.0f);
+            T.Fy[i] = MAX(-1.0f, Fs[i*4+1] / 32767.0f);;
+            T.Fz[i] = MAX(-1.0f, Fs[i*4+2] / 32767.0f);
         }
         delete[] Fs;
 
@@ -2798,28 +2798,70 @@ Image3D runNewCenterlineAlgWithoutOpenCL(OpenCL &ocl, SIPL::int3 size, paramList
         ocl.queue.enqueueReadImage(TDF, CL_TRUE, offset, region, 0, 0, tempTDF);
 #pragma omp parallel for
         for(int i = 0; i < totalSize; i++) {
-            TS.TDF[i] = (float)tempTDF[i] / 65535.0f;
+            T.TDF[i] = (float)tempTDF[i] / 65535.0f;
         }
         delete[] tempTDF;
     }
-    TS.radius = new float[totalSize];
-    ocl.queue.enqueueReadImage(radius, CL_TRUE, offset, region, 0, 0, TS.radius);
+    T.radius = new float[totalSize];
+    ocl.queue.enqueueReadImage(radius, CL_TRUE, offset, region, 0, 0, T.radius);
 
     // Get candidate points
-    std::stack<int3> candidatePoints;
+    std::vector<int3> candidatePoints;
 #pragma omp parallel for
     for(int z = 0; z < size.z; z++) {
     for(int y = 0; y < size.y; y++) {
     for(int x = 0; x < size.x; x++) {
        int3 pos(x,y,z);
-       if(TS.TDF[POS(pos)] >= Thigh) {
+       if(T.TDF[POS(pos)] >= Thigh) {
 #pragma omp critical
-           candidatePoints.push(pos);
+           candidatePoints.push_back(pos);
        }
     }}}
     std::cout << "candidate points: " << candidatePoints.size() << std::endl;
 
-    // Filter candidate points
+    std::vector<int3> filteredPoints;
+#pragma omp parallel for
+    for(int i = 0; i < candidatePoints.size(); i++) {
+        int3 pos = candidatePoints[i];
+        // Filter candidate points
+        const float thetaLimit = 0.5f;
+        const float radii = T.radius[POS(pos)];
+        const int maxD = std::max(std::min((float)round(radii), 5.0f), 1.0f);
+        bool invalid = false;
+
+        const float3 e1 = getTubeDirection(T, pos, size);
+
+        for(int a = -maxD; a <= maxD; a++) {
+        for(int b = -maxD; b <= maxD; b++) {
+        for(int c = -maxD; c <= maxD; c++) {
+            if(a == 0 && b == 0 && c == 0)
+                continue;
+            float3 r(a,b,c);
+            float length = r.length();
+            int3 n(pos.x + r.x,pos.y+r.y,pos.z+r.z);
+            if(!inBounds(n,size))
+                continue;
+            float dp = e1.dot(r);
+            float3 r_projected(r.x-e1.x*dp,r.y-e1.y*dp,r.z-e1.z*dp);
+            float3 rn = r.normalize();
+            float3 r_projected_n = r_projected.normalize();
+            float theta = acos(rn.dot(r_projected_n));
+            if((theta < thetaLimit && length < maxD)) {
+                if(SQR_MAG(n) < SQR_MAG(pos)) {
+                    invalid = true;
+                    break;
+                //}
+                }
+
+            }
+        }}}
+        if(!invalid) {
+#pragma omp critical
+            filteredPoints.push_back(pos);
+        }
+    }
+    candidatePoints.clear();
+    std::cout << "filtered points: " << filteredPoints.size() << std::endl;
 
     // Do linking
 
