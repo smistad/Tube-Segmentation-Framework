@@ -2829,7 +2829,7 @@ Image3D runNewCenterlineAlgWithoutOpenCL(OpenCL &ocl, SIPL::int3 size, paramList
         const int maxD = std::max(std::min((float)round(radii), 5.0f), 1.0f);
         bool invalid = false;
 
-        const float3 e1 = getTubeDirection(T, pos, size);
+        float3 e1 = getTubeDirection(T, pos, size);
 
         for(int a = -maxD; a <= maxD; a++) {
         for(int b = -maxD; b <= maxD; b++) {
@@ -5250,7 +5250,7 @@ Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &par
         int SIZE_Y = y2-y1;
         int SIZE_Z = z2-z1;
         if(SIZE_X == 0 || SIZE_Y == 0 || SIZE_Z == 0) {
-        	char * str;
+        	char * str = new char[255];
         	sprintf(str, "Invalid cropping to new size %d, %d, %d", SIZE_X, SIZE_Y, SIZE_Z);
         	throw SIPL::SIPLException(str, __LINE__, __FILE__);
         }
