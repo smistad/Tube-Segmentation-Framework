@@ -2744,7 +2744,44 @@ char * createCenterlineVoxels(
 	return centerlines;
 }
 
+Image3D runNewCenterlineAlgWithoutOpenCL(OpenCL &ocl, SIPL::int3 size, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radius) {
+    const int totalSize = size.x*size.y*size.z;
+	const bool no3Dwrite = !getParamBool(parameters, "3d_write");
+    const int cubeSize = getParam(parameters, "cube-size");
+    const int minTreeLength = getParam(parameters, "min-tree-length");
+    const float Thigh = getParam(parameters, "tdf-high");
+    const float Tmean = getParam(parameters, "min-mean-tdf");
+    const float maxDistance = getParam(parameters, "max-distance");
+
+    cl::size_t<3> offset;
+    offset[0] = 0;
+    offset[1] = 0;
+    offset[2] = 0;
+    cl::size_t<3> region;
+    region[0] = size.x;
+    region[1] = size.y;
+    region[2] = size.z;
+
+    // Transfer TDF, vectorField and radius to host
+
+    // Get candidate points and filter
+
+    // Do linking
+
+    // Do graph component labeling
+
+    // Select wanted parts of centerline
+
+    // Create VTK file
+    // Create centerline image
+
+}
+
 Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radius) {
+    if(ocl.platform.getInfo<CL_PLATFORM_VENDOR>().substr(0,5) == "Apple") {
+        std::cout << "Apple platform detected. Running centerline extraction without OpenCL." << std::endl;
+        return runNewCenterlineAlgWithoutOpenCL(ocl,size,parameters,vectorField,TDF,radius);
+    }
     const int totalSize = size.x*size.y*size.z;
 	const bool no3Dwrite = !getParamBool(parameters, "3d_write");
     const int cubeSize = getParam(parameters, "cube-size");
