@@ -3051,6 +3051,15 @@ Image3D runNewCenterlineAlgWithoutOpenCL(OpenCL &ocl, SIPL::int3 size, paramList
         writeToVtkFile(parameters, vertices, edges);
     }
 
+    ocl.queue.finish();
+
+    delete[] T.TDF;
+    delete[] T.Fx;
+    delete[] T.Fy;
+    delete[] T.Fz;
+    delete[] T.radius;
+    delete[] centerlinesData;
+
     return centerlines;
 }
 
