@@ -2763,6 +2763,47 @@ Image3D runNewCenterlineAlgWithoutOpenCL(OpenCL &ocl, SIPL::int3 size, paramList
     region[2] = size.z;
 
     // Transfer TDF, vectorField and radius to host
+    TubeSegmentation TS;
+    TS.Fx = new float[totalSize];
+    TS.Fy = new float[totalSize];
+    TS.Fz = new float[totalSize];
+    TS.TDF = new float[totalSize];
+
+    if(!getParamBool(parameters, "16bit-vectors")) {
+    	// 32 bit vector fields
+        float * Fs = new float[totalSize*4];
+        ocl->queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
+#pragma omp parallel for
+        for(int i = 0; i < totalSize; i++) {
+            TS.Fx[i] = Fs[i*4];
+            TS.Fy[i] = Fs[i*4+1];
+            TS.Fz[i] = Fs[i*4+2];
+        }
+        delete[] Fs;
+        ocl->queue.enqueueReadImage(*TDF, CL_TRUE, offset, region, 0, 0, TS.TDF);
+    } else {
+    	// 16 bit vector fields
+        short * Fs = new short[totalSize*4];
+        ocl->queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
+#pragma omp parallel for
+        for(int i = 0; i < totalSize; i++) {
+            TS.Fx[i] = MAX(-1.0f, Fs[i*4] / 32767.0f);
+            TS.Fy[i] = MAX(-1.0f, Fs[i*4+1] / 32767.0f);;
+            TS.Fz[i] = MAX(-1.0f, Fs[i*4+2] / 32767.0f);
+        }
+        delete[] Fs;
+
+        // Convert 16 bit TDF to 32 bit
+        unsigned short * tempTDF = new unsigned short[totalSize];
+        ocl->queue.enqueueReadImage(*TDF, CL_TRUE, offset, region, 0, 0, tempTDF);
+#pragma omp parallel for
+        for(int i = 0; i < totalSize; i++) {
+            TS.TDF[i] = (float)tempTDF[i] / 65535.0f;
+        }
+        delete[] tempTDF;
+    }
+    TS.radius = new float[totalSize];
+    ocl->queue.enqueueReadImage(radius, CL_TRUE, offset, region, 0, 0, TS.radius);
 
     // Get candidate points and filter
 
