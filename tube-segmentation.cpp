@@ -3064,10 +3064,10 @@ Image3D runNewCenterlineAlgWithoutOpenCL(OpenCL &ocl, SIPL::int3 size, paramList
 }
 
 Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radius) {
-    //if(ocl.platform.getInfo<CL_PLATFORM_VENDOR>().substr(0,5) == "Apple") {
+    if(ocl.platform.getInfo<CL_PLATFORM_VENDOR>().substr(0,5) == "Apple") {
         std::cout << "Apple platform detected. Running centerline extraction without OpenCL." << std::endl;
         return runNewCenterlineAlgWithoutOpenCL(ocl,size,parameters,vectorField,TDF,radius);
-    //}
+    }
     const int totalSize = size.x*size.y*size.z;
 	const bool no3Dwrite = !getParamBool(parameters, "3d_write");
     const int cubeSize = getParam(parameters, "cube-size");
