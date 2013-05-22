@@ -96,11 +96,14 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
     std::cout << "Available memory on selected device " << (double)memorySize/(1024*1024) << " MB "<< std::endl;
     std::cout << "Max alloc size: " << (float)devices[0].getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE>()/(1024*1024) << " MB " << std::endl;
 
+    bool isCrApple = false;
+    if(ocl->platform.getInfo<CL_PLATFORM_VENDOR>().substr(0,5) == "Apple")
+        isCrApple = true;
     // Compile and create program
     if(!getParamBool(parameters, "buffers-only") && (int)devices[0].getInfo<CL_DEVICE_EXTENSIONS>().find("cl_khr_3d_image_writes") > -1) {
     	std::string filename = kernel_dir+"/kernels.cl";
         std::string buildOptions = "";
-        if(getParamBool(parameters, "16bit-vectors")) {
+        if(getParamBool(parameters, "16bit-vectors") && !isCrApple) {
         	buildOptions = "-D VECTORS_16BIT";
         }
         ocl->program = buildProgramFromSource(ocl->context, filename, buildOptions);
@@ -114,7 +117,7 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
         parameters.bools["3d_write"] = v;
         std::string filename = kernel_dir+"/kernels_no_3d_write.cl";
         std::string buildOptions = "";
-        if(getParamBool(parameters, "16bit-vectors")) {
+        if(getParamBool(parameters, "16bit-vectors") && !isCrApple) {
         	buildOptions = "-D VECTORS_16BIT";
         	std::cout << "NOTE: Forcing the use of 16 bit buffers. This is slow, but uses half the memory." << std::endl;
         }
