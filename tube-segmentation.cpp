@@ -3002,7 +3002,7 @@ Image3D runNewCenterlineAlgWithoutOpenCL(OpenCL &ocl, SIPL::int3 size, paramList
 
 
     // Calculate length of each label
-    int * lengths = new int[nofPoints];
+    int * lengths = new int[nofPoints]();
     for(int i = 0; i < nofPoints; i++) {
         lengths[labels[i]]++;
     }
