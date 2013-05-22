@@ -2896,18 +2896,18 @@ Image3D runNewCenterlineAlgWithoutOpenCL(OpenCL &ocl, SIPL::int3 size, paramList
         }
     }}}
 
-    int points = centerpoints.size();
-    std::cout << "filtered points: " <<points<< std::endl;
+    int nofPoints = centerpoints.size();
+    std::cout << "filtered points: " <<nofPoints<< std::endl;
     std::vector<SIPL::int2> edges;
 
     // Do linking
-    for(int i = 0; i < points;i++) {
+    for(int i = 0; i < nofPoints;i++) {
         int3 xa = centerpoints[i];
         SIPL::int2 bestPair;
         float shortestDistance = maxDistance*2;
         bool validPairFound = false;
 
-        for(int j = 0; j < points;j++) {
+        for(int j = 0; j < nofPoints;j++) {
             if(i == j)
                 continue;
             int3 xb = centerpoints[j];
@@ -2977,26 +2977,53 @@ Image3D runNewCenterlineAlgWithoutOpenCL(OpenCL &ocl, SIPL::int3 size, paramList
     std::cout << "nr of edges: " << edges.size() << std::endl;
 
     // Do graph component labeling
+    // Create initial labels
+    int * labels = new int[nofPoints];
+    for(int i = 0; i < nofPoints; i++) {
+        labels[i] = i;
+    }
+
+    // Do iteratively using edges until no more changes
+    bool changeDetected = true;
+    while(changeDetected) {
+        changeDetected = false;
+        for(int i = 0; i < edges.size(); i++) {
+            SIPL::int2 edge = edges[i];
+            if(labels[edge.x] != labels[edge.y]) {
+                changeDetected = true;
+                if(labels[edge.x] < labels[edge.y]) {
+                    labels[edge.x] = labels[edge.y];
+                } else {
+                    labels[edge.y] = labels[edge.x];
+                }
+            }
+        }
+    }
+
+
+    // Calculate length of each label
+    int * lengths = new int[nofPoints];
+    for(int i = 0; i < nofPoints; i++) {
+        lengths[labels[i]]++;
+    }
+    std::vector<int3> vertices = centerpoints;
 
     // Select wanted parts of centerline
 
-    // Create VTK file
-    // Create centerline image
-
-    /*
-    std::vector<SIPL::int2> edges;
+    std::vector<SIPL::int2> edges2;
+    int counter = nofPoints;
     int maxEdgeDistance = getParam(parameters, "max-edge-distance");
-    for(int i = 0; i < sum2; i++) {
-        if(SArray[CArray[edgesArray[i*2]]] >= minTreeLength && SArray[CArray[edgesArray[i*2+1]]] >= minTreeLength ) {
+    for(int i = 0; i < edges.size(); i++) {
+        if(lengths[labels[edges[i].x]] >= minTreeLength && lengths[labels[edges[i].y]] >= minTreeLength ) {
             // Check length of edge
-            int3 A = vertices[indexes[edgesArray[i*2]]];
-            int3 B = vertices[indexes[edgesArray[i*2+1]]];
+            int3 A = vertices[edges[i].x];
+            int3 B = vertices[edges[i].y];
             float distance = A.distance(B);
             if(getParamStr(parameters, "centerline-vtk-file") != "off" &&
                     distance > maxEdgeDistance) {
                 float3 direction(B.x-A.x,B.y-A.y,B.z-A.z);
                 float3 Af(A.x,A.y,A.z);
-                int previous = indexes[edgesArray[i*2]];
+                int previous = edges[i].x;
                 for(int j = maxEdgeDistance; j < distance; j += maxEdgeDistance) {
                     float3 newPos = Af + ((float)j/distance)*direction;
                     int3 newVertex(round(newPos.x), round(newPos.y), round(newPos.z));
@@ -3004,21 +3031,19 @@ Image3D runNewCenterlineAlgWithoutOpenCL(OpenCL &ocl, SIPL::int3 size, paramList
                     vertices.push_back(newVertex);
                     // Add new edge
                     SIPL::int2 edge(previous, counter);
-                    edges.push_back(edge);
+                    edges2.push_back(edge);
                     previous = counter;
                     counter++;
                 }
                 // Connect previous vertex to B
-                SIPL::int2 edge(previous, indexes[edgesArray[i*2+1]]);
-                edges.push_back(edge);
+                SIPL::int2 edge(previous, edges[i].y);
+                edges2.push_back(edge);
             } else {
-                SIPL::int2 v(indexes[edgesArray[i*2]],indexes[edgesArray[i*2+1]]);
-                edges.push_back(v);
+                edges2.push_back(edges[i]);
             }
         }
     }
-    */
-    std::vector<int3> vertices = centerpoints;
+    edges = edges2;
 
     // Remove loops from graph
     if(getParamBool(parameters, "loop-removal"))
