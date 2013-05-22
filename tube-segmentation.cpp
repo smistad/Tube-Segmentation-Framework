@@ -79,6 +79,7 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
     	type = CL_DEVICE_TYPE_CPU;
     }
 	ocl->context = createCLContext(type);
+	ocl->platform = getPlatform(type, VENDOR_ANY);
 
     // Select first device
     VECTOR_CLASS<cl::Device> devices = ocl->context.getInfo<CL_CONTEXT_DEVICES>();
@@ -94,6 +95,9 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
     unsigned int memorySize = devices[0].getInfo<CL_DEVICE_GLOBAL_MEM_SIZE>();
     std::cout << "Available memory on selected device " << (double)memorySize/(1024*1024) << " MB "<< std::endl;
     std::cout << "Max alloc size: " << (float)devices[0].getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE>()/(1024*1024) << " MB " << std::endl;
+
+    if(ocl->platform.getInfo<CL_PLATFORM_VENDOR>().substr(0,5) == "Apple")
+        setParameter(parameters, "16bit-vectors", "false");
 
     // Compile and create program
     if(!getParamBool(parameters, "buffers-only") && (int)devices[0].getInfo<CL_DEVICE_EXTENSIONS>().find("cl_khr_3d_image_writes") > -1) {
@@ -2743,7 +2747,355 @@ char * createCenterlineVoxels(
 	return centerlines;
 }
 
+Image3D runNewCenterlineAlgWithoutOpenCL(OpenCL &ocl, SIPL::int3 size, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radius) {
+    const int totalSize = size.x*size.y*size.z;
+	const bool no3Dwrite = !getParamBool(parameters, "3d_write");
+    const int cubeSize = getParam(parameters, "cube-size");
+    const int minTreeLength = getParam(parameters, "min-tree-length");
+    const float Thigh = getParam(parameters, "tdf-high");
+    const float minAvgTDF = getParam(parameters, "min-mean-tdf");
+    const float maxDistance = getParam(parameters, "max-distance");
+
+    cl::size_t<3> offset;
+    offset[0] = 0;
+    offset[1] = 0;
+    offset[2] = 0;
+    cl::size_t<3> region;
+    region[0] = size.x;
+    region[1] = size.y;
+    region[2] = size.z;
+
+    // Transfer TDF, vectorField and radius to host
+    TubeSegmentation T;
+    T.Fx = new float[totalSize];
+    T.Fy = new float[totalSize];
+    T.Fz = new float[totalSize];
+    T.TDF = new float[totalSize];
+
+    if(!getParamBool(parameters, "16bit-vectors")) {
+    	// 32 bit vector fields
+        float * Fs = new float[totalSize*4];
+        ocl.queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
+#pragma omp parallel for
+        for(int i = 0; i < totalSize; i++) {
+            T.Fx[i] = Fs[i*4];
+            T.Fy[i] = Fs[i*4+1];
+            T.Fz[i] = Fs[i*4+2];
+        }
+        delete[] Fs;
+        ocl.queue.enqueueReadImage(TDF, CL_TRUE, offset, region, 0, 0, T.TDF);
+    } else {
+    	// 16 bit vector fields
+        short * Fs = new short[totalSize*4];
+        ocl.queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
+#pragma omp parallel for
+        for(int i = 0; i < totalSize; i++) {
+            T.Fx[i] = MAX(-1.0f, Fs[i*4] / 32767.0f);
+            T.Fy[i] = MAX(-1.0f, Fs[i*4+1] / 32767.0f);;
+            T.Fz[i] = MAX(-1.0f, Fs[i*4+2] / 32767.0f);
+        }
+        delete[] Fs;
+
+        // Convert 16 bit TDF to 32 bit
+        unsigned short * tempTDF = new unsigned short[totalSize];
+        ocl.queue.enqueueReadImage(TDF, CL_TRUE, offset, region, 0, 0, tempTDF);
+#pragma omp parallel for
+        for(int i = 0; i < totalSize; i++) {
+            T.TDF[i] = (float)tempTDF[i] / 65535.0f;
+        }
+        delete[] tempTDF;
+    }
+    T.radius = new float[totalSize];
+    ocl.queue.enqueueReadImage(radius, CL_TRUE, offset, region, 0, 0, T.radius);
+
+    // Get candidate points
+    std::vector<int3> candidatePoints;
+#pragma omp parallel for
+    for(int z = 1; z < size.z-1; z++) {
+    for(int y = 1; y < size.y-1; y++) {
+    for(int x = 1; x < size.x-1; x++) {
+       int3 pos(x,y,z);
+       if(T.TDF[POS(pos)] >= Thigh) {
+#pragma omp critical
+           candidatePoints.push_back(pos);
+       }
+    }}}
+    std::cout << "candidate points: " << candidatePoints.size() << std::endl;
+
+    unordered_set<int> filteredPoints;
+#pragma omp parallel for
+    for(int i = 0; i < candidatePoints.size(); i++) {
+        int3 pos = candidatePoints[i];
+        // Filter candidate points
+        const float thetaLimit = 0.5f;
+        const float radii = T.radius[POS(pos)];
+        const int maxD = std::max(std::min((float)round(radii), 5.0f), 1.0f);
+        bool invalid = false;
+
+        float3 e1 = getTubeDirection(T, pos, size);
+
+        for(int a = -maxD; a <= maxD; a++) {
+        for(int b = -maxD; b <= maxD; b++) {
+        for(int c = -maxD; c <= maxD; c++) {
+            if(a == 0 && b == 0 && c == 0)
+                continue;
+            float3 r(a,b,c);
+            float length = r.length();
+            int3 n(pos.x + r.x,pos.y+r.y,pos.z+r.z);
+            if(!inBounds(n,size))
+                continue;
+            float dp = e1.dot(r);
+            float3 r_projected(r.x-e1.x*dp,r.y-e1.y*dp,r.z-e1.z*dp);
+            float3 rn = r.normalize();
+            float3 r_projected_n = r_projected.normalize();
+            float theta = acos(rn.dot(r_projected_n));
+            if((theta < thetaLimit && length < maxD)) {
+                if(SQR_MAG(n) < SQR_MAG(pos)) {
+                    invalid = true;
+                    break;
+                }
+
+            }
+        }}}
+        if(!invalid) {
+#pragma omp critical
+            filteredPoints.insert(POS(pos));
+        }
+    }
+    candidatePoints.clear();
+    std::cout << "filtered points: " << filteredPoints.size() << std::endl;
+
+    std::vector<int3> centerpoints;
+    for(int z = 0; z < size.z/cubeSize; z++) {
+    for(int y = 0; y < size.y/cubeSize; y++) {
+    for(int x = 0; x < size.x/cubeSize; x++) {
+        int3 bestPos;
+        float bestTDF = 0.0f;
+        int3 readPos(
+            x*cubeSize,
+            y*cubeSize,
+            z*cubeSize
+        );
+        bool found = false;
+        for(int a = 0; a < cubeSize; a++) {
+        for(int b = 0; b < cubeSize; b++) {
+        for(int c = 0; c < cubeSize; c++) {
+            int3 pos = readPos + int3(a,b,c);
+            if(filteredPoints.find(POS(pos)) != filteredPoints.end()) {
+                float tdf = T.TDF[POS(pos)];
+                if(tdf > bestTDF) {
+                    found = true;
+                    bestTDF = tdf;
+                    bestPos = pos;
+                }
+            }
+        }}}
+        if(found) {
+#pragma omp critical
+            centerpoints.push_back(bestPos);
+        }
+    }}}
+
+    int nofPoints = centerpoints.size();
+    std::cout << "filtered points: " <<nofPoints<< std::endl;
+    std::vector<SIPL::int2> edges;
+
+    // Do linking
+    for(int i = 0; i < nofPoints;i++) {
+        int3 xa = centerpoints[i];
+        SIPL::int2 bestPair;
+        float shortestDistance = maxDistance*2;
+        bool validPairFound = false;
+
+        for(int j = 0; j < nofPoints;j++) {
+            if(i == j)
+                continue;
+            int3 xb = centerpoints[j];
+
+            int db = round(xa.distance(xb));
+            if(db >= shortestDistance)
+                continue;
+            for(int k = 0; k < j;k++) {
+                if(k == i)
+                    continue;
+                int3 xc = centerpoints[k];
+
+                int dc = round(xa.distance(xc));
+
+                if(db+dc < shortestDistance) {
+                    // Check angle
+                    int3 ab = (xb-xa);
+                    int3 ac = (xc-xa);
+                    float angle = acos(ab.normalize().dot(ac.normalize()));
+                    //printf("angle: %f\n", angle);
+                    if(angle < 2.0f) // 120 degrees
+                    //if(angle < 1.57f) // 90 degrees
+                        continue;
+
+                    // Check avg TDF for a-b
+                    float avgTDF = 0.0f;
+                    for(int l = 0; l <= db; l++) {
+                        float alpha = (float)l/db;
+                        int3 p((int)round(xa.x+ab.x*alpha),(int)round(xa.y+ab.y*alpha),(int)round(xa.z+ab.z*alpha));
+                        float t = T.TDF[POS(p)];
+                        avgTDF += t;
+                    }
+                    avgTDF /= db+1;
+                    if(avgTDF < minAvgTDF)
+                        continue;
+
+                    avgTDF = 0.0f;
+
+                    // Check avg TDF for a-c
+                    for(int l = 0; l <= dc; l++) {
+                        float alpha = (float)l/dc;
+                        int3 p((int)round(xa.x+ac.x*alpha),(int)round(xa.y+ac.y*alpha),(int)round(xa.z+ac.z*alpha));
+                        float t = T.TDF[POS(p)];
+                        avgTDF += t;
+                    }
+                    avgTDF /= dc+1;
+
+                    if(avgTDF < minAvgTDF)
+                        continue;
+
+                    validPairFound = true;
+                    bestPair.x = j;
+                    bestPair.y = k;
+                    shortestDistance = db+dc;
+                }
+            } // k
+        }// j
+
+        if(validPairFound) {
+            // Store edges
+            SIPL::int2 edge(i, bestPair.x);
+            SIPL::int2 edge2(i, bestPair.y);
+            edges.push_back(edge);
+            edges.push_back(edge2);
+        }
+    } // i
+    std::cout << "nr of edges: " << edges.size() << std::endl;
+
+    // Do graph component labeling
+    // Create initial labels
+    int * labels = new int[nofPoints];
+    for(int i = 0; i < nofPoints; i++) {
+        labels[i] = i;
+    }
+
+    // Do iteratively using edges until no more changes
+    bool changeDetected = true;
+    while(changeDetected) {
+        changeDetected = false;
+        for(int i = 0; i < edges.size(); i++) {
+            SIPL::int2 edge = edges[i];
+            if(labels[edge.x] != labels[edge.y]) {
+                changeDetected = true;
+                if(labels[edge.x] < labels[edge.y]) {
+                    labels[edge.x] = labels[edge.y];
+                } else {
+                    labels[edge.y] = labels[edge.x];
+                }
+            }
+        }
+    }
+
+
+    // Calculate length of each label
+    int * lengths = new int[nofPoints]();
+    for(int i = 0; i < nofPoints; i++) {
+        lengths[labels[i]]++;
+    }
+    std::vector<int3> vertices = centerpoints;
+
+    // Select wanted parts of centerline
+
+    std::vector<SIPL::int2> edges2;
+    int counter = nofPoints;
+    int maxEdgeDistance = getParam(parameters, "max-edge-distance");
+    for(int i = 0; i < edges.size(); i++) {
+        if(lengths[labels[edges[i].x]] >= minTreeLength && lengths[labels[edges[i].y]] >= minTreeLength ) {
+            // Check length of edge
+            int3 A = vertices[edges[i].x];
+            int3 B = vertices[edges[i].y];
+            float distance = A.distance(B);
+            if(getParamStr(parameters, "centerline-vtk-file") != "off" &&
+                    distance > maxEdgeDistance) {
+                float3 direction(B.x-A.x,B.y-A.y,B.z-A.z);
+                float3 Af(A.x,A.y,A.z);
+                int previous = edges[i].x;
+                for(int j = maxEdgeDistance; j < distance; j += maxEdgeDistance) {
+                    float3 newPos = Af + ((float)j/distance)*direction;
+                    int3 newVertex(round(newPos.x), round(newPos.y), round(newPos.z));
+                    // Create new vertex
+                    vertices.push_back(newVertex);
+                    // Add new edge
+                    SIPL::int2 edge(previous, counter);
+                    edges2.push_back(edge);
+                    previous = counter;
+                    counter++;
+                }
+                // Connect previous vertex to B
+                SIPL::int2 edge(previous, edges[i].y);
+                edges2.push_back(edge);
+            } else {
+                edges2.push_back(edges[i]);
+            }
+        }
+    }
+    edges = edges2;
+
+    // Remove loops from graph
+    if(getParamBool(parameters, "loop-removal"))
+        removeLoops(vertices, edges, size);
+
+    ocl.queue.finish();
+    char * centerlinesData = createCenterlineVoxels(vertices, edges, T.radius, size);
+    Image3D centerlines= Image3D(
+        ocl.context,
+        CL_MEM_READ_WRITE,
+        ImageFormat(CL_R, CL_SIGNED_INT8),
+        size.x, size.y, size.z
+    );
+
+    ocl.queue.enqueueWriteImage(
+            centerlines,
+            CL_FALSE,
+            offset,
+            region,
+            0, 0,
+            centerlinesData
+    );
+    ocl.queue.enqueueWriteImage(
+            radius,
+            CL_FALSE,
+            offset,
+            region,
+            0, 0,
+            T.radius
+    );
+
+    if(getParamStr(parameters, "centerline-vtk-file") != "off") {
+        writeToVtkFile(parameters, vertices, edges);
+    }
+
+    ocl.queue.finish();
+
+    delete[] T.TDF;
+    delete[] T.Fx;
+    delete[] T.Fy;
+    delete[] T.Fz;
+    delete[] T.radius;
+    delete[] centerlinesData;
+
+    return centerlines;
+}
+
 Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radius) {
+    if(ocl.platform.getInfo<CL_PLATFORM_VENDOR>().substr(0,5) == "Apple") {
+        std::cout << "Apple platform detected. Running centerline extraction without OpenCL." << std::endl;
+        return runNewCenterlineAlgWithoutOpenCL(ocl,size,parameters,vectorField,TDF,radius);
+    }
     const int totalSize = size.x*size.y*size.z;
 	const bool no3Dwrite = !getParamBool(parameters, "3d_write");
     const int cubeSize = getParam(parameters, "cube-size");
@@ -2968,9 +3320,9 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
         GC->deleteMemObject(centerpointsImage3);
     }
     if(sum < 8) {
-    	throw SIPL::SIPLException("Too few vertices detected. Revise parameters.", __LINE__, __FILE__);
+    	throw SIPL::SIPLException("Too few centerpoints detected. Revise parameters.", __LINE__, __FILE__);
     } else if(sum >= 16384) {
-    	throw SIPL::SIPLException("Too many vertices detected. More cropping of dataset is probably needed.", __LINE__, __FILE__);
+    	throw SIPL::SIPLException("Too many centerpoints detected. More cropping of dataset is probably needed.", __LINE__, __FILE__);
     }
 
 if(getParamBool(parameters, "timing")) {
@@ -4926,7 +5278,7 @@ Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &par
         int SIZE_Y = y2-y1;
         int SIZE_Z = z2-z1;
         if(SIZE_X == 0 || SIZE_Y == 0 || SIZE_Z == 0) {
-        	char * str;
+        	char * str = new char[255];
         	sprintf(str, "Invalid cropping to new size %d, %d, %d", SIZE_X, SIZE_Y, SIZE_Z);
         	throw SIPL::SIPLException(str, __LINE__, __FILE__);
         }

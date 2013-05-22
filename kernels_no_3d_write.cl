@@ -1230,7 +1230,10 @@ __kernel void sphereSegmentation(
     	// calculate distance
     	if(length((float3)(x,y,z)) < r) {
 			int4 posN = pos + (int4)(x,y,z,0);
-			segmentation[posN.x+posN.y*get_global_size(0)+posN.z*get_global_size(0)*get_global_size(1)] = 1;
+			if(posN.x >= 0 && posN.y >= 0 && posN.z >= 0 &&
+                posN.x < get_global_size(0) && posN.y < get_global_size(1) && posN.z < get_global_size(2)) {
+                segmentation[posN.x+posN.y*get_global_size(0)+posN.z*get_global_size(0)*get_global_size(1)] = 1;
+			}
     	}
     }}}
 }
