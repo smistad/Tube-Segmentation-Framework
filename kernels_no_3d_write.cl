@@ -1076,16 +1076,11 @@ __kernel void findCandidateCenterpoints2(
         if(theta < thetaLimit && length(r) < maxD) {
             if(SQR_MAG(n) < SQR_MAG(pos)) {
                 invalid = true;
-                break;
             }    
         }
     }}}
 
-    if(invalid) {
-        centerpoints[pos.x+pos.y*get_image_width(TDF)+pos.z*get_image_width(TDF)*get_image_height(TDF)] = 0;
-    } else {
-        centerpoints[pos.x+pos.y*get_image_width(TDF)+pos.z*get_image_width(TDF)*get_image_height(TDF)] = 1;
-    }
+	centerpoints[pos.x+pos.y*get_image_width(TDF)+pos.z*get_image_width(TDF)*get_image_height(TDF)] = invalid ? 0:1;
 }
 
 
