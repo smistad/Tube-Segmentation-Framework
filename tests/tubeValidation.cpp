@@ -11,12 +11,13 @@ typedef struct TubeValidation {
 	float percentageExtractedCenterlines;
 	float recall;
 	float precision;
+	unsigned int incorrectCenterpoints;
 } TubeValidation;
 
 TubeValidation getValidationMeasures(
 		Volume<char> * realCenterlines,
 		Volume<char> * eCenterlines,
-		Volume<uchar> * original,
+		Volume<char> * original,
 		Volume<char> * segmentation,
 		bool visualize
 		) {
@@ -26,7 +27,7 @@ TubeValidation getValidationMeasures(
 
 	float avgDistance = 0.0f;
 	int counter = 0;
-	int incorrectCenterpoints = 0;
+	unsigned int incorrectCenterpoints = 0;
 	int width = eCenterlines->getWidth();
 	int height = eCenterlines->getHeight();
 	int depth = eCenterlines->getDepth();
@@ -64,6 +65,7 @@ TubeValidation getValidationMeasures(
 	}}}
 	avgDistance /= counter;
 	result.averageDistanceFromCenterline = avgDistance;
+	result.incorrectCenterpoints = incorrectCenterpoints;
 
 
 	std::cout << std::endl;
@@ -111,16 +113,16 @@ TubeValidation getValidationMeasures(
 	int trueNegatives = 0;
 	int falseNegatives = 0;
 	for(int i = 0; i < original->getTotalSize(); i++) {
-		bool truth = original->get(i) > 0;
-		bool test = segmentation->get(i) > 0;
+		bool truth = original->get(i) == 1;
+		bool test = segmentation->get(i) == 1;
 		if(truth && test) {
 			truePositives++;
 		} else if(!truth && test) {
 			falsePositives++;
 		} else if(!truth && !test) {
-			falseNegatives++;
-		} else {
 			trueNegatives++;
+		} else {
+			falseNegatives++;
 		}
 	}
 	std::cout << "Segmentation result" << std::endl << "--------------------" << std::endl;
@@ -141,7 +143,7 @@ TubeValidation validateTube(TSFOutput * output, std::string segmentationPath, st
 
 	Volume<char> * realCenterlines = new Volume<char>(centerlinePath.c_str());
 
-	Volume<uchar> * original = new Volume<uchar>(segmentationPath.c_str());
+	Volume<char> * original = new Volume<char>(segmentationPath.c_str());
 
 
 	// load extracted centerlines
