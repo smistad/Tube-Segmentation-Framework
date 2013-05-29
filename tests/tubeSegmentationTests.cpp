@@ -1,9 +1,4 @@
 #include "tests.hpp"
-#include "../tube-segmentation.cpp"
-#include "../parameters.hpp"
-#include "../SIPL/Exceptions.hpp"
-#include "tubeValidation.cpp"
-#include "tsf-config.h"
 
 
 TEST(TubeSegmentation, WrongFilenameException) {
