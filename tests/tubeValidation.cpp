@@ -118,9 +118,9 @@ TubeValidation getValidationMeasures(
 		} else if(!truth && test) {
 			falsePositives++;
 		} else if(!truth && !test) {
-			trueNegatives++;
-		} else {
 			falseNegatives++;
+		} else {
+			trueNegatives++;
 		}
 	}
 	std::cout << "Segmentation result" << std::endl << "--------------------" << std::endl;
