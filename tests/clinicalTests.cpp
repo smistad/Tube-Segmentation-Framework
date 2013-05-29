@@ -51,4 +51,5 @@ TEST_F(ClinicalTests, LungAirwaysCT) {
 	EXPECT_LT(75.0, result.percentageExtractedCenterlines);
 	EXPECT_LT(0.7, result.precision);
 	EXPECT_LT(0.7, result.recall);
+	EXPECT_GT(100, result.incorrectCenterpoints);
 }
