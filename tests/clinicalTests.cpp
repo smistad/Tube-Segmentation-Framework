@@ -39,7 +39,7 @@ bool dataExists(std::string name) {
 
 TEST_F(ClinicalTests, LungAirwaysCT) {
     std::string name = "Lung-Airways-CT";
-    setParameter(parameters, "parameters", "Lung-Airways-CT");
+    setParameter(parameters, "parameters", name);
 
     if(!dataExists(name)) {
         SUCCEED();
@@ -53,3 +53,55 @@ TEST_F(ClinicalTests, LungAirwaysCT) {
 	EXPECT_LT(0.7, result.recall);
 	EXPECT_GT(100, result.incorrectCenterpoints);
 }
+
+TEST_F(ClinicalTests, NeuroVesselsMRA) {
+    std::string name = "Neuro-Vessels-MRA";
+    setParameter(parameters, "parameters", name);
+
+    if(!dataExists(name)) {
+        SUCCEED();
+        return;
+    }
+    loadParameterPreset(parameters, PARAMETERS_DIR);
+	result = runClinicalData(parameters, name);
+	EXPECT_GT(1.5, result.averageDistanceFromCenterline);
+	EXPECT_LT(75.0, result.percentageExtractedCenterlines);
+	EXPECT_LT(0.7, result.precision);
+	EXPECT_LT(0.7, result.recall);
+	EXPECT_GT(100, result.incorrectCenterpoints);
+}
+
+TEST_F(ClinicalTests, NeuroVesselsUSA) {
+    std::string name = "Neuro-Vessels-USA";
+    setParameter(parameters, "parameters", name);
+
+    if(!dataExists(name)) {
+        SUCCEED();
+        return;
+    }
+    loadParameterPreset(parameters, PARAMETERS_DIR);
+	result = runClinicalData(parameters, name);
+	EXPECT_GT(1.5, result.averageDistanceFromCenterline);
+	EXPECT_LT(75.0, result.percentageExtractedCenterlines);
+	EXPECT_LT(0.7, result.precision);
+	EXPECT_LT(0.7, result.recall);
+	EXPECT_GT(100, result.incorrectCenterpoints);
+}
+
+TEST_F(ClinicalTests, PhantomAccUS) {
+    std::string name = "Phantom-Acc-US";
+    setParameter(parameters, "parameters", name);
+
+    if(!dataExists(name)) {
+        SUCCEED();
+        return;
+    }
+    loadParameterPreset(parameters, PARAMETERS_DIR);
+	result = runClinicalData(parameters, name);
+	EXPECT_GT(1.5, result.averageDistanceFromCenterline);
+	EXPECT_LT(75.0, result.percentageExtractedCenterlines);
+	EXPECT_LT(0.7, result.precision);
+	EXPECT_LT(0.7, result.recall);
+	EXPECT_GT(100, result.incorrectCenterpoints);
+}
+
