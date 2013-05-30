@@ -4,6 +4,7 @@ __constant sampler_t interpolationSampler = CLK_NORMALIZED_COORDS_FALSE | CLK_AD
 __constant sampler_t hpSampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP | CLK_FILTER_NEAREST;
 
 #define LPOS(pos) pos.x+pos.y*get_global_size(0)+pos.z*get_global_size(0)*get_global_size(1)
+#define NLPOS(pos) ((pos).x) + ((pos).y)*size.x + ((pos).z)*size.x*size.y
 
 #ifdef VECTORS_16BIT
 #define FLOAT_TO_SNORM16_4(vector) convert_short4_sat_rte(vector * 32767.0f)
@@ -15,6 +16,9 @@ __constant sampler_t hpSampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP
 #define FLOAT_TO_SNORM16(vector) convert_short_sat_rte(vector * 32767.0f)
 #define SNORM16_TO_FLOAT(vector) max(-1.0f, convert_float(vector) / 32767.0f)
 #define VECTOR_FIELD_TYPE short
+#define UNORM16_TO_FLOAT(v) (float)v / 65535.0f
+#define FLOAT_TO_UNORM16(v) convert_ushort_sat_rte(v * 65535.0f)
+#define TDF_TYPE ushort
 #else
 #define FLOAT_TO_SNORM16_4(vector) vector
 #define SNORM16_TO_FLOAT_4(vector) vector
@@ -25,6 +29,9 @@ __constant sampler_t hpSampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP
 #define FLOAT_TO_SNORM16(vector) vector
 #define SNORM16_TO_FLOAT(vector) vector
 #define VECTOR_FIELD_TYPE float
+#define UNORM16_TO_FLOAT(v) v
+#define FLOAT_TO_UNORM16(v) v
+#define TDF_TYPE float
 #endif
 
 // Intialize 2D image to 0
@@ -234,21 +241,32 @@ uint DecodeMorton3Z(uint code) {
   return Compact1By2(code >> 2);
 }
 
+
+
 __kernel void constructHPLevelCharChar(
         __global uchar * readHistoPyramid,
-        __global uchar * writeHistoPyramid
+        __global uchar * writeHistoPyramid,
+        __private int sizeX,
+        __private int sizeY,
+        __private int sizeZ
     ) { 
+	uint3 size = {sizeX,sizeY,sizeZ};
 
     uint writePos = EncodeMorton3(get_global_id(0), get_global_id(1), get_global_id(2));
-    uint readPos = EncodeMorton3(get_global_id(0)*2, get_global_id(1)*2, get_global_id(2)*2);
-    uchar writeValue = readHistoPyramid[readPos] +
-                    readHistoPyramid[readPos + 1] +
-                    readHistoPyramid[readPos + 2] +
-                    readHistoPyramid[readPos + 3] +
-                    readHistoPyramid[readPos + 4] +
-                    readHistoPyramid[readPos + 5] +
-                    readHistoPyramid[readPos + 6] +
-                    readHistoPyramid[readPos + 7];
+    int4 readPos = (int4)(get_global_id(0)*2, get_global_id(1)*2, get_global_id(2)*2,0);
+    uchar writeValue;
+    if(readPos.x >= size.x || readPos.y >= size.y || readPos.z >= size.z) {
+    	writeValue = 0;
+    } else {
+		writeValue = readHistoPyramid[NLPOS(readPos)] +
+                    readHistoPyramid[NLPOS(readPos+cubeOffsets[1])] +
+                    readHistoPyramid[NLPOS(readPos+cubeOffsets[2])] +
+                    readHistoPyramid[NLPOS(readPos+cubeOffsets[3])] +
+                    readHistoPyramid[NLPOS(readPos+cubeOffsets[4])] +
+                    readHistoPyramid[NLPOS(readPos+cubeOffsets[5])] +
+                    readHistoPyramid[NLPOS(readPos+cubeOffsets[6])] +
+                    readHistoPyramid[NLPOS(readPos+cubeOffsets[7])];
+    }
 
     writeHistoPyramid[writePos] = writeValue;
 }
@@ -419,9 +437,10 @@ int4 scanHPLevelShort(int target, __global ushort * hp, int4 current) {
     return current;
 
 }
+
 int4 scanHPLevelChar(int target, __global uchar * hp, int4 current) {
 
-    int8 neighbors = {
+	int8 neighbors = {
         hp[EncodeMorton(current)],
         hp[EncodeMorton(current + cubeOffsets[1])],
         hp[EncodeMorton(current + cubeOffsets[2])],
@@ -430,6 +449,53 @@ int4 scanHPLevelChar(int target, __global uchar * hp, int4 current) {
         hp[EncodeMorton(current + cubeOffsets[5])],
         hp[EncodeMorton(current + cubeOffsets[6])],
         hp[EncodeMorton(current + cubeOffsets[7])],
+	};
+
+    int acc = current.s3 + neighbors.s0;
+    int8 cmp;
+    cmp.s0 = acc <= target;
+    acc += neighbors.s1;
+    cmp.s1 = acc <= target;
+    acc += neighbors.s2;
+    cmp.s2 = acc <= target;
+    acc += neighbors.s3;
+    cmp.s3 = acc <= target;
+    acc += neighbors.s4;
+    cmp.s4 = acc <= target;
+    acc += neighbors.s5;
+    cmp.s5 = acc <= target;
+    acc += neighbors.s6;
+    cmp.s6 = acc <= target;
+    cmp.s7 = 0;
+
+
+    current += cubeOffsets[(cmp.s0+cmp.s1+cmp.s2+cmp.s3+cmp.s4+cmp.s5+cmp.s6+cmp.s7)];
+    current.s0 = current.s0*2;
+    current.s1 = current.s1*2;
+    current.s2 = current.s2*2;
+    current.s3 = current.s3 +
+    cmp.s0*neighbors.s0 +
+    cmp.s1*neighbors.s1 +
+    cmp.s2*neighbors.s2 +
+    cmp.s3*neighbors.s3 +
+    cmp.s4*neighbors.s4 +
+    cmp.s5*neighbors.s5 +
+    cmp.s6*neighbors.s6 +
+    cmp.s7*neighbors.s7;
+    return current;
+
+}
+int4 scanHPLevelCharNoMorton(int target, __global uchar * hp, int4 current, uint3 size) {
+
+	int8 neighbors = {
+        hp[NLPOS(current)],
+        hp[NLPOS(current + cubeOffsets[1])],
+        hp[NLPOS(current + cubeOffsets[2])],
+        hp[NLPOS(current + cubeOffsets[3])],
+        hp[NLPOS(current + cubeOffsets[4])],
+        hp[NLPOS(current + cubeOffsets[5])],
+        hp[NLPOS(current + cubeOffsets[6])],
+        hp[NLPOS(current + cubeOffsets[7])],
     };
 
     int acc = current.s3 + neighbors.s0;
@@ -516,6 +582,7 @@ int4 scanHPLevel(int target, __global int * hp, int4 current) {
 }
 
 int4 traverseHP3DBuffer(
+	uint3 size,
     int target,
     int HP_SIZE,
     __global uchar * hp0,
@@ -546,7 +613,7 @@ int4 traverseHP3DBuffer(
     position = scanHPLevelShort(target, hp3, position);
     position = scanHPLevelShort(target, hp2, position);
     position = scanHPLevelChar(target, hp1, position);
-    position = scanHPLevelChar(target, hp0, position);
+    position = scanHPLevelCharNoMorton(target, hp0, position,size);
     position.x = position.x / 2;
     position.y = position.y / 2;
     position.z = position.z / 2;
@@ -605,6 +672,9 @@ int2 traverseHP2D(
 
 
 __kernel void createPositions3DBuffer(
+		__private int sizeX,
+        __private int sizeY,
+        __private int sizeZ,
         __global int * positions,
         __private int HP_SIZE,
         __private int sum,
@@ -622,7 +692,8 @@ __kernel void createPositions3DBuffer(
     int target = get_global_id(0);
     if(target >= sum)
         target = 0;
-    int4 pos = traverseHP3DBuffer(target,HP_SIZE,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,hp8,hp9);
+    uint3 size = {sizeX,sizeY,sizeZ};
+    int4 pos = traverseHP3DBuffer(size,target,HP_SIZE,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,hp8,hp9);
     vstore3(pos.xyz, target, positions);
 }
 
@@ -681,10 +752,8 @@ __kernel void compact(
 
 __kernel void linkCenterpoints(
         __read_only image3d_t TDF,
-        __read_only image3d_t radius,
         __global int const * restrict positions,
         __write_only image2d_t edges,
-        __read_only image3d_t intensity,
         __read_only image2d_t compacted_lengths,
         __private int sum,
         __private float minAvgTDF,
@@ -694,6 +763,7 @@ __kernel void linkCenterpoints(
     if(id >= sum)
         id = 0;
     float3 xa = convert_float3(vload3(id, positions));
+    //printf("%f %f %f\n",xa.x,xa.y,xa.z);
 
     int2 bestPair;
     float shortestDistance = maxDistance*2;
@@ -738,31 +808,18 @@ __kernel void linkCenterpoints(
         // Check TDF
         float avgTDF = 0.0f;
         float avgIntensity = 0.0f;
-        bool invalid = false;
-        //printf("%d - %d \n", db, dc);
         for(int k = 0; k <= db; k++) {
             float alpha = (float)k/db;
 float3 p = xa+ab*alpha;
             float t = read_imagef(TDF, interpolationSampler, p.xyzz).x; 
-            float i = read_imagef(intensity, interpolationSampler, p.xyzz).x; 
-            avgIntensity += i;
             avgTDF += t;
-            if(i > maxIntensity || t < minTDF) {
-                invalid = true;
-                break;
-            }
         }
-        if(invalid)
-            continue;
         avgTDF /= db+1;
-        avgIntensity /= db+1;
         if(avgTDF < minAvgTDF)
             continue;
-        if(avgIntensity > maxAvgIntensity)
-            continue;
 
+/*
         float varTDF = 0.0f;
-        float varIntensity = 0.0f;
         for(int k = 0; k <= db; k++) {
             float alpha = (float)k/db;
 float3 p = xa+ab*alpha;
@@ -778,39 +835,27 @@ float3 p = xa+ab*alpha;
         if(invalid)
             continue;
 
-        if(db > 4 && varIntensity / (db+1) > maxVarIntensity)
-            continue;
         if(db > 4 && varTDF / (db+1) > maxVarTDF)
             continue;
+            */
 
         avgTDF = 0.0f;
-        avgIntensity = 0.0f;
-        varTDF = 0.0f;
-        varIntensity = 0.0f;
         for(int k = 0; k <= dc; k++) {
             float alpha = (float)k/dc;
-
-float3 p = xa+ac*alpha;
+            float3 p = xa+ac*alpha;
             float t = read_imagef(TDF, interpolationSampler, p.xyzz).x; 
-            float i = read_imagef(intensity, interpolationSampler, p.xyzz).x; 
             avgTDF += t;
-            avgIntensity += i;
         }
         avgTDF /= dc+1;
-        avgIntensity /= dc+1;
 
         if(avgTDF < minAvgTDF)
             continue;
 
-        if(avgIntensity > maxAvgIntensity)
-            continue;
-
+    /*
         for(int k = 0; k <= dc; k++) {
             float alpha = (float)k/dc;
 float3 p = xa+ac*alpha;
             float t = read_imagef(TDF, interpolationSampler, p.xyzz).x; 
-            float i = read_imagef(intensity, interpolationSampler, p.xyzz).x; 
-            varIntensity += (i-avgIntensity)*(i-avgIntensity);
             varTDF += (t-avgTDF)*(t-avgTDF);
         }
 
@@ -818,10 +863,7 @@ float3 p = xa+ac*alpha;
             continue;
         if(dc > 4 && varTDF / (dc+1) > maxVarTDF)
             continue;
-        //printf("avg i: %f\n", avgIntensity );
-        //printf("avg tdf: %f\n", avgTDF );
-        //printf("var i: %f\n", varIntensity / (dc+1));
-        //printf("var tdf: %f\n", varTDF / (dc+1));
+            */
 
         validPairFound = true;
         bestPair.x = cl.y;
@@ -926,7 +968,6 @@ __kernel void removeDuplicateEdges(
 #define SQR_MAG(pos) read_imagef(vectorField, sampler, pos).w
 
 __kernel void dd(
-    __read_only image3d_t vectorField,
     __read_only image3d_t TDF,
     __read_only image3d_t centerpointCandidates,
     __global uchar * centerpoints,
@@ -934,7 +975,7 @@ __kernel void dd(
     ) {
 
     int4 bestPos;
-    float bestGVF = 0.0f;
+    float bestTDF = 0.0f;
     int4 readPos = {
         get_global_id(0)*cubeSize,
         get_global_id(1)*cubeSize,
@@ -947,16 +988,16 @@ __kernel void dd(
     for(int c = 0; c < cubeSize; c++) {
         int4 pos = readPos + (int4)(a,b,c,0);
         if(read_imagei(centerpointCandidates, sampler, pos).x == 1) {
-            float GVF = read_imagef(TDF, sampler, pos).x;
-            if(GVF > bestGVF) {
+            float tdf = read_imagef(TDF, sampler, pos).x;
+            if(tdf > bestTDF) {
                 found = true;
-                bestGVF = GVF;
+                bestTDF = tdf;
                 bestPos = pos;
             }
         }
     }}}
     if(found) {
-        centerpoints[EncodeMorton(bestPos)] = 1;
+        centerpoints[bestPos.x+bestPos.y*get_image_width(TDF)+bestPos.z*get_image_width(TDF)*get_image_height(TDF)] = 1;
     }
 }
 
@@ -969,9 +1010,9 @@ __kernel void findCandidateCenterpoints(
     ) {
     const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
     if(read_imagef(TDF, sampler, pos).x < TDFlimit) {
-        centerpoints[EncodeMorton(pos)] = 0;
+        centerpoints[LPOS(pos)] = 0;
     } else {
-        centerpoints[EncodeMorton(pos)] = 1;
+        centerpoints[LPOS(pos)] = 1;
     }
 }
 
@@ -996,7 +1037,8 @@ __kernel void findCandidateCenterpoints2(
     int target = get_global_id(0);
     if(target >= sum)
         target = 0;
-    int4 pos = traverseHP3DBuffer(target,HP_SIZE,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,hp8,hp9);
+    uint3 size = {get_image_width(TDF),get_image_height(TDF),get_image_depth(TDF)};
+    int4 pos = traverseHP3DBuffer(size,target,HP_SIZE,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,hp8,hp9);
 
     const float thetaLimit = 0.5f;
     const float radii = read_imagef(radius, sampler, pos).x;
@@ -1034,23 +1076,18 @@ __kernel void findCandidateCenterpoints2(
         if(theta < thetaLimit && length(r) < maxD) {
             if(SQR_MAG(n) < SQR_MAG(pos)) {
                 invalid = true;
-                break;
             }    
         }
     }}}
 
-    if(invalid) {
-        centerpoints[pos.x+pos.y*get_image_width(TDF)+pos.z*get_image_width(TDF)*get_image_height(TDF)] = 0;
-    } else {
-        centerpoints[pos.x+pos.y*get_image_width(TDF)+pos.z*get_image_width(TDF)*get_image_height(TDF)] = 1;
-    }
+	centerpoints[pos.x+pos.y*get_image_width(TDF)+pos.z*get_image_width(TDF)*get_image_height(TDF)] = invalid ? 0:1;
 }
 
 
 __kernel void combine(
-    __global float * TDFsmall,
+    __global TDF_TYPE * TDFsmall,
     __global float * radiusSmall,
-    __global float * TDFlarge,
+    __global TDF_TYPE * TDFlarge,
     __global float * radiusLarge
     ) {
     int i = get_global_id(0);
@@ -1062,14 +1099,18 @@ __kernel void combine(
 
 __kernel void initGrowing(
 	__read_only image3d_t centerline,
-	__global char * initSegmentation
+	__global char * initSegmentation,
+	__read_only image3d_t avgRadius
 	) {
     int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
     if(read_imagei(centerline, sampler, pos).x == 1) {
 	
-        for(int a = -1; a < 2; a++) {
-        for(int b = -1; b < 2; b++) {
-        for(int c = -1; c < 2; c++) {
+    	float radius = read_imagef(avgRadius, sampler, pos).x;
+    	int N = min(max(1, (int)round(radius/2.0f)), 4);
+
+        for(int a = -N; a < N+1; a++) {
+        for(int b = -N; b < N+1; b++) {
+        for(int c = -N; c < N+1; c++) {
             int4 n;
             n.x = pos.x + a;
             n.y = pos.y + b;
@@ -1117,7 +1158,7 @@ __kernel void grow(
 		FNY.x /= FNY.w;
 		FNY.y /= FNY.w;
 		FNY.z /= FNY.w;
-	    if(FNY.w > FNXw || FNXw < 0.1f) {
+	    if(FNY.w > FNXw /*|| FNXw < 0.1f*/) {
 
 		int4 Z;
 		float maxDotProduct = -2.0f;
@@ -1184,7 +1225,10 @@ __kernel void sphereSegmentation(
     	// calculate distance
     	if(length((float3)(x,y,z)) < r) {
 			int4 posN = pos + (int4)(x,y,z,0);
-			segmentation[posN.x+posN.y*get_global_size(0)+posN.z*get_global_size(0)*get_global_size(1)] = 1;
+			if(posN.x >= 0 && posN.y >= 0 && posN.z >= 0 &&
+                posN.x < get_global_size(0) && posN.y < get_global_size(1) && posN.z < get_global_size(2)) {
+                segmentation[posN.x+posN.y*get_global_size(0)+posN.z*get_global_size(0)*get_global_size(1)] = 1;
+			}
     	}
     }}}
 }
@@ -1420,11 +1464,16 @@ __kernel void blurVolumeWithGaussian(
     blurredVolume[LPOS(pos)] = sum;
 }
 
+#define SELECT_BUFFER(vec1,vec2,z,maxZ) z < maxZ ? vec1:vec2
+#define SELECT_POS(pos,maxZ) pos.z < maxZ ?  pos.x+pos.y*get_global_size(0)+pos.z*get_global_size(0)*get_global_size(1) : pos.x + pos.y*get_global_size(0) + (pos.z-maxZ)*get_global_size(0)*get_global_size(1)
+
 __kernel void createVectorField(
         __read_only image3d_t volume, 
         __global VECTOR_FIELD_TYPE * vectorField,
+        __global VECTOR_FIELD_TYPE * vectorField2,
         __private float Fmax,
-        __private int vectorSign
+        __private int vectorSign,
+        __private int maxZ
         ) {
     const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
 
@@ -1443,7 +1492,8 @@ F.z = vectorSign*F.z;
     F.w = 1.0f;
 
     // Store vector field
-    vstore4(FLOAT_TO_SNORM16_4(F), LPOS(pos), vectorField);
+
+    vstore4(FLOAT_TO_SNORM16_4(F), SELECT_POS(pos,maxZ), SELECT_BUFFER(vectorField,vectorField2,pos.z,maxZ));
 }
 
 
@@ -1452,7 +1502,7 @@ __constant float sinValues[32] = {0.0f, 0.841471f, 0.909297f, 0.14112f, -0.75680
 
 __kernel void circleFittingTDF(
         __read_only image3d_t vectorField,
-        __global float * T,
+        __global TDF_TYPE * T,
         __global float * Radius,
         __private float rMin,
         __private float rMax,
@@ -1505,8 +1555,8 @@ __kernel void circleFittingTDF(
             //if(dot(normalize(V), normalize(V_alpha)) < 0.2f)
             //    negatives = true;
         }
-        if(negatives)
-        	continue;
+        //if(negatives) // these instructions may lead to wierd results
+        //	continue;
         radiusSum /= samples;
         if(radiusSum > maxSum) {
             maxSum = radiusSum;
@@ -1517,7 +1567,7 @@ __kernel void circleFittingTDF(
     }
 
     // Store result
-    T[LPOS(pos)] = maxSum;
+    T[LPOS(pos)] = FLOAT_TO_UNORM16(maxSum);
     Radius[LPOS(pos)] = maxRadius;
 }
 
@@ -1739,7 +1789,9 @@ __kernel void GVF3DFinish_one_component(
 		__global VECTOR_FIELD_TYPE const * restrict vectorFieldX,
 		__global VECTOR_FIELD_TYPE const * restrict vectorFieldY,
 		__global VECTOR_FIELD_TYPE const * restrict vectorFieldZ,
-		__global VECTOR_FIELD_TYPE * vectorField2
+		__global VECTOR_FIELD_TYPE * vectorField,
+		__global VECTOR_FIELD_TYPE * vectorField2,
+		__private int maxZ
 	) {
     const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
     int offset = pos.x+pos.y*get_global_size(0)+pos.z*get_global_size(0)*get_global_size(1);
@@ -1749,7 +1801,7 @@ __kernel void GVF3DFinish_one_component(
     v.z = SNORM16_TO_FLOAT(vectorFieldZ[offset]);
     v.w = 0;
     v.w = length(v) > 0.0f ? length(v) : 1.0f;
-    vstore4(FLOAT_TO_SNORM16_4(v), offset, vectorField2);
+    vstore4(FLOAT_TO_SNORM16_4(v), SELECT_POS(pos,maxZ), SELECT_BUFFER(vectorField,vectorField2,pos.z,maxZ));
 }
 
 __kernel void GVF3DIteration(

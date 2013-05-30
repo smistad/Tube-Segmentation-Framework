@@ -2,11 +2,14 @@
 #include "SIPL/Core.hpp"
 #include "tsf-config.h"
 
+
 int main(int argc, char ** argv) {
 
     // Load default parameters and parse parameters from program arguments
     paramList parameters = getParameters(argc, argv);
-    std::string filename = argv[1];
+    std::string filename = argv[1];
+
+
     TSFOutput * output;
     try {
 		output = run(filename, parameters, std::string(KERNELS_DIR));

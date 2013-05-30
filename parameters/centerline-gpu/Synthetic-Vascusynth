@@ -3,6 +3,9 @@ small-blur 1.0
 fmax 0.1
 minimum 0
 maximum 75
-min-mean-tdf 0.35
+min-mean-tdf 0.3
+tdf-high 0.35
 cube-size 3
-min-tree-length 5
+min-tree-length 3
+max-distance 10.0
+radius-max 4.0

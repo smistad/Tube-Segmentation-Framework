@@ -8,6 +8,16 @@ __constant sampler_t hpSampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP
 
 #define LPOS(pos) pos.x+pos.y*get_global_size(0)+pos.z*get_global_size(0)*get_global_size(1)
 
+#ifdef VECTORS_16BIT
+#define UNORM16_TO_FLOAT(v) (float)v / 65535.0f
+#define FLOAT_TO_UNORM16(v) convert_ushort_sat_rte(v * 65535.0f)
+#define TDF_TYPE ushort
+#else
+#define UNORM16_TO_FLOAT(v) v
+#define FLOAT_TO_UNORM16(v) v
+#define TDF_TYPE float
+#endif
+
 
 // Intialize 3D image to 0
 __kernel void init3DImage(
@@ -342,10 +352,8 @@ __kernel void compact(
 
 __kernel void linkCenterpoints(
         __read_only image3d_t TDF,
-        __read_only image3d_t radius,
         __global int const * restrict positions,
         __write_only image2d_t edges,
-        __read_only image3d_t intensity,
         __read_only image2d_t compacted_lengths,
         __private int sum,
         __private float minAvgTDF,
@@ -383,8 +391,8 @@ __kernel void linkCenterpoints(
     // Check distance between xa and xb
     int dc = round(cl2.x);
 
-    float minTDF = 0.0f;
-    float maxVarTDF = 1.005f;
+    //float minTDF = 0.0f;
+    //float maxVarTDF = 1.005f;
     //float maxIntensity = 1.3f;
     //float maxAvgIntensity = 1.2f;
     //float maxVarIntensity = 1.005f;
@@ -394,102 +402,65 @@ __kernel void linkCenterpoints(
         float3 ab = (xb-xa);
         float3 ac = (xc-xa);
         float angle = acos(dot(normalize(ab), normalize(ac)));
+        //printf("angle: %f\n", angle);
         if(angle < 2.0f) // 120 degrees
+        //if(angle < 1.57f) // 90 degrees
             continue;
-        // Check TDF
-        float avgTDF = 0.0f;
-        //float avgIntensity = 0.0f;
-        bool invalid = false;
-        //printf("%d - %d \n", db, dc);
-        for(int k = 0; k <= db; k++) {
-            float alpha = (float)k/db;
-            float3 p = xa+ab*alpha;
-            float t = read_imagef(TDF, interpolationSampler, p.xyzz).x; 
-            //float i = read_imagef(intensity, interpolationSampler, p.xyzz).x; 
-            //avgIntensity += i;
-            avgTDF += t;
-            if(/*i > maxIntensity ||*/ t < minTDF) {
-                invalid = true;
-                break;
-            }
-        }
-        if(invalid)
-            continue;
-        avgTDF /= db+1;
-        //avgIntensity /= db+1;
-        if(avgTDF < minAvgTDF)
-            continue;
-            /*
-        if(avgIntensity > maxAvgIntensity)
-            continue;
-            */
 
-        float varTDF = 0.0f;
-        //float varIntensity = 0.0f;
+        // Check avg TDF for a-b
+        float avgTDF = 0.0f;
         for(int k = 0; k <= db; k++) {
             float alpha = (float)k/db;
             float3 p = xa+ab*alpha;
             float t = read_imagef(TDF, interpolationSampler, p.xyzz).x; 
-            //float i = read_imagef(intensity, interpolationSampler, p.xyzz).x; 
-            //varIntensity += (i-avgIntensity)*(i-avgIntensity);
-            varTDF += (t-avgTDF)*(t-avgTDF);
-            if(/*i > maxIntensity || */t < minTDF) {
-                invalid = true;
-                break;
-            }
+            avgTDF += t;
         }
-        if(invalid)
+        avgTDF /= db+1;
+        if(avgTDF < minAvgTDF)
             continue;
 
         /*
-        if(db > 4 && varIntensity / (db+1) > maxVarIntensity)
-            continue;
-            */
+        // Check var TDF for a-b
+        float varTDF = 0.0f;
+        for(int k = 0; k <= db; k++) {
+            float alpha = (float)k/db;
+            float3 p = xa+ab*alpha;
+            float t = read_imagef(TDF, interpolationSampler, p.xyzz).x; 
+            varTDF += (t-avgTDF)*(t-avgTDF);
+        }
+
         if(db > 4 && varTDF / (db+1) > maxVarTDF)
             continue;
 
-        avgTDF = 0.0f;
-        //avgIntensity = 0.0f;
         varTDF = 0.0f;
-        //varIntensity = 0.0f;
+        */
+
+        avgTDF = 0.0f;
+
+        // Check avg TDF for a-c
         for(int k = 0; k <= dc; k++) {
             float alpha = (float)k/dc;
             float3 p = xa+ac*alpha;
             float t = read_imagef(TDF, interpolationSampler, p.xyzz).x; 
-            //float i = read_imagef(intensity, interpolationSampler, p.xyzz).x; 
             avgTDF += t;
-            //avgIntensity += i;
         }
         avgTDF /= dc+1;
-        //avgIntensity /= dc+1;
 
         if(avgTDF < minAvgTDF)
             continue;
 
         /*
-        if(avgIntensity > maxAvgIntensity)
-            continue;
-            */
-
-        for(int k = 0; k <= db; k++) {
-            float alpha = (float)k/db;
-            float3 p = xa+ab*alpha;
+        // Check var TDF for a-c
+        for(int k = 0; k <= dc; k++) {
+            float alpha = (float)k/dc;
+            float3 p = xa+ac*alpha;
             float t = read_imagef(TDF, interpolationSampler, p.xyzz).x; 
-            //float i = read_imagef(intensity, interpolationSampler, p.xyzz).x; 
-            //varIntensity += (i-avgIntensity)*(i-avgIntensity);
             varTDF += (t-avgTDF)*(t-avgTDF);
         }
 
-        /*
-        if(dc > 4 && varIntensity / (dc+1) > maxVarIntensity)
-            continue;
-            */
         if(dc > 4 && varTDF / (dc+1) > maxVarTDF)
             continue;
-        //printf("avg i: %f\n", avgIntensity );
-        //printf("avg tdf: %f\n", avgTDF );
-        //printf("var i: %f\n", varIntensity / (dc+1));
-        //printf("var tdf: %f\n", varTDF / (dc+1));
+        */
 
         validPairFound = true;
         bestPair.x = cl.y;
@@ -588,9 +559,9 @@ __kernel void removeDuplicateEdges(
 }
 
 __kernel void combine(
-    __global float * TDFsmall,
+    __global TDF_TYPE * TDFsmall,
     __global float * radiusSmall,
-    __global float * TDFlarge,
+    __global TDF_TYPE * TDFlarge,
     __global float * radiusLarge
     ) {
     uint i = get_global_id(0);
@@ -602,19 +573,23 @@ __kernel void combine(
 
 __kernel void initGrowing(
 	__read_only image3d_t centerline,
-	__write_only image3d_t initSegmentation
+	__write_only image3d_t initSegmentation,
+	__read_only image3d_t avgRadius
 	) {
     int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
     if(read_imagei(centerline, sampler, pos).x == 1) {
+    	float radius = read_imagef(avgRadius, sampler, pos).x;
+    	int N = min(max(1, (int)round(radius/2.0f)), 4);
+
 	
-        for(int a = -1; a < 2; a++) {
-        for(int b = -1; b < 2; b++) {
-        for(int c = -1; c < 2; c++) {
+        for(int a = -N; a < N+1; a++) {
+        for(int b = -N; b < N+1; b++) {
+        for(int c = -N; c < N+1; c++) {
             int4 n;
             n.x = pos.x + a;
             n.y = pos.y + b;
             n.z = pos.z + c;
-	    if(read_imagei(centerline, sampler, n).x == 0)
+	    if(read_imagei(centerline, sampler, n).x == 0 /*&& length((float3)(a,b,c)) <= N*/)
 	    write_imagei(initSegmentation, n, 2);
         }}}
 	}
@@ -656,7 +631,7 @@ __kernel void grow(
 		FNY.x /= FNY.w;
 		FNY.y /= FNY.w;
 		FNY.z /= FNY.w;
-	    if(FNY.w > FNXw || FNXw < 0.1f) {
+	    if(FNY.w > FNXw /*|| FNXw < 0.1f*/) {
 
 		int4 Z;
 		float maxDotProduct = -2.0f;
@@ -977,9 +952,9 @@ __kernel void dilate(
     int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
 
     if(read_imagei(volume, sampler, pos).x == 1) {
-    for(int a = -1; a < 2 ; a++) { 
-        for(int b = -1; b < 2 ; b++) { 
-            for(int c = -1; c < 2 ; c++) { 
+    for(int a = -1; a < 2 ; a++) {
+        for(int b = -1; b < 2 ; b++) {
+            for(int c = -1; c < 2 ; c++) {
                 int4 nPos = pos + (int4)(a,b,c,0);
 		write_imagei(result, nPos, 1);
             }
@@ -998,9 +973,9 @@ __kernel void erode(
     if(value == 1) {
 
     bool keep = true;
-    for(int a = -1; a < 2 ; a++) { 
-        for(int b = -1; b < 2 ; b++) { 
-            for(int c = -1; c < 2 ; c++) { 
+    for(int a = -1; a < 2 ; a++) {
+        for(int b = -1; b < 2 ; b++) {
+            for(int c = -1; c < 2 ; c++) {
                 keep = (read_imagei(volume, sampler, pos + (int4)(a,b,c,0)).x == 1 && keep);
             }
         }
@@ -1095,7 +1070,7 @@ __constant float sinValues[32] = {0.0f, 0.841471f, 0.909297f, 0.14112f, -0.75680
 
 __kernel void circleFittingTDF(
         __read_only image3d_t vectorField,
-        __global float * T,
+        __global TDF_TYPE * T,
         __global float * Radius,
         __private float rMin,
         __private float rMax,
@@ -1194,7 +1169,7 @@ __kernel void circleFittingTDF(
 	*/
 
 	// Store result
-    T[LPOS(pos)] = maxSum;
+    T[LPOS(pos)] = FLOAT_TO_UNORM16(maxSum);
     Radius[LPOS(pos)] = maxRadius;
 }
 
@@ -1367,7 +1342,6 @@ __kernel void splineTDF(
 
 
 __kernel void dd(
-    __read_only image3d_t vectorField,
     __read_only image3d_t TDF,
     __read_only image3d_t centerpointCandidates,
     __write_only image3d_t centerpoints,
@@ -1484,7 +1458,6 @@ __kernel void findCandidateCenterpoints2(
 			} else {
 			*/
 			if(SQR_MAG(n) < SQR_MAG(pos)) {
-			//if(TS.TDF[POS(n)] > TS.TDF[POS(pos)]) {
 				invalid = true;
 				break;
 			//}
@@ -1882,5 +1855,4 @@ void eigen_decomposition(float A[SIZE][SIZE], float V[SIZE][SIZE], float d[SIZE]
   tred2(V, d, e);
   tql2(V, d, e);
 }
-
 

@@ -1,0 +1,10 @@
+centerline-method gpu
+fmax 0.05
+gvf-mu 0.05
+m-low 0.05
+maximum 600
+minimum 200
+mode black
+radius-max 10
+radius-min 1
+small-blur 0.5

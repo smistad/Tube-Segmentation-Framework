@@ -7,6 +7,7 @@
 #include "SIPL/Types.hpp"
 #include <iostream>
 #include <string>
+#include <set>
 #ifdef CPP11
 #include <unordered_map>
 using std::unordered_map;
@@ -30,7 +31,7 @@ typedef struct TubeSegmentation {
 
 class TSFOutput {
 public:
-	TSFOutput(OpenCL * ocl, SIPL::int3 * size);
+	TSFOutput(OpenCL * ocl, SIPL::int3 * size, bool TDFis16bit = false);
 	bool hasSegmentation() { return deviceHasSegmentation || hostHasSegmentation; };
 	bool hasCenterlineVoxels() { return deviceHasCenterlineVoxels || hostHasCenterlineVoxels; };
 	bool hasTDF() { return deviceHasTDF || hostHasTDF; };
@@ -48,13 +49,17 @@ public:
 	~TSFOutput();
 	SIPL::int3 getShiftVector() const;
 	void setShiftVector(SIPL::int3 shiftVector);
+	SIPL::float3 getSpacing() const;
+	void setSpacing(SIPL::float3 spacing);
 
 private:
 	cl::Image3D* oclCenterlineVoxels;
 	cl::Image3D* oclSegmentation;
 	cl::Image3D* oclTDF;
 	SIPL::int3* size;
+	SIPL::float3 spacing;
 	SIPL::int3 shiftVector;
+	bool TDFis16bit;
 	bool hostHasSegmentation;
 	bool hostHasCenterlineVoxels;
 	bool hostHasTDF;
@@ -66,6 +71,17 @@ private:
 	float* TDF;
 	OpenCL* ocl;
 };
+
+class TSFGarbageCollector {
+    public:
+        void addMemObject(cl::Memory * mem);
+        void deleteMemObject(cl::Memory * mem);
+        void deleteAllMemObjects();
+        ~TSFGarbageCollector();
+    private:
+        std::set<cl::Memory *> memObjects;
+};
+
 /*
  * For debugging.
  */
@@ -73,11 +89,11 @@ void print(paramList parameters);
 
 cl::Image3D readDatasetAndTransfer(OpenCL &ocl, std::string, paramList &parameters, SIPL::int3 *, TSFOutput *);
 
-void runCircleFittingAndRidgeTraversal(OpenCL *, cl::Image3D &dataset, SIPL::int3 * size, paramList &parameters, TSFOutput *);
+void runCircleFittingAndRidgeTraversal(OpenCL *, cl::Image3D *dataset, SIPL::int3 * size, paramList &parameters, TSFOutput *);
 
-void runCircleFittingAndNewCenterlineAlg(OpenCL *, cl::Image3D &dataset, SIPL::int3 * size, paramList &parameters, TSFOutput *);
+void runCircleFittingAndNewCenterlineAlg(OpenCL *, cl::Image3D *dataset, SIPL::int3 * size, paramList &parameters, TSFOutput *);
 
-void runCircleFittingAndTest(OpenCL *, cl::Image3D &dataset, SIPL::int3 * size, paramList &parameters, TSFOutput *);
+void runCircleFittingAndTest(OpenCL *, cl::Image3D *dataset, SIPL::int3 * size, paramList &parameters, TSFOutput *);
 
 
 TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_dir);

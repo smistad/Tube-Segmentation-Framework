@@ -8,6 +8,6 @@ small-blur 2.0
 large-blur 3.0
 cropping threshold
 cropping-threshold 50
-min-tree-length 10
+min-tree-length 50
 sphere-segmentation
 cube-size 4

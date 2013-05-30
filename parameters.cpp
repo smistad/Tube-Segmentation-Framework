@@ -192,9 +192,9 @@ paramList getParameters(int argc, char ** argv) {
 	paramList parameters = initParameters(std::string(PARAMETERS_DIR));
 
     // Go through each parameter, first parameter is filename
-    // Try to see if the parameters parameter is set
-    for(int i = 2; i < argc; i++) {
-        string token = argv[i];
+    // Try to see if the parameters parameter and centerline-method is set
+	for(int i = 2; i < argc; i++) {
+		string token = argv[i];
         if(token.substr(0,2) == "--") {
             // Check to see if the parameter has a value
             string nextToken = "";
@@ -204,7 +204,7 @@ paramList getParameters(int argc, char ** argv) {
 					i++;
                 }
             }
-            if(token.substr(2) == "parameters")
+            if(token.substr(2) == "parameters" || token.substr(2) == "centerline-method")
 				setParameter(parameters, token.substr(2), nextToken);
         }
     }
