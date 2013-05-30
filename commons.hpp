@@ -1,10 +1,12 @@
 #ifndef COMMONS_H
 #define COMMONS_H
-#include <CL/cl.hpp>
+#include "OpenCLUtilities/openCLUtilities.hpp"
 typedef struct OpenCL {
     cl::Context context;
     cl::CommandQueue queue;
     cl::Program program;
+    cl::Device device;
+    cl::Platform platform;
 } OpenCL;
 
 #ifdef WIN32

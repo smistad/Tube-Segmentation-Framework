@@ -1,11 +1,15 @@
 #include "tube-segmentation.hpp"
 #include "SIPL/Types.hpp"
+#ifdef USE_SIPL_VISUALIZATION
+#include "SIPL/Core.hpp"
+#endif
 #include <boost/iostreams/device/mapped_file.hpp>
 #include <queue>
 #include <stack>
 #include <list>
 #include <cstdio>
 #include <limits>
+#include <fstream>
 #ifdef CPP11
 #include <unordered_set>
 using std::unordered_set;
@@ -14,17 +18,19 @@ using std::unordered_set;
 using boost::unordered_set;
 #endif
 #include "histogram-pyramids.hpp"
-#include "tsf-config.h"
+//#include "tsf-config.h"
 
 //#define TIMING
-
-#ifdef TIMING
+#ifdef CPP11
 #include <chrono>
-#define INIT_TIMER auto timerStart = std::chrono::high_resolution_clock::now();
-#define START_TIMER  timerStart = std::chrono::high_resolution_clock::now();
+using std::chrono::high_resolution_clock;
+using std::chrono::duration_cast;
+using std::chrono::milliseconds;
+#define INIT_TIMER high_resolution_clock::time_point timerStart = high_resolution_clock::now();
+#define START_TIMER  timerStart = high_resolution_clock::now();
 #define STOP_TIMER(name)  std::cout << "RUNTIME of " << name << ": " << \
-        std::chrono::duration_cast<std::chrono::milliseconds>( \
-                            std::chrono::high_resolution_clock::now()-timerStart \
+        duration_cast<milliseconds>( \
+                            high_resolution_clock::now()-timerStart \
                     ).count() << " ms " << std::endl;
 #else
 #define INIT_TIMER
@@ -43,8 +49,26 @@ using boost::unordered_set;
 
 #define MAX(a,b) a > b ? a : b
 
+void print(paramList parameters){
+	unordered_map<std::string, BoolParameter>::iterator bIt;
+	unordered_map<std::string, NumericParameter>::iterator nIt;
+	unordered_map<std::string, StringParameter>::iterator sIt;
 
-TSFOutput * run(std::string filename, paramList &parameters) {
+	for(bIt = parameters.bools.begin(); bIt != parameters.bools.end(); ++bIt){
+		std::cout << bIt->first << " = " << bIt->second.get() << " " << bIt->second.getDescription() << " "  << bIt->second.getGroup() << std::endl;
+	}
+
+	for(nIt = parameters.numerics.begin(); nIt != parameters.numerics.end(); ++nIt){
+		std::cout << nIt->first << " = " << nIt->second.get() << " " << nIt->second.getDescription() << " "  << nIt->second.getGroup() << std::endl;
+	}
+	for(sIt = parameters.strings.begin(); sIt != parameters.strings.end(); ++sIt){
+		std::cout << sIt->first << " = " << sIt->second.get() << " " << sIt->second.getDescription() << " "  << sIt->second.getGroup() << std::endl;
+	}
+}
+
+TSFGarbageCollector * GC;
+int runCounter = 0;
+TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_dir) {
 
     INIT_TIMER
     OpenCL * ocl = new OpenCL;
@@ -55,51 +79,101 @@ TSFOutput * run(std::string filename, paramList &parameters) {
     	type = CL_DEVICE_TYPE_CPU;
     }
 	ocl->context = createCLContext(type);
+	ocl->platform = getPlatform(type, VENDOR_ANY);
 
     // Select first device
-    cl::vector<cl::Device> devices = ocl->context.getInfo<CL_CONTEXT_DEVICES>();
+    VECTOR_CLASS<cl::Device> devices = ocl->context.getInfo<CL_CONTEXT_DEVICES>();
     std::cout << "Using device: " << devices[0].getInfo<CL_DEVICE_NAME>() << std::endl;
-    ocl->queue = cl::CommandQueue(ocl->context, devices[0], CL_QUEUE_PROFILING_ENABLE);
+    ocl->device = devices[0];
+    if(getParamBool(parameters, "timing")) {
+        ocl->queue = cl::CommandQueue(ocl->context, devices[0], CL_QUEUE_PROFILING_ENABLE);
+    } else {
+        ocl->queue = cl::CommandQueue(ocl->context, devices[0]);
+    }
 
     // Query the size of available memory
     unsigned int memorySize = devices[0].getInfo<CL_DEVICE_GLOBAL_MEM_SIZE>();
     std::cout << "Available memory on selected device " << (double)memorySize/(1024*1024) << " MB "<< std::endl;
+    std::cout << "Max alloc size: " << (float)devices[0].getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE>()/(1024*1024) << " MB " << std::endl;
+
+    if(ocl->platform.getInfo<CL_PLATFORM_VENDOR>().substr(0,5) == "Apple")
+        setParameter(parameters, "16bit-vectors", "false");
 
     // Compile and create program
     if(!getParamBool(parameters, "buffers-only") && (int)devices[0].getInfo<CL_DEVICE_EXTENSIONS>().find("cl_khr_3d_image_writes") > -1) {
-    	std::string filename = std::string(KERNELS_DIR)+"/kernels.cl";
-        ocl->program = buildProgramFromSource(ocl->context, filename.c_str());
+    	std::string filename = kernel_dir+"/kernels.cl";
+        std::string buildOptions = "";
+        if(getParamBool(parameters, "16bit-vectors")) {
+        	buildOptions = "-D VECTORS_16BIT";
+        }
+        ocl->program = buildProgramFromSource(ocl->context, filename, buildOptions);
         BoolParameter v = parameters.bools["3d_write"];
         v.set(true);
         parameters.bools["3d_write"] = v;
     } else {
+        std::cout << "NOTE: Writing to 3D textures is not supported on the selected device." << std::endl;
         BoolParameter v = parameters.bools["3d_write"];
         v.set(false);
         parameters.bools["3d_write"] = v;
-        std::string filename = std::string(KERNELS_DIR)+"/kernels_no_3d_write.cl";
-        ocl->program = buildProgramFromSource(ocl->context, filename.c_str());
-        std::cout << "NOTE: Writing to 3D textures is not supported on the selected device." << std::endl;
+        std::string filename = kernel_dir+"/kernels_no_3d_write.cl";
+        std::string buildOptions = "";
+        if(getParamBool(parameters, "16bit-vectors")) {
+        	buildOptions = "-D VECTORS_16BIT";
+        	std::cout << "NOTE: Forcing the use of 16 bit buffers. This is slow, but uses half the memory." << std::endl;
+        }
+        ocl->program = buildProgramFromSource(ocl->context, filename, buildOptions);
     }
 
-    START_TIMER
+    if(getParamBool(parameters, "timer-total")) {
+		START_TIMER
+    }
     SIPL::int3 * size = new SIPL::int3();
-    TSFOutput * output = new TSFOutput(ocl, size);
+    GC = new TSFGarbageCollector;
+    TSFOutput * output = new TSFOutput(ocl, size, getParamBool(parameters, "16bit-vectors"));
     try {
         // Read dataset and transfer to device
-        cl::Image3D dataset = readDatasetAndTransfer(*ocl, filename, parameters, size, output);
+        cl::Image3D * dataset = new cl::Image3D;
+        GC->addMemObject(dataset);
+        *dataset = readDatasetAndTransfer(*ocl, filename, parameters, size, output);
+
+        // Calculate maximum memory usage
+        double totalSize = size->x*size->y*size->z;
+        double vectorTypeSize = getParamBool(parameters, "16bit-vectors") ? sizeof(short):sizeof(float);
+        double peakSize = totalSize*10.0*vectorTypeSize;
+        std::cout << "NOTE: Peak memory usage with current dataset size is: " << (double)peakSize/(1024*1024) << " MB " << std::endl;
+        if(peakSize > memorySize) {
+            std::cout << "WARNING: There may not be enough space available on the GPU to process this volume." << std::endl;
+            std::cout << "WARNING: Shrink volume with " << (double)(peakSize-memorySize)*100.0/peakSize << "% (" << (double)(peakSize-memorySize)/(1024*1024) << " MB) " << std::endl;
+        }
 
         // Run specified method on dataset
         if(getParamStr(parameters, "centerline-method") == "ridge") {
             runCircleFittingAndRidgeTraversal(ocl, dataset, size, parameters, output);
-        } else {
+        } else if(getParamStr(parameters, "centerline-method") == "gpu") {
             runCircleFittingAndNewCenterlineAlg(ocl, dataset, size, parameters, output);
+        } else if(getParamStr(parameters, "centerline-method") == "test") {
+            runCircleFittingAndTest(ocl, dataset, size, parameters, output);
         }
     } catch(cl::Error e) {
     	std::string str = "OpenCL error: " + std::string(getCLErrorString(e.err()));
+        GC->deleteAllMemObjects();
+        delete GC;
+        delete output;
+
+        if(e.err() == CL_INVALID_COMMAND_QUEUE && runCounter < 2) {
+            std::cout << "OpenCL error: Invalid Command Queue. Retrying..." << std::endl;
+            runCounter++;
+            return run(filename,parameters,kernel_dir);
+        }
+
         throw SIPL::SIPLException(str.c_str());
     }
     ocl->queue.finish();
-    STOP_TIMER("total")
+    if(getParamBool(parameters, "timer-total")) {
+		STOP_TIMER("total")
+    }
+    GC->deleteAllMemObjects();
+    delete GC;
     return output;
 }
 
@@ -131,6 +205,11 @@ void __stdcall freeData(cl_mem memobj, void * user_data) {
     delete[] data;
 }
 
+void __stdcall notify(cl_mem memobj, void * user_data) {
+    std::cout << "object was deleted" << std::endl;
+}
+
+
 
 typedef struct CenterlinePoint {
     int3 pos;
@@ -157,6 +236,7 @@ bool inBounds(SIPL::int3 pos, SIPL::int3 size) {
 #define LPOS(a,b,c) (a)+(b)*(size.x)+(c)*(size.x*size.y)
 #define M(a,b,c) 1-sqrt(pow(T.Fx[a+b*size.x+c*size.x*size.y],2.0f) + pow(T.Fy[a+b*size.x+c*size.x*size.y],2.0f) + pow(T.Fz[a+b*size.x+c*size.x*size.y],2.0f))
 #define SQR_MAG(pos) sqrt(pow(T.Fx[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f) + pow(T.Fy[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f) + pow(T.Fz[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f))
+#define SQR_MAG_SMALL(pos) sqrt(pow(T.FxSmall[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f) + pow(T.FySmall[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f) + pow(T.FzSmall[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f))
 
 #define SIZE 3
 
@@ -279,7 +359,7 @@ void tred2(float V[SIZE][SIZE], float d[SIZE], float e[SIZE]) {
   }
   V[SIZE-1][SIZE-1] = 1.0f;
   e[0] = 0.0f;
-} 
+}
 
 // Symmetric tridiagonal QL algorithm.
 
@@ -377,7 +457,7 @@ void tql2(float V[SIZE][SIZE], float d[SIZE], float e[SIZE]) {
     d[l] = d[l] + f;
     e[l] = 0.0f;
   }
-  
+
   // Sort eigenvalues and corresponding vectors.
 
   for (int i = 0; i < SIZE-1; i++) {
@@ -529,7 +609,7 @@ float3 getTubeDirection(TubeSegmentation &T, int3 pos, int3 size) {
     float3 Fx = gradient(T, pos,0,1,size);
     float3 Fy = gradient(T, pos,1,2,size);
     float3 Fz = gradient(T, pos,2,3,size);
-    
+
     float Hessian[3][3] = {
         {Fx.x, Fy.x, Fz.x},
         {Fy.x, Fy.y, Fz.y},
@@ -548,7 +628,7 @@ void doEigen(TubeSegmentation &T, int3 pos, int3 size, float3 * lambda, float3 *
     float3 Fx = gradient(T, pos,0,1,size);
     float3 Fy = gradient(T, pos,1,2,size);
     float3 Fz = gradient(T, pos,2,3,size);
-    
+
     float Hessian[3][3] = {
         {Fx.x, Fy.x, Fz.x},
         {Fy.x, Fy.y, Fz.y},
@@ -588,10 +668,10 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList &parame
 
     // Create queue
     std::priority_queue<point, std::vector<point>, PointComparison> queue;
-    
+
     START_TIMER
     // Collect all valid start points
-    #pragma omp parallel for 
+    #pragma omp parallel for
     for(int z = 2; z < size.z-2; z++) {
         for(int y = 2; y < size.y-2; y++) {
             for(int x = 2; x < size.x-2; x++) {
@@ -604,7 +684,7 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList &parame
                     for(int b = -1; b < 2; b++) {
                         for(int c = -1; c < 2; c++) {
                             int3 nPos(x+a,y+b,z+c);
-                            if(T.TDF[POS(nPos)] > T.TDF[POS(pos)]) {
+                            if(SQR_MAG(nPos) < SQR_MAG(pos)) {
                                 valid = false;
                                 break;
                             }
@@ -706,10 +786,10 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList &parame
                                 continue;
 
                             if(T.radius[POS(n)] >= 1.5f) {
-                                if(M(n.x,n.y,n.z) > M(maxPoint.x,maxPoint.y,maxPoint.z)) 
+                                if(M(n.x,n.y,n.z) > M(maxPoint.x,maxPoint.y,maxPoint.z))
                                 maxPoint = n;
                             } else {
-                                if(T.TDF[LPOS(n.x,n.y,n.z)]*M(n.x,n.y,n.z) > T.TDF[POS(maxPoint)]*M(maxPoint.x,maxPoint.y,maxPoint.z)) 
+                                if(T.TDF[LPOS(n.x,n.y,n.z)]*M(n.x,n.y,n.z) > T.TDF[POS(maxPoint)]*M(maxPoint.x,maxPoint.y,maxPoint.z))
                                 maxPoint = n;
                             }
 
@@ -764,7 +844,7 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList &parame
 
 
                         float maintain_dir = sign(dot(e1,t_i));
-                        float3 vec_sum; 
+                        float3 vec_sum;
                         vec_sum.x = maintain_dir*e1.x + t_i.x + t_i_1.x;
                         vec_sum.y = maintain_dir*e1.y + t_i.y + t_i_1.y;
                         vec_sum.z = maintain_dir*e1.z + t_i.z + t_i_1.z;
@@ -781,7 +861,7 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList &parame
                         // Create centerline point
                         CenterlinePoint p;
                         p.pos = position;
-                        p.next = &(stack.top()); // add previous 
+                        p.next = &(stack.top()); // add previous
                         if(T.radius[POS(p.pos)] > 3.0f) {
                             p.large = true;
                         } else {
@@ -866,7 +946,7 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList &parame
     for(it = centerlineDistances.begin(); it != centerlineDistances.end(); it++) {
         if(it->second > centerlineDistances[max])
             max = it->first;
-        if(it->second > TreeMin) 
+        if(it->second > TreeMin)
             trees.push_back(it->first);
     }
     std::list<int>::iterator it2;
@@ -897,7 +977,7 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList &parame
             }
             if(!valid)
                 returnCenterlines[i] = 0;
-                    
+
         }
     }
     STOP_TIMER("finding largest tree")
@@ -909,10 +989,10 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList &parame
 
 float * createBlurMask(float sigma, int * maskSizePointer) {
     int maskSize = (int)ceil(sigma/0.5f);
-    if(maskSize < 1) // cap min mask size at 3x3
+    if(maskSize < 1) // cap min mask size at 3x3x3
     	maskSize = 1;
-    if(maskSize > 8) // cap mask size at 17x17
-    	maskSize = 8;
+    if(maskSize > 5) // cap mask size at 11x11x11
+    	maskSize = 5;
     float * mask = new float[(maskSize*2+1)*(maskSize*2+1)*(maskSize*2+1)];
     float sum = 0.0f;
     for(int a = -maskSize; a < maskSize+1; a++) {
@@ -932,16 +1012,466 @@ float * createBlurMask(float sigma, int * maskSizePointer) {
     return mask;
 }
 
-void runCircleFittingMethod(OpenCL &ocl, Image3D &dataset, SIPL::int3 size, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radiusImage) {
-    // Set up parameters
+Image3D runFastGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIPL::int3 &size) {
+
     const int GVFIterations = getParam(parameters, "gvf-iterations");
+    const bool no3Dwrite = !getParamBool(parameters, "3d_write");
+    const float MU = getParam(parameters, "gvf-mu");
+    const int totalSize = size.x*size.y*size.z;
+
+    Kernel GVFInitKernel = Kernel(ocl.program, "GVF3DInit");
+    Kernel GVFIterationKernel = Kernel(ocl.program, "GVF3DIteration");
+    Kernel GVFFinishKernel = Kernel(ocl.program, "GVF3DFinish");
+    Image3D resultVectorField;
+
+    std::cout << "Running GVF with " << GVFIterations << " iterations " << std::endl;
+    if(no3Dwrite) {
+    	int vectorFieldSize = sizeof(float);
+    	if(getParamBool(parameters, "16bit-vectors"))
+    		vectorFieldSize = sizeof(short);
+        // Create auxillary buffers
+        Buffer * vectorFieldBuffer = new Buffer(
+                ocl.context,
+                CL_MEM_READ_WRITE,
+                3*vectorFieldSize*totalSize
+        );
+        GC->addMemObject(vectorFieldBuffer);
+        Buffer * vectorFieldBuffer1 = new Buffer(
+                ocl.context,
+                CL_MEM_READ_WRITE,
+                3*vectorFieldSize*totalSize
+        );
+        GC->addMemObject(vectorFieldBuffer1);
+
+        GVFInitKernel.setArg(0, *vectorField);
+        GVFInitKernel.setArg(1, *vectorFieldBuffer);
+        ocl.queue.enqueueNDRangeKernel(
+                GVFInitKernel,
+                NullRange,
+                NDRange(size.x,size.y,size.z),
+                NullRange
+        );
+
+        // Run iterations
+        GVFIterationKernel.setArg(0, *vectorField);
+        GVFIterationKernel.setArg(3, MU);
+
+        for(int i = 0; i < GVFIterations; i++) {
+            if(i % 2 == 0) {
+                GVFIterationKernel.setArg(1, *vectorFieldBuffer);
+                GVFIterationKernel.setArg(2, *vectorFieldBuffer1);
+            } else {
+                GVFIterationKernel.setArg(1, *vectorFieldBuffer1);
+                GVFIterationKernel.setArg(2, *vectorFieldBuffer);
+            }
+                ocl.queue.enqueueNDRangeKernel(
+                        GVFIterationKernel,
+                        NullRange,
+                        NDRange(size.x,size.y,size.z),
+                        NDRange(4,4,4)
+                );
+        }
+        ocl.queue.finish(); //This finish is necessary
+        GC->deleteMemObject(vectorFieldBuffer1);
+        GC->deleteMemObject(vectorField);
+
+        Buffer finalVectorFieldBuffer = Buffer(
+                ocl.context,
+                CL_MEM_WRITE_ONLY,
+                4*vectorFieldSize*totalSize
+        );
+
+        // Copy vector field to image
+        GVFFinishKernel.setArg(0, *vectorFieldBuffer);
+        GVFFinishKernel.setArg(1, finalVectorFieldBuffer);
+
+        ocl.queue.enqueueNDRangeKernel(
+                GVFFinishKernel,
+                NullRange,
+                NDRange(size.x,size.y,size.z),
+                NDRange(4,4,4)
+        );
+        ocl.queue.finish();
+        GC->deleteMemObject(vectorFieldBuffer);
+
+		cl::size_t<3> offset;
+		offset[0] = 0;
+		offset[1] = 0;
+		offset[2] = 0;
+		cl::size_t<3> region;
+		region[0] = size.x;
+		region[1] = size.y;
+		region[2] = size.z;
+
+        // Copy buffer contents to image
+		if(getParamBool(parameters, "16bit-vectors")) {
+            resultVectorField = Image3D(ocl.context, CL_MEM_READ_ONLY, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
+        } else {
+            resultVectorField = Image3D(ocl.context, CL_MEM_READ_ONLY, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
+        }
+        ocl.queue.enqueueCopyBufferToImage(
+                finalVectorFieldBuffer,
+                resultVectorField,
+                0,
+                offset,
+                region
+        );
+
+    } else {
+        Image3D vectorField1;
+        Image3D initVectorField;
+        if(getParamBool(parameters, "16bit-vectors")) {
+            vectorField1 = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
+            initVectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RG, CL_SNORM_INT16), size.x, size.y, size.z);
+        } else {
+            vectorField1 = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
+            initVectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RG, CL_FLOAT), size.x, size.y, size.z);
+        }
+
+        // init vectorField from image
+        GVFInitKernel.setArg(0, *vectorField);
+        GVFInitKernel.setArg(1, vectorField1);
+        GVFInitKernel.setArg(2, initVectorField);
+        ocl.queue.enqueueNDRangeKernel(
+                GVFInitKernel,
+                NullRange,
+                NDRange(size.x,size.y,size.z),
+                NDRange(4,4,4)
+        );
+        // Run iterations
+        GVFIterationKernel.setArg(0, initVectorField);
+        GVFIterationKernel.setArg(3, MU);
+
+        for(int i = 0; i < GVFIterations; i++) {
+            if(i % 2 == 0) {
+                GVFIterationKernel.setArg(1, vectorField1);
+                GVFIterationKernel.setArg(2, *vectorField);
+            } else {
+                GVFIterationKernel.setArg(1, *vectorField);
+                GVFIterationKernel.setArg(2, vectorField1);
+            }
+                ocl.queue.enqueueNDRangeKernel(
+                        GVFIterationKernel,
+                        NullRange,
+                        NDRange(size.x,size.y,size.z),
+                        NDRange(4,4,4)
+                );
+        }
+        ocl.queue.finish();
+        GC->deleteMemObject(vectorField);
+
+        // Copy vector field to image
+		if(getParamBool(parameters, "16bit-vectors")) {
+            resultVectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
+        } else {
+            resultVectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
+        }
+        GVFFinishKernel.setArg(0, vectorField1);
+        GVFFinishKernel.setArg(1, resultVectorField);
+
+        ocl.queue.enqueueNDRangeKernel(
+                GVFFinishKernel,
+                NullRange,
+                NDRange(size.x,size.y,size.z),
+                NDRange(4,4,4)
+        );
+    }
+    return resultVectorField;
+}
+Image3D runLowMemoryGVF(OpenCL &ocl, Image3D * vectorField, paramList &parameters, SIPL::int3 &size) {
+
+    const int GVFIterations = getParam(parameters, "gvf-iterations");
+    const bool no3Dwrite = !getParamBool(parameters, "3d_write");
+    const float MU = getParam(parameters, "gvf-mu");
+    const int totalSize = size.x*size.y*size.z;
+
+    Kernel GVFInitKernel = Kernel(ocl.program, "GVF3DInit_one_component");
+    Kernel GVFIterationKernel = Kernel(ocl.program, "GVF3DIteration_one_component");
+    Kernel GVFFinishKernel = Kernel(ocl.program, "GVF3DFinish_one_component");
+
+    Image3D resultVectorField;
+    std::cout << "Running GVF with " << GVFIterations << " iterations " << std::endl;
+    if(no3Dwrite) {
+    	int vectorFieldSize = sizeof(float);
+    	if(getParamBool(parameters, "16bit-vectors")) {
+    		vectorFieldSize = sizeof(short);
+    	}
+    	Buffer *vectorFieldX;
+    	Buffer *vectorFieldY;
+    	Buffer *vectorFieldZ;
+        for(int component = 1; component < 4; component++) {
+
+        	Buffer * vectorField1 = new Buffer(
+                ocl.context,
+                CL_MEM_READ_WRITE,
+                vectorFieldSize*totalSize
+			);
+            GC->addMemObject(vectorField1);
+			Buffer initVectorField = Buffer(
+                ocl.context,
+                CL_MEM_READ_WRITE,
+                2*vectorFieldSize*totalSize
+			);
+
+			GVFInitKernel.setArg(0, *vectorField);
+			GVFInitKernel.setArg(1, *vectorField1);
+			GVFInitKernel.setArg(2, initVectorField);
+			GVFInitKernel.setArg(3, component);
+			ocl.queue.enqueueNDRangeKernel(
+					GVFInitKernel,
+					NullRange,
+					NDRange(size.x,size.y,size.z),
+					NullRange
+			);
+			ocl.queue.finish();
+
+			Buffer vectorField2 = Buffer(
+                ocl.context,
+                CL_MEM_READ_WRITE,
+                vectorFieldSize*totalSize
+			);
+
+			// Run iterations
+			GVFIterationKernel.setArg(0, initVectorField);
+			GVFIterationKernel.setArg(3, MU);
+
+			for(int i = 0; i < GVFIterations; i++) {
+				if(i % 2 == 0) {
+					GVFIterationKernel.setArg(1, *vectorField1);
+					GVFIterationKernel.setArg(2, vectorField2);
+				} else {
+					GVFIterationKernel.setArg(1, vectorField2);
+					GVFIterationKernel.setArg(2, *vectorField1);
+				}
+					ocl.queue.enqueueNDRangeKernel(
+							GVFIterationKernel,
+							NullRange,
+							NDRange(size.x,size.y,size.z),
+							NullRange
+					);
+			}
+			if(component == 1) {
+				vectorFieldX = vectorField1;
+			} else if(component == 2) {
+				vectorFieldY = vectorField1;
+			} else {
+				vectorFieldZ = vectorField1;
+			}
+			ocl.queue.finish();
+			std::cout << "finished component " << component << std::endl;
+        }
+        GC->deleteMemObject(vectorField);
+
+
+		bool usingTwoBuffers = false;
+    	int maxZ = size.z;
+        // Create auxillary buffer
+        Buffer vectorFieldBuffer, vectorFieldBuffer2;
+        unsigned int maxBufferSize = ocl.device.getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE>();
+        if(getParamBool(parameters, "16bit-vectors")) {
+			if(4*sizeof(short)*totalSize < maxBufferSize) {
+				vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(short)*totalSize);
+			} else {
+				std::cout << "NOTE: Could not fit entire vector field into one buffer. Splitting buffer in two." << std::endl;
+				// create two buffers
+				unsigned int limit = (float)maxBufferSize / (4*sizeof(short));
+				maxZ = floor((float)limit/(size.x*size.y));
+				unsigned int splitSize = maxZ*size.x*size.y*4*sizeof(short);
+				vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, splitSize);
+				vectorFieldBuffer2 = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(short)*totalSize-splitSize);
+				usingTwoBuffers = true;
+			}
+        } else {
+			if(4*sizeof(float)*totalSize < maxBufferSize) {
+				vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(float)*totalSize);
+			} else {
+				std::cout << "NOTE: Could not fit entire vector field into one buffer. Splitting buffer in two." << std::endl;
+				// create two buffers
+				unsigned int limit = (float)maxBufferSize / (4*sizeof(float));
+				maxZ = floor((float)limit/(size.x*size.y));
+				unsigned int splitSize = maxZ*size.x*size.y*4*sizeof(float);
+				vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, splitSize);
+				vectorFieldBuffer2 = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(float)*totalSize-splitSize);
+				usingTwoBuffers = true;
+    		}
+        }
+
+        // Copy vector field to image
+        GVFFinishKernel.setArg(0, *vectorFieldX);
+        GVFFinishKernel.setArg(1, *vectorFieldY);
+        GVFFinishKernel.setArg(2, *vectorFieldZ);
+        GVFFinishKernel.setArg(3, vectorFieldBuffer);
+        GVFFinishKernel.setArg(4, vectorFieldBuffer2);
+        GVFFinishKernel.setArg(5, maxZ);
+
+        ocl.queue.enqueueNDRangeKernel(
+                GVFFinishKernel,
+                NullRange,
+                NDRange(size.x,size.y,size.z),
+                NullRange
+        );
+
+        ocl.queue.finish();
+        GC->deleteMemObject(vectorFieldX);
+        GC->deleteMemObject(vectorFieldY);
+        GC->deleteMemObject(vectorFieldZ);
+
+		cl::size_t<3> offset;
+		offset[0] = 0;
+		offset[1] = 0;
+		offset[2] = 0;
+		cl::size_t<3> region;
+		region[0] = size.x;
+		region[1] = size.y;
+		region[2] = size.z;
+
+		if(getParamBool(parameters, "16bit-vectors")) {
+            resultVectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
+        } else {
+            resultVectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
+        }
+		if(usingTwoBuffers) {
+			cl::size_t<3> region2;
+			region2[0] = size.x;
+			region2[1] = size.y;
+			unsigned int limit;
+			if(getParamBool(parameters, "16bit-vectors")) {
+				limit = (float)maxBufferSize / (4*sizeof(short));
+			} else {
+				limit = (float)maxBufferSize / (4*sizeof(float));
+			}
+			region2[2] = floor((float)limit/(size.x*size.y));
+			ocl.queue.enqueueCopyBufferToImage(
+					vectorFieldBuffer,
+					resultVectorField,
+					0,
+					offset,
+					region2
+			);
+			cl::size_t<3> offset2;
+			offset2[0] = 0;
+			offset2[1] = 0;
+			offset2[2] = region2[2];
+			cl::size_t<3> region3;
+			region3[0] = size.x;
+			region3[1] = size.y;
+			region3[2] = size.z-region2[2];
+			ocl.queue.enqueueCopyBufferToImage(
+					vectorFieldBuffer2,
+					resultVectorField,
+					0,
+					offset2,
+					region3
+			);
+		} else {
+			// Copy buffer contents to image
+			ocl.queue.enqueueCopyBufferToImage(
+					vectorFieldBuffer,
+					resultVectorField,
+					0,
+					offset,
+					region
+			);
+		}
+
+    } else {
+        Image3D vectorFieldX, vectorFieldY, vectorFieldZ;
+        for(int component = 1; component < 4; component++) {
+        	Image3D initVectorField, vectorField1, vectorField2;
+        	if(getParamBool(parameters, "32bit-vectors")) {
+				vectorField1 = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_FLOAT), size.x, size.y, size.z);
+				vectorField2 = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_FLOAT), size.x, size.y, size.z);
+				initVectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RG, CL_FLOAT), size.x, size.y, size.z);
+			} else {
+				vectorField1 = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_SNORM_INT16), size.x, size.y, size.z);
+				vectorField2 = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_SNORM_INT16), size.x, size.y, size.z);
+				initVectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RG, CL_SNORM_INT16), size.x, size.y, size.z);
+			}
+
+			// init vectorField from image
+			GVFInitKernel.setArg(0, vectorField);
+			GVFInitKernel.setArg(1, vectorField1);
+			GVFInitKernel.setArg(2, initVectorField);
+			GVFInitKernel.setArg(3, component);
+			ocl.queue.enqueueNDRangeKernel(
+					GVFInitKernel,
+					NullRange,
+					NDRange(size.x,size.y,size.z),
+					NDRange(4,4,4)
+			);
+
+			// Run iterations
+			GVFIterationKernel.setArg(0, initVectorField);
+			GVFIterationKernel.setArg(3, MU);
+
+			for(int i = 0; i < GVFIterations; i++) {
+				if(i % 2 == 0) {
+					GVFIterationKernel.setArg(1, vectorField1);
+					GVFIterationKernel.setArg(2, vectorField2);
+				} else {
+					GVFIterationKernel.setArg(1, vectorField2);
+					GVFIterationKernel.setArg(2, vectorField1);
+				}
+				ocl.queue.enqueueNDRangeKernel(
+					GVFIterationKernel,
+					NullRange,
+					NDRange(size.x,size.y,size.z),
+					NDRange(4,4,4)
+				);
+			}
+			if(component == 1) {
+				vectorFieldX = vectorField1;
+			} else if(component == 2) {
+				vectorFieldY = vectorField1;
+			} else {
+				vectorFieldZ = vectorField1;
+			}
+			ocl.queue.finish();
+			std::cout << "finished component " << component << std::endl;
+        }
+
+		if(getParamBool(parameters, "16bit-vectors")) {
+            resultVectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
+        } else {
+            resultVectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
+        }
+        // Copy vector fields to image
+        GVFFinishKernel.setArg(0, vectorFieldX);
+        GVFFinishKernel.setArg(1, vectorFieldY);
+        GVFFinishKernel.setArg(2, vectorFieldZ);
+        GVFFinishKernel.setArg(3, resultVectorField);
+
+        ocl.queue.enqueueNDRangeKernel(
+                GVFFinishKernel,
+                NullRange,
+                NDRange(size.x,size.y,size.z),
+                NDRange(4,4,4)
+        );
+    }
+
+    return resultVectorField;
+}
+
+
+Image3D runGVF(OpenCL &ocl, Image3D * vectorField, paramList &parameters, SIPL::int3 &size, bool useLessMemory) {
+
+	if(useLessMemory) {
+		std::cout << "NOTE: Running slow GVF that uses less memory." << std::endl;
+		return runLowMemoryGVF(ocl,vectorField,parameters,size);
+	} else {
+		std::cout << "NOTE: Running fast GVF." << std::endl;
+		return runFastGVF(ocl,vectorField,parameters,size);
+	}
+}
+
+void runCircleFittingMethod(OpenCL &ocl, Image3D * dataset, SIPL::int3 size, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radiusImage) {
+    // Set up parameters
     const float radiusMin = getParam(parameters, "radius-min");
     const float radiusMax = getParam(parameters, "radius-max");
     const float radiusStep = getParam(parameters, "radius-step");
     const float Fmax = getParam(parameters, "fmax");
     const int totalSize = size.x*size.y*size.z;
     const bool no3Dwrite = !getParamBool(parameters, "3d_write");
-    const float MU = getParam(parameters, "gvf-mu");
     const int vectorSign = getParamStr(parameters, "mode") == "black" ? -1 : 1;
     const float smallBlurSigma = getParam(parameters, "small-blur");
 	const float largeBlurSigma = getParam(parameters,"large-blur");
@@ -965,16 +1495,16 @@ void runCircleFittingMethod(OpenCL &ocl, Image3D &dataset, SIPL::int3 size, para
     cl::Event startEvent, endEvent;
     cl_ulong start, end;
     INIT_TIMER
-
-    Image3D blurredVolume = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_FLOAT), size.x, size.y, size.z);
-    Buffer TDFsmall;
-    Buffer radiusSmall;
+    void * TDFsmall;
+    float * radiusSmall;
     if(radiusMin < 2.5f) {
+        Image3D * blurredVolume = new Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_FLOAT), size.x, size.y, size.z);
+        GC->addMemObject(blurredVolume);
     if(smallBlurSigma > 0) {
     	int maskSize = 1;
 		float * mask = createBlurMask(smallBlurSigma, &maskSize);
 		Buffer blurMask = Buffer(ocl.context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(float)*(maskSize*2+1)*(maskSize*2+1)*(maskSize*2+1), mask);
-		blurMask.setDestructorCallback((void (__stdcall *)(cl_mem,void *))(freeData<float>), (void *)mask);
+        blurMask.setDestructorCallback((void (__stdcall *)(cl_mem,void *))(freeData<float>), (void *)mask);
     	if(no3Dwrite) {
 			// Create auxillary buffer
 			Buffer blurredVolumeBuffer = Buffer(
@@ -984,7 +1514,7 @@ void runCircleFittingMethod(OpenCL &ocl, Image3D &dataset, SIPL::int3 size, para
 			);
 
 			// Run blurVolumeWithGaussian on dataset
-			blurVolumeWithGaussianKernel.setArg(0, dataset);
+			blurVolumeWithGaussianKernel.setArg(0, *dataset);
 			blurVolumeWithGaussianKernel.setArg(1, blurredVolumeBuffer);
 			blurVolumeWithGaussianKernel.setArg(2, maskSize);
 			blurVolumeWithGaussianKernel.setArg(3, blurMask);
@@ -998,15 +1528,15 @@ void runCircleFittingMethod(OpenCL &ocl, Image3D &dataset, SIPL::int3 size, para
 
 			ocl.queue.enqueueCopyBufferToImage(
 					blurredVolumeBuffer,
-					blurredVolume,
+					*blurredVolume,
 					0,
 					offset,
 					region
 			);
     	} else {
 			// Run blurVolumeWithGaussian on processedVolume
-			blurVolumeWithGaussianKernel.setArg(0, dataset);
-			blurVolumeWithGaussianKernel.setArg(1, blurredVolume);
+			blurVolumeWithGaussianKernel.setArg(0, *dataset);
+			blurVolumeWithGaussianKernel.setArg(1, *blurredVolume);
 			blurVolumeWithGaussianKernel.setArg(2, maskSize);
 			blurVolumeWithGaussianKernel.setArg(3, blurMask);
 			ocl.queue.enqueueNDRangeKernel(
@@ -1023,16 +1553,49 @@ void runCircleFittingMethod(OpenCL &ocl, Image3D &dataset, SIPL::int3 size, para
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
 }
+    Image3D * vectorFieldSmall;
     if(no3Dwrite) {
+    	bool usingTwoBuffers = false;
+    	int maxZ = size.z;
         // Create auxillary buffer
-        Buffer vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(float)*totalSize);
-        vectorField = Image3D(ocl.context, CL_MEM_READ_ONLY, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
- 
+        Buffer vectorFieldBuffer, vectorFieldBuffer2;
+        unsigned int maxBufferSize = ocl.device.getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE>();
+        if(getParamBool(parameters, "16bit-vectors")) {
+			if(4*sizeof(short)*totalSize < maxBufferSize) {
+				vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(short)*totalSize);
+			} else {
+				std::cout << "NOTE: Could not fit entire vector field into one buffer. Splitting buffer in two." << std::endl;
+				// create two buffers
+				unsigned int limit = (float)maxBufferSize / (4*sizeof(short));
+				maxZ = floor((float)limit/(size.x*size.y));
+				unsigned int splitSize = maxZ*size.x*size.y*4*sizeof(short);
+				vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, splitSize);
+				vectorFieldBuffer2 = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(short)*totalSize-splitSize);
+				usingTwoBuffers = true;
+			}
+        } else {
+			if(4*sizeof(float)*totalSize < maxBufferSize) {
+				vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(float)*totalSize);
+			} else {
+				std::cout << "NOTE: Could not fit entire vector field into one buffer. Splitting buffer in two." << std::endl;
+				// create two buffers
+				unsigned int limit = (float)maxBufferSize / (4*sizeof(float));
+				maxZ = floor((float)limit/(size.x*size.y));
+				unsigned int splitSize = maxZ*size.x*size.y*4*sizeof(float);
+				vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, splitSize);
+				vectorFieldBuffer2 = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(float)*totalSize-splitSize);
+				usingTwoBuffers = true;
+    		}
+        }
+
         // Run create vector field
-        createVectorFieldKernel.setArg(0, blurredVolume);
+        createVectorFieldKernel.setArg(0, *blurredVolume);
         createVectorFieldKernel.setArg(1, vectorFieldBuffer);
-        createVectorFieldKernel.setArg(2, Fmax);
-        createVectorFieldKernel.setArg(3, vectorSign);
+        createVectorFieldKernel.setArg(2, vectorFieldBuffer2);
+        createVectorFieldKernel.setArg(3, Fmax);
+        createVectorFieldKernel.setArg(4, vectorSign);
+        createVectorFieldKernel.setArg(5, maxZ);
+
 
         ocl.queue.enqueueNDRangeKernel(
                 createVectorFieldKernel,
@@ -1041,27 +1604,84 @@ if(getParamBool(parameters, "timing")) {
                 NullRange
         );
 
-        // Copy buffer contents to image
-        ocl.queue.enqueueCopyBufferToImage(
-                vectorFieldBuffer, 
-                vectorField, 
-                0,
-                offset,
-                region
-        );
+        if(smallBlurSigma > 0) {
+            ocl.queue.finish();
+            GC->deleteMemObject(blurredVolume);
+        }
+
+        if(getParamBool(parameters, "16bit-vectors")) {
+            vectorFieldSmall = new Image3D(
+                ocl.context, 
+                CL_MEM_READ_ONLY,
+                ImageFormat(CL_RGBA, CL_SNORM_INT16),
+                size.x,size.y,size.z
+            );
+        } else {
+            vectorFieldSmall = new Image3D(
+                    ocl.context, 
+                    CL_MEM_READ_ONLY,
+                    ImageFormat(CL_RGBA, CL_FLOAT),
+                size.x,size.y,size.z
+            );
+        }
+        GC->addMemObject(vectorFieldSmall);
+        if(usingTwoBuffers) {
+        	cl::size_t<3> region2;
+        	region2[0] = size.x;
+        	region2[1] = size.y;
+        	unsigned int limit;
+			if(getParamBool(parameters, "16bit-vectors")) {
+				limit = (float)maxBufferSize / (4*sizeof(short));
+			} else {
+				limit = (float)maxBufferSize / (4*sizeof(float));
+			}
+        	region2[2] = floor((float)limit/(size.x*size.y));
+ 			ocl.queue.enqueueCopyBufferToImage(
+					vectorFieldBuffer,
+					*vectorFieldSmall,
+					0,
+					offset,
+					region2
+			);
+ 			cl::size_t<3> offset2;
+ 			offset2[0] = 0;
+ 			offset2[1] = 0;
+ 			offset2[2] = region2[2];
+ 			cl::size_t<3> region3;
+ 			region3[0] = size.x;
+ 			region3[1] = size.y;
+ 			region3[2] = size.z-region2[2];
+			ocl.queue.enqueueCopyBufferToImage(
+					vectorFieldBuffer2,
+					*vectorFieldSmall,
+					0,
+					offset2,
+					region3
+			);
+        } else {
+			// Copy buffer contents to image
+			ocl.queue.enqueueCopyBufferToImage(
+					vectorFieldBuffer,
+					*vectorFieldSmall,
+					0,
+					offset,
+					region
+			);
+        }
 
     } else {
         if(getParamBool(parameters, "32bit-vectors")) {
             std::cout << "NOTE: Using 32 bit vectors" << std::endl;
-            vectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
+            vectorFieldSmall = new Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
         } else {
             std::cout << "NOTE: Using 16 bit vectors" << std::endl;
-            vectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
+            vectorFieldSmall = new Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
         }
-     
+        GC->addMemObject(vectorFieldSmall);
+
         // Run create vector field
-        createVectorFieldKernel.setArg(0, blurredVolume);
-        createVectorFieldKernel.setArg(1, vectorField);
+        createVectorFieldKernel.setArg(0, *blurredVolume);
+        createVectorFieldKernel.setArg(1, *vectorFieldSmall);
         createVectorFieldKernel.setArg(2, Fmax);
         createVectorFieldKernel.setArg(3, vectorSign);
 
@@ -1072,8 +1692,13 @@ if(getParamBool(parameters, "timing")) {
                 NDRange(4,4,4)
         );
 
+    if(smallBlurSigma > 0) {
+        ocl.queue.finish();
+        GC->deleteMemObject(blurredVolume);
     }
-       
+    }
+
+
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
@@ -1085,11 +1710,18 @@ if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
 }
     // Run circle fitting TDF kernel
-    TDFsmall = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
-    radiusSmall = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
-    circleFittingTDFKernel.setArg(0, vectorField);
-    circleFittingTDFKernel.setArg(1, TDFsmall);
-    circleFittingTDFKernel.setArg(2, radiusSmall);
+    Buffer * TDFsmallBuffer;
+    if(getParamBool(parameters, "16bit-vectors")) {
+        TDFsmallBuffer = new Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(short)*totalSize);
+    } else {
+        TDFsmallBuffer = new Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
+    }
+    GC->addMemObject(TDFsmallBuffer);
+    Buffer * radiusSmallBuffer = new Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
+    GC->addMemObject(radiusSmallBuffer);
+    circleFittingTDFKernel.setArg(0, *vectorFieldSmall);
+    circleFittingTDFKernel.setArg(1, *TDFsmallBuffer);
+    circleFittingTDFKernel.setArg(2, *radiusSmallBuffer);
     circleFittingTDFKernel.setArg(3, radiusMin);
     circleFittingTDFKernel.setArg(4, 3.0f);
     circleFittingTDFKernel.setArg(5, 0.5f);
@@ -1101,13 +1733,19 @@ if(getParamBool(parameters, "timing")) {
             NDRange(4,4,4)
     );
 
+
     if(radiusMax < 2.5) {
     	// Stop here
     	// Copy TDFsmall to TDF and radiusSmall to radiusImage
-		TDF = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_FLOAT),
+        if(getParamBool(parameters, "16bit-vectors")) {
+            TDF = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_UNORM_INT16),
 				size.x, size.y, size.z);
+        } else {
+            TDF = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_FLOAT),
+				size.x, size.y, size.z);
+        }
 		ocl.queue.enqueueCopyBufferToImage(
-			TDFsmall,
+			*TDFsmallBuffer,
 			TDF,
 			0,
 			offset,
@@ -1116,15 +1754,38 @@ if(getParamBool(parameters, "timing")) {
 		radiusImage = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_FLOAT),
 				size.x, size.y, size.z);
 		ocl.queue.enqueueCopyBufferToImage(
-			radiusSmall,
+			*radiusSmallBuffer,
 			radiusImage,
 			0,
 			offset,
 			region
 		);
+        vectorField = *vectorFieldSmall;
+        ocl.queue.finish();
+        GC->deleteMemObject(dataset);
 		return;
+    } else {
+        ocl.queue.finish();
+        GC->deleteMemObject(vectorFieldSmall);
     }
+
+    // TODO: cleanup the two arrays below!!!!!!!!
+	// Transfer result back to host
+    if(getParamBool(parameters, "16bit-vectors")) {
+        TDFsmall = new unsigned short[totalSize];
+        ocl.queue.enqueueReadBuffer(*TDFsmallBuffer, CL_FALSE, 0, sizeof(short)*totalSize, (unsigned short*)TDFsmall);
+    } else {
+        TDFsmall = new float[totalSize];
+        ocl.queue.enqueueReadBuffer(*TDFsmallBuffer, CL_FALSE, 0, sizeof(float)*totalSize, (float*)TDFsmall);
+    }
+    radiusSmall = new float[totalSize];
+    ocl.queue.enqueueReadBuffer(*radiusSmallBuffer, CL_FALSE, 0, sizeof(float)*totalSize, radiusSmall);
+
+    ocl.queue.finish(); // This finish statement is necessary. Incorrect combine result if not present.
+    GC->deleteMemObject(TDFsmallBuffer);
+    GC->deleteMemObject(radiusSmallBuffer);
     } // end if radiusMin < 2.5
+
 
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
@@ -1134,15 +1795,17 @@ if(getParamBool(parameters, "timing")) {
     std::cout << "RUNTIME of TDF small: " << (end-start)*1.0e-6 << " ms" << std::endl;
 }
     /* Large Airways */
-    
+
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
 }
+    Image3D * blurredVolume = new Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_FLOAT), size.x, size.y, size.z);
+    GC->addMemObject(blurredVolume);
     if(largeBlurSigma > 0) {
     	int maskSize = 1;
 		float * mask = createBlurMask(largeBlurSigma, &maskSize);
-		Buffer blurMask = Buffer(ocl.context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(float)*(maskSize*2+1)*(maskSize*2+1)*(maskSize*2+1), mask);
-		blurMask.setDestructorCallback((void (__stdcall *)(cl_mem,void *))(freeData<float>), (void *)mask);
+	    Buffer blurMask = Buffer(ocl.context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(float)*(maskSize*2+1)*(maskSize*2+1)*(maskSize*2+1), mask);
+        blurMask.setDestructorCallback((void (__stdcall *)(cl_mem,void *))(freeData<float>), (void *)mask);
     	if(no3Dwrite) {
 			// Create auxillary buffer
 			Buffer blurredVolumeBuffer = Buffer(
@@ -1152,7 +1815,7 @@ if(getParamBool(parameters, "timing")) {
 			);
 
 			// Run blurVolumeWithGaussian on dataset
-			blurVolumeWithGaussianKernel.setArg(0, dataset);
+			blurVolumeWithGaussianKernel.setArg(0, *dataset);
 			blurVolumeWithGaussianKernel.setArg(1, blurredVolumeBuffer);
 			blurVolumeWithGaussianKernel.setArg(2, maskSize);
 			blurVolumeWithGaussianKernel.setArg(3, blurMask);
@@ -1166,15 +1829,15 @@ if(getParamBool(parameters, "timing")) {
 
 			ocl.queue.enqueueCopyBufferToImage(
 					blurredVolumeBuffer,
-					blurredVolume,
+					*blurredVolume,
 					0,
 					offset,
 					region
 			);
     	} else {
 			// Run blurVolumeWithGaussian on processedVolume
-			blurVolumeWithGaussianKernel.setArg(0, dataset);
-			blurVolumeWithGaussianKernel.setArg(1, blurredVolume);
+			blurVolumeWithGaussianKernel.setArg(0, *dataset);
+			blurVolumeWithGaussianKernel.setArg(1, *blurredVolume);
 			blurVolumeWithGaussianKernel.setArg(2, maskSize);
 			blurVolumeWithGaussianKernel.setArg(3, blurMask);
 			ocl.queue.enqueueNDRangeKernel(
@@ -1186,6 +1849,10 @@ if(getParamBool(parameters, "timing")) {
     	}
     } else {
         blurredVolume = dataset;
+    }
+    if(largeBlurSigma > 0) {
+        ocl.queue.finish();
+        GC->deleteMemObject(dataset);
     }
 
 
@@ -1199,16 +1866,53 @@ if(getParamBool(parameters, "timing")) {
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
 }
+	Image3D * initVectorField;
    if(no3Dwrite) {
+		bool usingTwoBuffers = false;
+    	int maxZ = size.z;
         // Create auxillary buffer
-        Buffer vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(float)*totalSize);
-        vectorField = Image3D(ocl.context, CL_MEM_READ_ONLY, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
- 
+        Buffer vectorFieldBuffer, vectorFieldBuffer2;
+        unsigned int maxBufferSize = ocl.device.getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE>();
+        if(getParamBool(parameters, "16bit-vectors")) {
+			initVectorField = new Image3D(ocl.context, CL_MEM_READ_ONLY, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
+			GC->addMemObject(initVectorField);
+			if(4*sizeof(short)*totalSize < maxBufferSize) {
+				vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(short)*totalSize);
+			} else {
+				std::cout << "NOTE: Could not fit entire vector field into one buffer. Splitting buffer in two." << std::endl;
+				// create two buffers
+				unsigned int limit = (float)maxBufferSize / (4*sizeof(short));
+				maxZ = floor((float)limit/(size.x*size.y));
+				unsigned int splitSize = maxZ*size.x*size.y*4*sizeof(short);
+				vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, splitSize);
+				vectorFieldBuffer2 = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(short)*totalSize-splitSize);
+				usingTwoBuffers = true;
+			}
+        } else {
+			initVectorField = new Image3D(ocl.context, CL_MEM_READ_ONLY, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
+			GC->addMemObject(initVectorField);
+			if(4*sizeof(float)*totalSize < maxBufferSize) {
+				vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(float)*totalSize);
+			} else {
+				std::cout << "NOTE: Could not fit entire vector field into one buffer. Splitting buffer in two." << std::endl;
+				// create two buffers
+				unsigned int limit = (float)maxBufferSize / (4*sizeof(float));
+				maxZ = floor((float)limit/(size.x*size.y));
+				unsigned int splitSize = maxZ*size.x*size.y*4*sizeof(float);
+				vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, splitSize);
+				vectorFieldBuffer2 = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(float)*totalSize-splitSize);
+				usingTwoBuffers = true;
+    		}
+        }
+
         // Run create vector field
-        createVectorFieldKernel.setArg(0, blurredVolume);
+        createVectorFieldKernel.setArg(0, *blurredVolume);
         createVectorFieldKernel.setArg(1, vectorFieldBuffer);
-        createVectorFieldKernel.setArg(2, Fmax);
-        createVectorFieldKernel.setArg(3, vectorSign);
+        createVectorFieldKernel.setArg(2, vectorFieldBuffer2);
+        createVectorFieldKernel.setArg(3, Fmax);
+        createVectorFieldKernel.setArg(4, vectorSign);
+        createVectorFieldKernel.setArg(5, maxZ);
+
 
         ocl.queue.enqueueNDRangeKernel(
                 createVectorFieldKernel,
@@ -1217,26 +1921,66 @@ if(getParamBool(parameters, "timing")) {
                 NullRange
         );
 
-        // Copy buffer contents to image
-        ocl.queue.enqueueCopyBufferToImage(
-                vectorFieldBuffer, 
-                vectorField, 
-                0,
-                offset,
-                region
-        );
+        ocl.queue.finish();
+        GC->deleteMemObject(blurredVolume);
+
+        if(usingTwoBuffers) {
+        	cl::size_t<3> region2;
+        	region2[0] = size.x;
+        	region2[1] = size.y;
+        	unsigned int limit;
+			if(getParamBool(parameters, "16bit-vectors")) {
+				limit = (float)maxBufferSize / (4*sizeof(short));
+			} else {
+				limit = (float)maxBufferSize / (4*sizeof(float));
+			}
+        	region2[2] = floor((float)limit/(size.x*size.y));
+ 			ocl.queue.enqueueCopyBufferToImage(
+					vectorFieldBuffer,
+					*initVectorField,
+					0,
+					offset,
+					region2
+			);
+ 			cl::size_t<3> offset2;
+ 			offset2[0] = 0;
+ 			offset2[1] = 0;
+ 			offset2[2] = region2[2];
+ 			cl::size_t<3> region3;
+ 			region3[0] = size.x;
+ 			region3[1] = size.y;
+ 			region3[2] = size.z-region2[2];
+			ocl.queue.enqueueCopyBufferToImage(
+					vectorFieldBuffer2,
+					*initVectorField,
+					0,
+					offset2,
+					region3
+			);
+        } else {
+			// Copy buffer contents to image
+			ocl.queue.enqueueCopyBufferToImage(
+					vectorFieldBuffer,
+					*initVectorField,
+					0,
+					offset,
+					region
+			);
+        }
+
 
     } else {
         if(getParamBool(parameters, "32bit-vectors")) {
-            vectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
+            initVectorField = new Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
         } else {
-            vectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
+            initVectorField = new Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
         }
+        GC->addMemObject(initVectorField);
 
-     
+
         // Run create vector field
-        createVectorFieldKernel.setArg(0, blurredVolume);
-        createVectorFieldKernel.setArg(1, vectorField);
+        createVectorFieldKernel.setArg(0, *blurredVolume);
+        createVectorFieldKernel.setArg(1, *initVectorField);
         createVectorFieldKernel.setArg(2, Fmax);
         createVectorFieldKernel.setArg(3, vectorSign);
 
@@ -1247,8 +1991,10 @@ if(getParamBool(parameters, "timing")) {
                 NDRange(4,4,4)
         );
 
-    } 
-    
+        ocl.queue.finish();
+        GC->deleteMemObject(blurredVolume);
+    }
+
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
@@ -1259,134 +2005,26 @@ if(getParamBool(parameters, "timing")) {
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
 }
+	// Determine whether to use the slow GVF that use less memory or not
+	bool useSlowGVF = false;
+	if(no3Dwrite) {
+        unsigned int maxBufferSize = ocl.device.getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE>();
+		if(getParamBool(parameters, "16bit-vectors")) {
+			if(4*sizeof(short)*totalSize > maxBufferSize) {
+				useSlowGVF = true;
+			}
+		} else {
+			if(4*sizeof(float)*totalSize > maxBufferSize) {
+				useSlowGVF = true;
+			}
+		}
+	}
+	if(useSlowGVF) {
+		vectorField = runGVF(ocl, initVectorField, parameters, size, true);
+	} else {
+		vectorField = runGVF(ocl, initVectorField, parameters, size, false);
+	}
 
-    // Run GVF on iVectorField as initial vector field
-    Kernel GVFInitKernel = Kernel(ocl.program, "GVF3DInit");
-    Kernel GVFIterationKernel = Kernel(ocl.program, "GVF3DIteration");
-    Kernel GVFFinishKernel = Kernel(ocl.program, "GVF3DFinish");
-
-    std::cout << "Running GVF with " << GVFIterations << " iterations " << std::endl; 
-    if(no3Dwrite) {
-        // Create auxillary buffers
-        Buffer vectorFieldBuffer = Buffer(
-                ocl.context,
-                CL_MEM_READ_WRITE,
-                3*sizeof(float)*totalSize
-        );
-        Buffer vectorFieldBuffer1 = Buffer(
-                ocl.context,
-                CL_MEM_READ_WRITE,
-                3*sizeof(float)*totalSize
-        );
-
-        GVFInitKernel.setArg(0, vectorField);
-        GVFInitKernel.setArg(1, vectorFieldBuffer);
-        ocl.queue.enqueueNDRangeKernel(
-                GVFInitKernel,
-                NullRange,
-                NDRange(size.x,size.y,size.z),
-                NullRange
-        );
-
-        // Run iterations
-        GVFIterationKernel.setArg(0, vectorField);
-        GVFIterationKernel.setArg(3, MU);
-
-        for(int i = 0; i < GVFIterations; i++) {
-            if(i % 2 == 0) {
-                GVFIterationKernel.setArg(1, vectorFieldBuffer);
-                GVFIterationKernel.setArg(2, vectorFieldBuffer1);
-            } else {
-                GVFIterationKernel.setArg(1, vectorFieldBuffer1);
-                GVFIterationKernel.setArg(2, vectorFieldBuffer);
-            }
-                ocl.queue.enqueueNDRangeKernel(
-                        GVFIterationKernel,
-                        NullRange,
-                        NDRange(size.x,size.y,size.z),
-                        NullRange
-                );
-        }
-
-        vectorFieldBuffer1 = Buffer(
-                ocl.context,
-                CL_MEM_WRITE_ONLY,
-                4*sizeof(float)*totalSize
-        );
-
-        // Copy vector field to image
-        GVFFinishKernel.setArg(0, vectorFieldBuffer);
-        GVFFinishKernel.setArg(1, vectorFieldBuffer1);
-
-        ocl.queue.enqueueNDRangeKernel(
-                GVFFinishKernel,
-                NullRange,
-                NDRange(size.x,size.y,size.z),
-                NullRange
-        );
-
-        // Copy buffer contents to image
-        ocl.queue.enqueueCopyBufferToImage(
-                vectorFieldBuffer1, 
-                vectorField, 
-                0,
-                offset,
-                region
-        );
-
-
-    } else {
-        Image3D vectorField1;
-        Image3D initVectorField; 
-        if(getParamBool(parameters, "32bit-vectors")) {
-            vectorField1 = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
-            initVectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RG, CL_FLOAT), size.x, size.y, size.z);
-        } else {
-            vectorField1 = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
-            initVectorField = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RG, CL_SNORM_INT16), size.x, size.y, size.z);
-        }
-
-        // init vectorField from image
-        GVFInitKernel.setArg(0, vectorField);
-        GVFInitKernel.setArg(1, vectorField1);
-        GVFInitKernel.setArg(2, initVectorField);
-        ocl.queue.enqueueNDRangeKernel(
-                GVFInitKernel,
-                NullRange,
-                NDRange(size.x,size.y,size.z),
-                NDRange(4,4,4)
-        );
-        // Run iterations
-        GVFIterationKernel.setArg(0, initVectorField);
-        GVFIterationKernel.setArg(3, MU);
-
-        for(int i = 0; i < GVFIterations; i++) {
-            if(i % 2 == 0) {
-                GVFIterationKernel.setArg(1, vectorField1);
-                GVFIterationKernel.setArg(2, vectorField);
-            } else {
-                GVFIterationKernel.setArg(1, vectorField);
-                GVFIterationKernel.setArg(2, vectorField1);
-            }
-                ocl.queue.enqueueNDRangeKernel(
-                        GVFIterationKernel,
-                        NullRange,
-                        NDRange(size.x,size.y,size.z),
-                        NDRange(4,4,4)
-                );
-        }
-
-        // Copy vector field to image
-        GVFFinishKernel.setArg(0, vectorField1);
-        GVFFinishKernel.setArg(1, vectorField);
-
-        ocl.queue.enqueueNDRangeKernel(
-                GVFFinishKernel,
-                NullRange,
-                NDRange(size.x,size.y,size.z),
-                NDRange(4,4,4)
-        );
-    }
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
@@ -1399,14 +2037,20 @@ if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
 }
     // Run circle fitting TDF kernel on GVF result
-    Buffer TDFlarge = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
+    Buffer TDFlarge;
+    if(getParamBool(parameters, "16bit-vectors")) {
+        TDFlarge = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(short)*totalSize);
+    } else {
+        TDFlarge = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
+    }
     Buffer radiusLarge = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
+
     circleFittingTDFKernel.setArg(0, vectorField);
     circleFittingTDFKernel.setArg(1, TDFlarge);
     circleFittingTDFKernel.setArg(2, radiusLarge);
-    circleFittingTDFKernel.setArg(3, std::max(1.0f, radiusMin));
+    circleFittingTDFKernel.setArg(3, std::max(2.5f, radiusMin));
     circleFittingTDFKernel.setArg(4, radiusMax);
-    circleFittingTDFKernel.setArg(5, radiusStep);
+    circleFittingTDFKernel.setArg(5, 1.5f);
 
     ocl.queue.enqueueNDRangeKernel(
             circleFittingTDFKernel,
@@ -1414,6 +2058,7 @@ if(getParamBool(parameters, "timing")) {
             NDRange(size.x,size.y,size.z),
             NDRange(4,4,4)
     );
+
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
@@ -1425,8 +2070,18 @@ if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
 }
 	if(radiusMin < 2.5f) {
-		combineKernel.setArg(0, TDFsmall);
-		combineKernel.setArg(1, radiusSmall);
+        Buffer TDFsmall2;
+        if(getParamBool(parameters, "16bit-vectors")) {
+            TDFsmall2 = Buffer(ocl.context, CL_MEM_READ_ONLY, sizeof(short)*totalSize);
+            ocl.queue.enqueueWriteBuffer(TDFsmall2, CL_FALSE, 0, sizeof(short)*totalSize, (unsigned short*)TDFsmall);
+        } else {
+            TDFsmall2 = Buffer(ocl.context, CL_MEM_READ_ONLY, sizeof(float)*totalSize);
+            ocl.queue.enqueueWriteBuffer(TDFsmall2, CL_FALSE, 0, sizeof(float)*totalSize, (float*)TDFsmall);
+        }
+        Buffer radiusSmall2 = Buffer(ocl.context, CL_MEM_READ_ONLY, sizeof(float)*totalSize);
+        ocl.queue.enqueueWriteBuffer(radiusSmall2, CL_FALSE, 0, sizeof(float)*totalSize, radiusSmall);
+		combineKernel.setArg(0, TDFsmall2);
+		combineKernel.setArg(1, radiusSmall2);
 		combineKernel.setArg(2, TDFlarge);
 		combineKernel.setArg(3, radiusLarge);
 
@@ -1437,8 +2092,13 @@ if(getParamBool(parameters, "timing")) {
 				NDRange(64)
 		);
 	}
-    TDF = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_FLOAT),
-            size.x, size.y, size.z);
+    if(getParamBool(parameters, "16bit-vectors")) {
+        TDF = Image3D(ocl.context, CL_MEM_READ_ONLY, ImageFormat(CL_R, CL_UNORM_INT16),
+                size.x, size.y, size.z);
+    } else {
+        TDF = Image3D(ocl.context, CL_MEM_READ_ONLY, ImageFormat(CL_R, CL_FLOAT),
+                size.x, size.y, size.z);
+    }
     ocl.queue.enqueueCopyBufferToImage(
         TDFlarge,
         TDF,
@@ -1446,7 +2106,7 @@ if(getParamBool(parameters, "timing")) {
         offset,
         region
     );
-    radiusImage = Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_FLOAT),
+    radiusImage = Image3D(ocl.context, CL_MEM_READ_ONLY, ImageFormat(CL_R, CL_FLOAT),
             size.x, size.y, size.z);
     ocl.queue.enqueueCopyBufferToImage(
         radiusLarge,
@@ -1465,6 +2125,7 @@ if(getParamBool(parameters, "timing")) {
 }
 
 }
+
 
 Image3D runSphereSegmentation(OpenCL ocl, Image3D &centerline, Image3D &radius, SIPL::int3 size, paramList parameters) {
 	const bool no3Dwrite = !getParamBool(parameters, "3d_write");
@@ -1552,7 +2213,7 @@ Image3D runSphereSegmentation(OpenCL ocl, Image3D &centerline, Image3D &radius, 
 
 }
 
-Image3D runInverseGradientSegmentation(OpenCL &ocl, Image3D &centerline, Image3D &vectorField, SIPL::int3 size, paramList parameters) {
+Image3D runInverseGradientSegmentation(OpenCL &ocl, Image3D &centerline, Image3D &vectorField, Image3D &radius, SIPL::int3 size, paramList parameters) {
     const int totalSize = size.x*size.y*size.z;
 	const bool no3Dwrite = !getParamBool(parameters, "3d_write");
     cl::Event startEvent, endEvent;
@@ -1582,8 +2243,8 @@ Image3D runInverseGradientSegmentation(OpenCL &ocl, Image3D &centerline, Image3D
     int stopGrowing = 0;
     Buffer stop = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(int));
     ocl.queue.enqueueWriteBuffer(stop, CL_FALSE, 0, sizeof(int), &stopGrowing);
-    
-    growKernel.setArg(1, vectorField);	
+
+    growKernel.setArg(1, vectorField);
     growKernel.setArg(3, stop);
 
     int i = 0;
@@ -1595,14 +2256,15 @@ Image3D runInverseGradientSegmentation(OpenCL &ocl, Image3D &centerline, Image3D
                 sizeof(char)*totalSize
         );
         ocl.queue.enqueueCopyImageToBuffer(
-                volume, 
-                volume2, 
-                offset, 
-                region, 
+                volume,
+                volume2,
+                offset,
+                region,
                 0
         );
         initGrowKernel.setArg(0, volume);
         initGrowKernel.setArg(1, volume2);
+        initGrowKernel.setArg(2, radius);
         ocl.queue.enqueueNDRangeKernel(
             initGrowKernel,
             NullRange,
@@ -1647,6 +2309,7 @@ Image3D runInverseGradientSegmentation(OpenCL &ocl, Image3D &centerline, Image3D
         ocl.queue.enqueueCopyImage(volume, volume2, offset, offset, region);
         initGrowKernel.setArg(0, volume);
         initGrowKernel.setArg(1, volume2);
+        initGrowKernel.setArg(2, radius);
         ocl.queue.enqueueNDRangeKernel(
             initGrowKernel,
             NullRange,
@@ -1689,7 +2352,7 @@ Image3D runInverseGradientSegmentation(OpenCL &ocl, Image3D &centerline, Image3D
         );
         dilateKernel.setArg(0, volume);
         dilateKernel.setArg(1, volumeBuffer);
-       
+
         ocl.queue.enqueueNDRangeKernel(
             dilateKernel,
             NullRange,
@@ -1706,7 +2369,7 @@ Image3D runInverseGradientSegmentation(OpenCL &ocl, Image3D &centerline, Image3D
 
         erodeKernel.setArg(0, volume);
         erodeKernel.setArg(1, volumeBuffer);
-       
+
         ocl.queue.enqueueNDRangeKernel(
             erodeKernel,
             NullRange,
@@ -1722,9 +2385,9 @@ Image3D runInverseGradientSegmentation(OpenCL &ocl, Image3D &centerline, Image3D
         );
     } else {
         Image3D volume2 = Image3D(
-                ocl.context, 
-                CL_MEM_READ_WRITE, 
-                ImageFormat(CL_R, CL_SIGNED_INT8), 
+                ocl.context,
+                CL_MEM_READ_WRITE,
+                ImageFormat(CL_R, CL_SIGNED_INT8),
                 size.x, size.y, size.z
         );
 
@@ -1739,7 +2402,7 @@ Image3D runInverseGradientSegmentation(OpenCL &ocl, Image3D &centerline, Image3D
 
         dilateKernel.setArg(0, volume);
         dilateKernel.setArg(1, volume2);
-       
+
         ocl.queue.enqueueNDRangeKernel(
             dilateKernel,
             NullRange,
@@ -1749,7 +2412,7 @@ Image3D runInverseGradientSegmentation(OpenCL &ocl, Image3D &centerline, Image3D
 
         erodeKernel.setArg(0, volume2);
         erodeKernel.setArg(1, volume);
-       
+
         ocl.queue.enqueueNDRangeKernel(
             erodeKernel,
             NullRange,
@@ -1768,7 +2431,671 @@ if(getParamBool(parameters, "timing")) {
     return volume;
 }
 
-Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radius, Image3D &intensity) {
+void writeToVtkFile(paramList &parameters, std::vector<int3> vertices, std::vector<SIPL::int2> edges) {
+	// Write to file
+	std::ofstream file;
+	file.open(getParamStr(parameters, "centerline-vtk-file").c_str());
+	file << "# vtk DataFile Version 3.0\nvtk output\nASCII\n";
+	file << "DATASET POLYDATA\nPOINTS " << vertices.size() << " int\n";
+	for(int i = 0; i < vertices.size(); i++) {
+		file << vertices[i].x << " " << vertices[i].y << " " << vertices[i].z << "\n";
+	}
+
+	file << "\nLINES " << edges.size() << " " << edges.size()*3 << "\n";
+	for(int i = 0; i < edges.size(); i++) {
+		file << "2 " << edges[i].x << " " << edges[i].y << "\n";
+	}
+
+	file.close();
+}
+
+class Edge;
+class Node {
+public:
+	int3 pos;
+	std::vector<Edge *> edges;
+
+};
+
+class Edge {
+public:
+	Node * source;
+	Node * target;
+	std::vector<Node *> removedNodes;
+	float distance;
+};
+
+class EdgeComparator {
+public:
+	bool operator()(Edge * a, Edge *b) const {
+		return a->distance > b->distance;
+	}
+};
+
+
+void removeEdge(Node * n, Node * remove) {
+	std::vector<Edge *> edges;
+	for(int i = 0; i < n->edges.size(); i++) {
+		Edge * e = n->edges[i];
+		if(e->target != remove) {
+			edges.push_back(e);
+		}
+	}
+	n->edges = edges;
+}
+
+void restoreNodes(Edge * e, std::vector<Node *> &finalGraph) {
+	if(e->removedNodes.size() == 0)
+		return;
+
+	// Remove e from e->source
+	removeEdge(e->source, e->target);
+	Node * previous = e->source;
+	for(int k = 0; k < e->removedNodes.size(); k++) {
+		Edge * newEdge = new Edge;
+		// Create edge from source to k or k-1 to k
+		newEdge->source = previous;
+		newEdge->target = e->removedNodes[k];
+		previous->edges.push_back(newEdge);
+		previous = e->removedNodes[k];
+		finalGraph.push_back(e->removedNodes[k]);
+
+	}
+	// Create edge from last k to target
+	Edge * newEdge = new Edge;
+	newEdge->source = previous;
+	newEdge->target = e->target;
+	previous->edges.push_back(newEdge);
+}
+
+std::vector<Node *> minimumSpanningTreePCE(
+		int root,
+		std::vector<Node *> &graph,
+		int3 &size,
+		unordered_set<int> &visited
+		) {
+	std::vector<Node *> result;
+	std::priority_queue<Edge *, std::vector<Edge *>, EdgeComparator> queue;
+
+	// Start with graph[0]
+	result.push_back(graph[root]);
+	visited.insert(POS(graph[root]->pos));
+
+	// Add edges to priority queue
+	for(int i = 0; i < graph[root]->edges.size(); i++) {
+		Edge * en = graph[root]->edges[i];
+		queue.push(en);
+	}
+	graph[root]->edges.clear();
+
+	while(!queue.empty()) {
+		Edge * e = queue.top();
+		queue.pop();
+
+		if(visited.find(POS(e->target->pos)) != visited.end())
+			continue; // already visited
+
+		// Add all edges of e->target to queue if targets have not been added
+		for(int i = 0; i < e->target->edges.size(); i++) {
+			Edge * en = e->target->edges[i];
+			if(visited.find(POS(en->target->pos)) == visited.end()) {
+				queue.push(en);
+			}
+		}
+
+		e->target->edges.clear(); // Remove all edges first
+		e->source->edges.push_back(e); // Add edge to source
+		result.push_back(e->target); // Add target to result
+		visited.insert(POS(e->target->pos));
+	}
+
+	return result;
+}
+
+void removeLoops(
+		std::vector<int3> &vertices,
+		std::vector<SIPL::int2> &edges,
+		int3 &size
+	) {
+
+	std::vector<Node *> nodes;
+	for(int i = 0; i < vertices.size(); i++) {
+		Node * n = new Node;
+		n->pos = vertices[i];
+		nodes.push_back(n);
+	}
+	for(int i = 0; i < edges.size(); i++) {
+		Node * a = nodes[edges[i].x];
+		Node * b = nodes[edges[i].y];
+		Edge * e = new Edge;
+		e->distance = a->pos.distance(b->pos);
+		e->source = a;
+		e->target = b;
+		a->edges.push_back(e);
+
+		Edge * e2 = new Edge;
+		e2->distance = a->pos.distance(b->pos);
+		e2->source = b;
+		e2->target = a;
+		b->edges.push_back(e2);
+	}
+
+	// Create graph
+	std::vector<Node *> graph;
+
+	// Remove all nodes with degree 2 and add them to edge
+	for(int i = 0; i < nodes.size(); i++) {
+		Node * n = nodes[i];
+		if(n->edges.size() == 2) {
+			// calculate distance
+			float distance = n->edges[0]->distance+n->edges[1]->distance;
+			Node * a = n->edges[0]->target;
+			Node * b = n->edges[1]->target;
+			// Fuse the two nodes together
+			Edge * e = new Edge;
+			e->source = a;
+			e->target = b;
+			e->distance = distance;
+			// Add removed nodes from previous edges
+			for(int j = n->edges[0]->removedNodes.size()-1; j >= 0; j--) {
+				e->removedNodes.push_back(n->edges[0]->removedNodes[j]);
+			}
+			e->removedNodes.push_back(n);
+			for(int j = 0; j < n->edges[1]->removedNodes.size(); j++) {
+				e->removedNodes.push_back(n->edges[1]->removedNodes[j]);
+			}
+
+			Edge * e2 = new Edge;
+			e2->source = b;
+			e2->target = a;
+			e2->distance = distance;
+			// Add removed nodes from previous edges
+			for(int j = n->edges[1]->removedNodes.size()-1; j >= 0; j--) {
+				e2->removedNodes.push_back(n->edges[1]->removedNodes[j]);
+			}
+			e2->removedNodes.push_back(n);
+			for(int j = 0; j < n->edges[0]->removedNodes.size(); j++) {
+				e2->removedNodes.push_back(n->edges[0]->removedNodes[j]);
+			}
+
+			removeEdge(a,n);
+			removeEdge(b,n);
+			n->edges.clear();
+			a->edges.push_back(e);
+			b->edges.push_back(e2);
+		} else {
+			// add node to graph
+			graph.push_back(n);
+		}
+	}
+
+	// Do MST with edge distance as cost
+	int sizeBeforeMST = graph.size();
+	if(sizeBeforeMST == 0) {
+	    throw SIPL::SIPLException("Centerline graph size is 0! Can't continue. Maybe lower min-tree-length?", __LINE__,__FILE__);
+	}
+	unordered_set<int> visited;
+	std::vector<Node *> newGraph = minimumSpanningTreePCE(0, graph, size, visited);
+	int sizeAfterMST = newGraph.size();
+
+	while(newGraph.size() < graph.size()) {
+		// Some nodes were not visited: find new root
+		int root;
+		for(int i = 0; i < graph.size(); i++) {
+			if(visited.find(POS(graph[i]->pos)) == visited.end()) {
+				// i has not been used
+				root = i;
+			}
+		}
+
+		std::vector<Node *> newGraph2 = minimumSpanningTreePCE(root, graph, size, visited);
+		for(int i = 0; i < newGraph2.size(); i++) {
+			newGraph.push_back(newGraph2[i]);
+		}
+		int sizeAfterMST = newGraph.size();
+	}
+
+	// Restore graph
+	// For all edges that are in the MST graph: get nodes that was on these edges
+	std::vector<Node *> finalGraph;
+	for(int i = 0; i < newGraph.size(); i++) {
+		Node * n = newGraph[i];
+		finalGraph.push_back(n);
+		std::vector<Edge *> nEdges = n->edges;
+		for(int j = 0; j < nEdges.size(); j++) {
+			Edge * e = nEdges[j];
+			restoreNodes(e, finalGraph);
+		}
+	}
+
+
+	std::vector<int3> newVertices;
+	std::vector<SIPL::int2> newEdges;
+	unordered_map<int, int> added;
+	int counter = 0;
+	for(int i = 0; i < finalGraph.size(); i++) {
+		Node * n = finalGraph[i];
+		int nIndex;
+		if(added.find(POS(n->pos)) != added.end()) {
+			// already has been added
+			// fetch index
+			nIndex = added[POS(n->pos)];
+		} else {
+			newVertices.push_back(n->pos);
+			added[POS(n->pos)] = counter;
+			nIndex = counter;
+			counter++;
+		}
+		for(int j = 0; j < n->edges.size(); j++) {
+			Edge * e = n->edges[j];
+			// add edge from n to n_j
+
+			int tIndex;
+			if(added.find(POS(e->target->pos)) != added.end()) {
+				// already has been added
+				// fetch index
+				tIndex = added[POS(e->target->pos)];
+			} else {
+				newVertices.push_back(e->target->pos);
+				added[POS(e->target->pos)] = counter;
+				tIndex = counter;
+				counter++;
+			}
+			newEdges.push_back(SIPL::int2(nIndex, tIndex));
+		}
+	}
+
+	// Cleanup
+	vertices = newVertices;
+	edges = newEdges;
+}
+
+char * createCenterlineVoxels(
+		std::vector<int3> &vertices,
+		std::vector<SIPL::int2> &edges,
+		float * radius,
+		int3 &size
+		) {
+	const int totalSize = size.x*size.y*size.z;
+	char * centerlines = new char[totalSize]();
+
+	for(int i = 0; i < edges.size(); i++) {
+		int3 a = vertices[edges[i].x];
+		int3 b = vertices[edges[i].y];
+		float distance = a.distance(b);
+		float3 direction(b.x-a.x,b.y-a.y,b.z-a.z);
+		int n = ceil(distance);
+		float avgRadius = 0.0f;
+		for(int j = 0; j < n; j++) {
+			float ratio = (float)j/n;
+			float3 pos = a+direction*ratio;
+			int3 intPos(round(pos.x), round(pos.y), round(pos.z));
+			centerlines[POS(intPos)] = 1;
+			avgRadius += radius[POS(intPos)];
+		}
+		avgRadius /= n;
+
+		for(int j = 0; j < n; j++) {
+			float ratio = (float)j/n;
+			float3 pos = a+direction*ratio;
+			int3 intPos(round(pos.x), round(pos.y), round(pos.z));
+			radius[POS(intPos)] = avgRadius;
+		}
+
+	}
+
+	return centerlines;
+}
+
+Image3D runNewCenterlineAlgWithoutOpenCL(OpenCL &ocl, SIPL::int3 size, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radius) {
+    const int totalSize = size.x*size.y*size.z;
+	const bool no3Dwrite = !getParamBool(parameters, "3d_write");
+    const int cubeSize = getParam(parameters, "cube-size");
+    const int minTreeLength = getParam(parameters, "min-tree-length");
+    const float Thigh = getParam(parameters, "tdf-high");
+    const float minAvgTDF = getParam(parameters, "min-mean-tdf");
+    const float maxDistance = getParam(parameters, "max-distance");
+
+    cl::size_t<3> offset;
+    offset[0] = 0;
+    offset[1] = 0;
+    offset[2] = 0;
+    cl::size_t<3> region;
+    region[0] = size.x;
+    region[1] = size.y;
+    region[2] = size.z;
+
+    // Transfer TDF, vectorField and radius to host
+    TubeSegmentation T;
+    T.Fx = new float[totalSize];
+    T.Fy = new float[totalSize];
+    T.Fz = new float[totalSize];
+    T.TDF = new float[totalSize];
+
+    if(!getParamBool(parameters, "16bit-vectors")) {
+    	// 32 bit vector fields
+        float * Fs = new float[totalSize*4];
+        ocl.queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
+#pragma omp parallel for
+        for(int i = 0; i < totalSize; i++) {
+            T.Fx[i] = Fs[i*4];
+            T.Fy[i] = Fs[i*4+1];
+            T.Fz[i] = Fs[i*4+2];
+        }
+        delete[] Fs;
+        ocl.queue.enqueueReadImage(TDF, CL_TRUE, offset, region, 0, 0, T.TDF);
+    } else {
+    	// 16 bit vector fields
+        short * Fs = new short[totalSize*4];
+        ocl.queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
+#pragma omp parallel for
+        for(int i = 0; i < totalSize; i++) {
+            T.Fx[i] = MAX(-1.0f, Fs[i*4] / 32767.0f);
+            T.Fy[i] = MAX(-1.0f, Fs[i*4+1] / 32767.0f);;
+            T.Fz[i] = MAX(-1.0f, Fs[i*4+2] / 32767.0f);
+        }
+        delete[] Fs;
+
+        // Convert 16 bit TDF to 32 bit
+        unsigned short * tempTDF = new unsigned short[totalSize];
+        ocl.queue.enqueueReadImage(TDF, CL_TRUE, offset, region, 0, 0, tempTDF);
+#pragma omp parallel for
+        for(int i = 0; i < totalSize; i++) {
+            T.TDF[i] = (float)tempTDF[i] / 65535.0f;
+        }
+        delete[] tempTDF;
+    }
+    T.radius = new float[totalSize];
+    ocl.queue.enqueueReadImage(radius, CL_TRUE, offset, region, 0, 0, T.radius);
+
+    // Get candidate points
+    std::vector<int3> candidatePoints;
+#pragma omp parallel for
+    for(int z = 1; z < size.z-1; z++) {
+    for(int y = 1; y < size.y-1; y++) {
+    for(int x = 1; x < size.x-1; x++) {
+       int3 pos(x,y,z);
+       if(T.TDF[POS(pos)] >= Thigh) {
+#pragma omp critical
+           candidatePoints.push_back(pos);
+       }
+    }}}
+    std::cout << "candidate points: " << candidatePoints.size() << std::endl;
+
+    unordered_set<int> filteredPoints;
+#pragma omp parallel for
+    for(int i = 0; i < candidatePoints.size(); i++) {
+        int3 pos = candidatePoints[i];
+        // Filter candidate points
+        const float thetaLimit = 0.5f;
+        const float radii = T.radius[POS(pos)];
+        const int maxD = std::max(std::min((float)round(radii), 5.0f), 1.0f);
+        bool invalid = false;
+
+        float3 e1 = getTubeDirection(T, pos, size);
+
+        for(int a = -maxD; a <= maxD; a++) {
+        for(int b = -maxD; b <= maxD; b++) {
+        for(int c = -maxD; c <= maxD; c++) {
+            if(a == 0 && b == 0 && c == 0)
+                continue;
+            float3 r(a,b,c);
+            float length = r.length();
+            int3 n(pos.x + r.x,pos.y+r.y,pos.z+r.z);
+            if(!inBounds(n,size))
+                continue;
+            float dp = e1.dot(r);
+            float3 r_projected(r.x-e1.x*dp,r.y-e1.y*dp,r.z-e1.z*dp);
+            float3 rn = r.normalize();
+            float3 r_projected_n = r_projected.normalize();
+            float theta = acos(rn.dot(r_projected_n));
+            if((theta < thetaLimit && length < maxD)) {
+                if(SQR_MAG(n) < SQR_MAG(pos)) {
+                    invalid = true;
+                    break;
+                }
+
+            }
+        }}}
+        if(!invalid) {
+#pragma omp critical
+            filteredPoints.insert(POS(pos));
+        }
+    }
+    candidatePoints.clear();
+    std::cout << "filtered points: " << filteredPoints.size() << std::endl;
+
+    std::vector<int3> centerpoints;
+    for(int z = 0; z < size.z/cubeSize; z++) {
+    for(int y = 0; y < size.y/cubeSize; y++) {
+    for(int x = 0; x < size.x/cubeSize; x++) {
+        int3 bestPos;
+        float bestTDF = 0.0f;
+        int3 readPos(
+            x*cubeSize,
+            y*cubeSize,
+            z*cubeSize
+        );
+        bool found = false;
+        for(int a = 0; a < cubeSize; a++) {
+        for(int b = 0; b < cubeSize; b++) {
+        for(int c = 0; c < cubeSize; c++) {
+            int3 pos = readPos + int3(a,b,c);
+            if(filteredPoints.find(POS(pos)) != filteredPoints.end()) {
+                float tdf = T.TDF[POS(pos)];
+                if(tdf > bestTDF) {
+                    found = true;
+                    bestTDF = tdf;
+                    bestPos = pos;
+                }
+            }
+        }}}
+        if(found) {
+#pragma omp critical
+            centerpoints.push_back(bestPos);
+        }
+    }}}
+
+    int nofPoints = centerpoints.size();
+    std::cout << "filtered points: " <<nofPoints<< std::endl;
+    std::vector<SIPL::int2> edges;
+
+    // Do linking
+    for(int i = 0; i < nofPoints;i++) {
+        int3 xa = centerpoints[i];
+        SIPL::int2 bestPair;
+        float shortestDistance = maxDistance*2;
+        bool validPairFound = false;
+
+        for(int j = 0; j < nofPoints;j++) {
+            if(i == j)
+                continue;
+            int3 xb = centerpoints[j];
+
+            int db = round(xa.distance(xb));
+            if(db >= shortestDistance)
+                continue;
+            for(int k = 0; k < j;k++) {
+                if(k == i)
+                    continue;
+                int3 xc = centerpoints[k];
+
+                int dc = round(xa.distance(xc));
+
+                if(db+dc < shortestDistance) {
+                    // Check angle
+                    int3 ab = (xb-xa);
+                    int3 ac = (xc-xa);
+                    float angle = acos(ab.normalize().dot(ac.normalize()));
+                    //printf("angle: %f\n", angle);
+                    if(angle < 2.0f) // 120 degrees
+                    //if(angle < 1.57f) // 90 degrees
+                        continue;
+
+                    // Check avg TDF for a-b
+                    float avgTDF = 0.0f;
+                    for(int l = 0; l <= db; l++) {
+                        float alpha = (float)l/db;
+                        int3 p((int)round(xa.x+ab.x*alpha),(int)round(xa.y+ab.y*alpha),(int)round(xa.z+ab.z*alpha));
+                        float t = T.TDF[POS(p)];
+                        avgTDF += t;
+                    }
+                    avgTDF /= db+1;
+                    if(avgTDF < minAvgTDF)
+                        continue;
+
+                    avgTDF = 0.0f;
+
+                    // Check avg TDF for a-c
+                    for(int l = 0; l <= dc; l++) {
+                        float alpha = (float)l/dc;
+                        int3 p((int)round(xa.x+ac.x*alpha),(int)round(xa.y+ac.y*alpha),(int)round(xa.z+ac.z*alpha));
+                        float t = T.TDF[POS(p)];
+                        avgTDF += t;
+                    }
+                    avgTDF /= dc+1;
+
+                    if(avgTDF < minAvgTDF)
+                        continue;
+
+                    validPairFound = true;
+                    bestPair.x = j;
+                    bestPair.y = k;
+                    shortestDistance = db+dc;
+                }
+            } // k
+        }// j
+
+        if(validPairFound) {
+            // Store edges
+            SIPL::int2 edge(i, bestPair.x);
+            SIPL::int2 edge2(i, bestPair.y);
+            edges.push_back(edge);
+            edges.push_back(edge2);
+        }
+    } // i
+    std::cout << "nr of edges: " << edges.size() << std::endl;
+
+    // Do graph component labeling
+    // Create initial labels
+    int * labels = new int[nofPoints];
+    for(int i = 0; i < nofPoints; i++) {
+        labels[i] = i;
+    }
+
+    // Do iteratively using edges until no more changes
+    bool changeDetected = true;
+    while(changeDetected) {
+        changeDetected = false;
+        for(int i = 0; i < edges.size(); i++) {
+            SIPL::int2 edge = edges[i];
+            if(labels[edge.x] != labels[edge.y]) {
+                changeDetected = true;
+                if(labels[edge.x] < labels[edge.y]) {
+                    labels[edge.x] = labels[edge.y];
+                } else {
+                    labels[edge.y] = labels[edge.x];
+                }
+            }
+        }
+    }
+
+
+    // Calculate length of each label
+    int * lengths = new int[nofPoints]();
+    for(int i = 0; i < nofPoints; i++) {
+        lengths[labels[i]]++;
+    }
+    std::vector<int3> vertices = centerpoints;
+
+    // Select wanted parts of centerline
+
+    std::vector<SIPL::int2> edges2;
+    int counter = nofPoints;
+    int maxEdgeDistance = getParam(parameters, "max-edge-distance");
+    for(int i = 0; i < edges.size(); i++) {
+        if(lengths[labels[edges[i].x]] >= minTreeLength && lengths[labels[edges[i].y]] >= minTreeLength ) {
+            // Check length of edge
+            int3 A = vertices[edges[i].x];
+            int3 B = vertices[edges[i].y];
+            float distance = A.distance(B);
+            if(getParamStr(parameters, "centerline-vtk-file") != "off" &&
+                    distance > maxEdgeDistance) {
+                float3 direction(B.x-A.x,B.y-A.y,B.z-A.z);
+                float3 Af(A.x,A.y,A.z);
+                int previous = edges[i].x;
+                for(int j = maxEdgeDistance; j < distance; j += maxEdgeDistance) {
+                    float3 newPos = Af + ((float)j/distance)*direction;
+                    int3 newVertex(round(newPos.x), round(newPos.y), round(newPos.z));
+                    // Create new vertex
+                    vertices.push_back(newVertex);
+                    // Add new edge
+                    SIPL::int2 edge(previous, counter);
+                    edges2.push_back(edge);
+                    previous = counter;
+                    counter++;
+                }
+                // Connect previous vertex to B
+                SIPL::int2 edge(previous, edges[i].y);
+                edges2.push_back(edge);
+            } else {
+                edges2.push_back(edges[i]);
+            }
+        }
+    }
+    edges = edges2;
+
+    // Remove loops from graph
+    if(getParamBool(parameters, "loop-removal"))
+        removeLoops(vertices, edges, size);
+
+    ocl.queue.finish();
+    char * centerlinesData = createCenterlineVoxels(vertices, edges, T.radius, size);
+    Image3D centerlines= Image3D(
+        ocl.context,
+        CL_MEM_READ_WRITE,
+        ImageFormat(CL_R, CL_SIGNED_INT8),
+        size.x, size.y, size.z
+    );
+
+    ocl.queue.enqueueWriteImage(
+            centerlines,
+            CL_FALSE,
+            offset,
+            region,
+            0, 0,
+            centerlinesData
+    );
+    ocl.queue.enqueueWriteImage(
+            radius,
+            CL_FALSE,
+            offset,
+            region,
+            0, 0,
+            T.radius
+    );
+
+    if(getParamStr(parameters, "centerline-vtk-file") != "off") {
+        writeToVtkFile(parameters, vertices, edges);
+    }
+
+    ocl.queue.finish();
+
+    delete[] T.TDF;
+    delete[] T.Fx;
+    delete[] T.Fy;
+    delete[] T.Fz;
+    delete[] T.radius;
+    delete[] centerlinesData;
+
+    return centerlines;
+}
+
+Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radius) {
+    if(ocl.platform.getInfo<CL_PLATFORM_VENDOR>().substr(0,5) == "Apple") {
+        std::cout << "Apple platform detected. Running centerline extraction without OpenCL." << std::endl;
+        return runNewCenterlineAlgWithoutOpenCL(ocl,size,parameters,vectorField,TDF,radius);
+    }
     const int totalSize = size.x*size.y*size.z;
 	const bool no3Dwrite = !getParamBool(parameters, "3d_write");
     const int cubeSize = getParam(parameters, "cube-size");
@@ -1796,45 +3123,26 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
     if(getParamBool(parameters, "timing")) {
         ocl.queue.enqueueMarker(&startEvent);
     }
-    Image3D centerpointsImage2 = Image3D(
+    Image3D * centerpointsImage2 = new Image3D(
             ocl.context,
             CL_MEM_READ_WRITE,
             ImageFormat(CL_R, CL_SIGNED_INT8),
             size.x, size.y, size.z
     );
+    GC->addMemObject(centerpointsImage2);
     Buffer vertices;
     int sum = 0;
 
     if(no3Dwrite) {
-        int hpSize;
-        if(size.x == size.y && size.y == size.z && log2(size.x) == round(log2(size.x))) {
-            hpSize = size.x;
-        }else{
-            // Find largest size and find closest power of two
-            int largestSize = std::max(size.x, std::max(size.y, size.z));
-            int i = 1;
-            while(pow(2.0, i) < largestSize)
-                i++;
-            hpSize = pow(2.0, i);
-        }
-
-
-        Buffer centerpoints = Buffer(
+        Buffer * centerpoints = new Buffer(
                 ocl.context,
                 CL_MEM_READ_WRITE,
-                sizeof(char)*hpSize*hpSize*hpSize
+                sizeof(char)*totalSize
         );
-
-        initCharBuffer.setArg(0, centerpoints);
-        ocl.queue.enqueueNDRangeKernel(
-                initCharBuffer,
-                NullRange,
-                NDRange(hpSize*hpSize*hpSize),
-                NullRange
-        );
+        GC->addMemObject(centerpoints);
 
         candidatesKernel.setArg(0, TDF);
-        candidatesKernel.setArg(1, centerpoints);
+        candidatesKernel.setArg(1, *centerpoints);
         candidatesKernel.setArg(2, Thigh);
         ocl.queue.enqueueNDRangeKernel(
                 candidatesKernel,
@@ -1844,17 +3152,18 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
         );
 
         HistogramPyramid3DBuffer hp3(ocl);
-        hp3.create(centerpoints, hpSize, hpSize, hpSize);
+        hp3.create(*centerpoints, size.x, size.y, size.z);
 
         candidates2Kernel.setArg(0, TDF);
         candidates2Kernel.setArg(1, radius);
         candidates2Kernel.setArg(2, vectorField);
-        Buffer centerpoints2 = Buffer(
+        Buffer * centerpoints2 = new Buffer(
                 ocl.context,
                 CL_MEM_READ_WRITE,
                 sizeof(char)*totalSize
         );
-        initCharBuffer.setArg(0, centerpoints2);
+        GC->addMemObject(centerpoints2);
+        initCharBuffer.setArg(0, *centerpoints2);
         ocl.queue.enqueueNDRangeKernel(
                 initCharBuffer,
                 NullRange,
@@ -1862,55 +3171,68 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
                 NullRange
         );
 
-        candidates2Kernel.setArg(3, centerpoints2);
+        candidates2Kernel.setArg(3, *centerpoints2);
         std::cout << "candidates: " << hp3.getSum() << std::endl;
+        if(hp3.getSum() <= 0 || hp3.getSum() > 0.5*totalSize) {
+        	throw SIPL::SIPLException("The number of candidate voxels is too low or too high. Something went wrong... Wrong parameters? Out of memory?", __LINE__, __FILE__);
+        }
         hp3.traverse(candidates2Kernel, 4);
+        ocl.queue.finish();
+        hp3.deleteHPlevels();
+        GC->deleteMemObject(centerpoints);
         ocl.queue.enqueueCopyBufferToImage(
-            centerpoints2,
-            centerpointsImage2,
+            *centerpoints2,
+            *centerpointsImage2,
             0,
             offset,
             region
         );
+        ocl.queue.finish();
+        GC->deleteMemObject(centerpoints2);
 
 		if(getParamBool(parameters, "centerpoints-only")) {
-			return centerpointsImage2;
+			return *centerpointsImage2;
 		}
-        ddKernel.setArg(0, vectorField);
-        ddKernel.setArg(1, TDF);
-        ddKernel.setArg(2, centerpointsImage2);
-        ddKernel.setArg(4, cubeSize);
-        Buffer centerpoints3 = Buffer(
+        ddKernel.setArg(0, TDF);
+        ddKernel.setArg(1, *centerpointsImage2);
+        ddKernel.setArg(3, cubeSize);
+        Buffer * centerpoints3 = new Buffer(
                 ocl.context,
                 CL_MEM_READ_WRITE,
-                sizeof(char)*hpSize*hpSize*hpSize
+                sizeof(char)*totalSize
         );
-        initCharBuffer.setArg(0, centerpoints3);
+        GC->addMemObject(centerpoints3);
+        initCharBuffer.setArg(0, *centerpoints3);
         ocl.queue.enqueueNDRangeKernel(
                 initCharBuffer,
                 NullRange,
-                NDRange(hpSize*hpSize*hpSize),
+                NDRange(totalSize),
                 NullRange
         );
-        ddKernel.setArg(3, centerpoints3);
+        ddKernel.setArg(2, *centerpoints3);
         ocl.queue.enqueueNDRangeKernel(
                 ddKernel,
                 NullRange,
                 NDRange(ceil((float)size.x/cubeSize),ceil((float)size.y/cubeSize),ceil((float)size.z/cubeSize)),
                 NullRange
         );
+        ocl.queue.finish();
+        GC->deleteMemObject(centerpointsImage2);
 
         // Construct HP of centerpointsImage
         HistogramPyramid3DBuffer hp(ocl);
-        hp.create(centerpoints3, hpSize, hpSize, hpSize);
+        hp.create(*centerpoints3, size.x, size.y, size.z);
         sum = hp.getSum();
         std::cout << "number of vertices detected " << sum << std::endl;
 
         // Run createPositions kernel
-        vertices = hp.createPositionBuffer(); 
+        vertices = hp.createPositionBuffer();
+        ocl.queue.finish();
+        hp.deleteHPlevels();
+        GC->deleteMemObject(centerpoints3);
     } else {
         Kernel init3DImage(ocl.program, "init3DImage");
-        init3DImage.setArg(0, centerpointsImage2);
+        init3DImage.setArg(0, *centerpointsImage2);
         ocl.queue.enqueueNDRangeKernel(
             init3DImage,
             NullRange,
@@ -1918,15 +3240,16 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
             NullRange
         );
 
-        Image3D centerpointsImage = Image3D(
+        Image3D * centerpointsImage = new Image3D(
                 ocl.context,
                 CL_MEM_READ_WRITE,
                 ImageFormat(CL_R, CL_SIGNED_INT8),
                 size.x, size.y, size.z
         );
+        GC->addMemObject(centerpointsImage);
 
         candidatesKernel.setArg(0, TDF);
-        candidatesKernel.setArg(1, centerpointsImage);
+        candidatesKernel.setArg(1, *centerpointsImage);
         candidatesKernel.setArg(2, Thigh);
         ocl.queue.enqueueNDRangeKernel(
                 candidatesKernel,
@@ -1941,18 +3264,26 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
         candidates2Kernel.setArg(2, vectorField);
 
         HistogramPyramid3D hp3(ocl);
-        hp3.create(centerpointsImage, size.x, size.y, size.z);
+        hp3.create(*centerpointsImage, size.x, size.y, size.z);
         std::cout << "candidates: " << hp3.getSum() << std::endl;
-        candidates2Kernel.setArg(3, centerpointsImage2);
-        hp3.traverse(candidates2Kernel, 4);
+		if(hp3.getSum() <= 0 || hp3.getSum() > 0.5*totalSize) {
+        	throw SIPL::SIPLException("The number of candidate voxels is too or too high. Something went wrong... Wrong parameters? Out of memory?", __LINE__, __FILE__);
+        }
 
-        Image3D centerpointsImage3 = Image3D(
+        candidates2Kernel.setArg(3, *centerpointsImage2);
+        hp3.traverse(candidates2Kernel, 4);
+        ocl.queue.finish();
+        hp3.deleteHPlevels();
+        GC->deleteMemObject(centerpointsImage);
+
+        Image3D * centerpointsImage3 = new Image3D(
                 ocl.context,
                 CL_MEM_READ_WRITE,
                 ImageFormat(CL_R, CL_SIGNED_INT8),
                 size.x, size.y, size.z
         );
-        init3DImage.setArg(0, centerpointsImage3);
+        GC->addMemObject(centerpointsImage3);
+        init3DImage.setArg(0, *centerpointsImage3);
         ocl.queue.enqueueNDRangeKernel(
             init3DImage,
             NullRange,
@@ -1961,32 +3292,37 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
         );
 
 		if(getParamBool(parameters, "centerpoints-only")) {
-			return centerpointsImage2;
+			return *centerpointsImage2;
 		}
-        ddKernel.setArg(0, vectorField);
-        ddKernel.setArg(1, TDF);
-        ddKernel.setArg(2, centerpointsImage2);
-        ddKernel.setArg(4, cubeSize);
-        ddKernel.setArg(3, centerpointsImage3);
+        ddKernel.setArg(0, TDF);
+        ddKernel.setArg(1, *centerpointsImage2);
+        ddKernel.setArg(3, cubeSize);
+        ddKernel.setArg(2, *centerpointsImage3);
         ocl.queue.enqueueNDRangeKernel(
                 ddKernel,
                 NullRange,
                 NDRange(ceil((float)size.x/cubeSize),ceil((float)size.y/cubeSize),ceil((float)size.z/cubeSize)),
                 NullRange
         );
+        ocl.queue.finish();
+        GC->deleteMemObject(centerpointsImage2);
 
         // Construct HP of centerpointsImage
         HistogramPyramid3D hp(ocl);
-        hp.create(centerpointsImage3, size.x, size.y, size.z);
+        hp.create(*centerpointsImage3, size.x, size.y, size.z);
         sum = hp.getSum();
         std::cout << "number of vertices detected " << sum << std::endl;
 
         // Run createPositions kernel
-        vertices = hp.createPositionBuffer(); 
-
+        vertices = hp.createPositionBuffer();
+        ocl.queue.finish();
+        hp.deleteHPlevels();
+        GC->deleteMemObject(centerpointsImage3);
     }
-    if(sum < 8 || sum >= 16384) {
-    	throw SIPL::SIPLException("Too many or too few vertices detected", __LINE__, __FILE__);
+    if(sum < 8) {
+    	throw SIPL::SIPLException("Too few centerpoints detected. Revise parameters.", __LINE__, __FILE__);
+    } else if(sum >= 16384) {
+    	throw SIPL::SIPLException("Too many centerpoints detected. More cropping of dataset is probably needed.", __LINE__, __FILE__);
     }
 
 if(getParamBool(parameters, "timing")) {
@@ -1995,7 +3331,7 @@ if(getParamBool(parameters, "timing")) {
     startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
     endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
     std::cout << "RUNTIME centerpoint extraction: " << (end-start)*1.0e-6 << " ms" << std::endl;
-} 
+}
 
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
@@ -2019,17 +3355,18 @@ if(getParamBool(parameters, "timing")) {
     while(globalSize % 64 != 0) globalSize++;
 
     // Create lengths image
-    Image2D lengths = Image2D(
+    Image2D * lengths = new Image2D(
             ocl.context,
             CL_MEM_READ_WRITE,
             ImageFormat(CL_R, CL_FLOAT),
             sum, sum
     );
+    GC->addMemObject(lengths);
 
     // Run linkLengths kernel
     Kernel linkLengths(ocl.program, "linkLengths");
     linkLengths.setArg(0, vertices);
-    linkLengths.setArg(1, lengths);
+    linkLengths.setArg(1, *lengths);
     ocl.queue.enqueueNDRangeKernel(
             linkLengths,
             NullRange,
@@ -2039,7 +3376,7 @@ if(getParamBool(parameters, "timing")) {
 
     // Create and init compacted_lengths image
     float * cl = new float[sum*sum*2]();
-    Image2D compacted_lengths = Image2D(
+    Image2D * compacted_lengths = new Image2D(
             ocl.context,
             CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
             ImageFormat(CL_RG, CL_FLOAT),
@@ -2047,6 +3384,8 @@ if(getParamBool(parameters, "timing")) {
             0,
             cl
     );
+    GC->addMemObject(compacted_lengths);
+    delete[] cl;
 
     // Create and initialize incs buffer
     Buffer incs = Buffer(
@@ -2066,9 +3405,9 @@ if(getParamBool(parameters, "timing")) {
 
     // Run compact kernel
     Kernel compactLengths(ocl.program, "compact");
-    compactLengths.setArg(0, lengths);
+    compactLengths.setArg(0, *lengths);
     compactLengths.setArg(1, incs);
-    compactLengths.setArg(2, compacted_lengths);
+    compactLengths.setArg(2, *compacted_lengths);
     compactLengths.setArg(3, maxDistance);
     ocl.queue.enqueueNDRangeKernel(
             compactLengths,
@@ -2076,30 +3415,32 @@ if(getParamBool(parameters, "timing")) {
             NDRange(sum, sum),
             NullRange
     );
+    ocl.queue.finish();
+    GC->deleteMemObject(lengths);
 
     Kernel linkingKernel(ocl.program, "linkCenterpoints");
     linkingKernel.setArg(0, TDF);
-    linkingKernel.setArg(1, radius);
-    linkingKernel.setArg(2, vertices);
-    linkingKernel.setArg(3, edgeTuples);
-    linkingKernel.setArg(4, intensity);
-    linkingKernel.setArg(5, compacted_lengths);
-    linkingKernel.setArg(6, sum);
-    linkingKernel.setArg(7, Tmean);
-    linkingKernel.setArg(8, maxDistance);
+    linkingKernel.setArg(1, vertices);
+    linkingKernel.setArg(2, edgeTuples);
+    linkingKernel.setArg(3, *compacted_lengths);
+    linkingKernel.setArg(4, sum);
+    linkingKernel.setArg(5, Tmean);
+    linkingKernel.setArg(6, maxDistance);
     ocl.queue.enqueueNDRangeKernel(
             linkingKernel,
             NullRange,
             NDRange(globalSize),
             NDRange(64)
     );
+    ocl.queue.finish();
+    GC->deleteMemObject(compacted_lengths);
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
     startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
     endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
     std::cout << "RUNTIME linking: " << (end-start)*1.0e-6 << " ms" << std::endl;
-} 
+}
 
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
@@ -2138,13 +3479,15 @@ if(getParamBool(parameters, "timing")) {
 
     // Run create positions kernel on edges
     Buffer edges = hp2.createPositionBuffer();
+    ocl.queue.finish();
+    hp2.deleteHPlevels();
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
     startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
     endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
     std::cout << "RUNTIME HP creation and traversal: " << (end-start)*1.0e-6 << " ms" << std::endl;
-} 
+}
 
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
@@ -2212,7 +3555,7 @@ if(getParamBool(parameters, "timing")) {
     startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
     endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
     std::cout << "RUNTIME graph component labeling: " << (end-start)*1.0e-6 << " ms" << std::endl;
-} 
+}
 
 
 if(getParamBool(parameters, "timing")) {
@@ -2242,109 +3585,167 @@ if(getParamBool(parameters, "timing")) {
             NDRange(sum),
             NullRange
     );
-    Image3D centerlines;    
-    Kernel RSTKernel(ocl.program, "removeSmallTrees");
-    RSTKernel.setArg(0, edges);
-    RSTKernel.setArg(1, vertices);
-    RSTKernel.setArg(2, C);
-    RSTKernel.setArg(3, S);
-    RSTKernel.setArg(4, minTreeLength);
-    if(no3Dwrite) {
-        Buffer centerlinesBuffer = Buffer(
-                ocl.context,
-                CL_MEM_WRITE_ONLY,
-                sizeof(char)*totalSize
-        );
-
-        initCharBuffer.setArg(0, centerlinesBuffer);
-        ocl.queue.enqueueNDRangeKernel(
-                initCharBuffer,
-                NullRange,
-                NDRange(totalSize),
-                NullRange
-        );
-
-        RSTKernel.setArg(5, centerlinesBuffer);
-        RSTKernel.setArg(6, size.x);
-        RSTKernel.setArg(7, size.y);
-
-        ocl.queue.enqueueNDRangeKernel(
-                RSTKernel,
-                NullRange,
-                NDRange(sum2),
-                NullRange
-        );
-
-        centerlines = Image3D(
+    Image3D centerlines= Image3D(
             ocl.context,
             CL_MEM_READ_WRITE,
             ImageFormat(CL_R, CL_SIGNED_INT8),
             size.x, size.y, size.z
         );
 
-        ocl.queue.enqueueCopyBufferToImage(
-                centerlinesBuffer,
-                centerlines,
-                0,
-                offset,
-                region
-        );
-
-    } else {
-        centerlines = Image3D(
-            ocl.context,
-            CL_MEM_READ_WRITE,
-            ImageFormat(CL_R, CL_SIGNED_INT8),
-            size.x, size.y, size.z
-        );
-
-        Kernel init3DImage(ocl.program, "init3DImage");
-        init3DImage.setArg(0, centerlines);
-        ocl.queue.enqueueNDRangeKernel(
-            init3DImage,
-            NullRange,
-            NDRange(size.x, size.y, size.z),
-            NullRange
-        );
-
-        RSTKernel.setArg(5, centerlines);
-
-        ocl.queue.enqueueNDRangeKernel(
-                RSTKernel,
-                NullRange,
-                NDRange(sum2),
-                NullRange
-        );
-    }
-
-    if(getParamStr(parameters, "centerline-vtk-file") != "off") {
+    if(getParamStr(parameters, "centerline-vtk-file") != "off" ||
+    		getParamBool(parameters, "loop-removal")) {
+    	// Do rasterization of centerline on CPU
     	// Transfer edges (size: sum2) and vertices (size: sum) buffers to host
     	int * verticesArray = new int[sum*3];
-    	int * edgesArray = new int[sum2*3];
+    	int * edgesArray = new int[sum2*2];
+    	int * CArray = new int[sum];
+    	int * SArray = new int[sum];
 
     	ocl.queue.enqueueReadBuffer(vertices, CL_FALSE, 0, sum*3*sizeof(int), verticesArray);
     	ocl.queue.enqueueReadBuffer(edges, CL_FALSE, 0, sum2*2*sizeof(int), edgesArray);
+    	ocl.queue.enqueueReadBuffer(C, CL_FALSE, 0, sum*sizeof(int), CArray);
+    	ocl.queue.enqueueReadBuffer(S, CL_FALSE, 0, sum*sizeof(int), SArray);
 
     	ocl.queue.finish();
-
-
-    	// Write to file
-    	std::ofstream file;
-    	file.open(getParamStr(parameters, "centerline-vtk-file").c_str());
-    	file << "# vtk DataFile Version 3.0\nvtk output\nASCII\n";
-    	file << "DATASET POLYDATA\nPOINTS " << sum << " int\n";
+    	float * radiusB = new float[totalSize];
+    	ocl.queue.enqueueReadImage(radius, CL_FALSE, offset, region, 0, 0, radiusB);
+    	std::vector<int3> vertices;
+    	int counter = 0;
+    	int * indexes = new int[sum];
     	for(int i = 0; i < sum; i++) {
-    		file << verticesArray[i*3] << " " << verticesArray[i*3+1] << " " << verticesArray[i*3+2] << "\n";
+    		if(SArray[CArray[i]] >= minTreeLength) {
+				int3 v(verticesArray[i*3],verticesArray[i*3+1],verticesArray[i*3+2]);
+				vertices.push_back(v);
+				indexes[i] = counter;
+				counter++;
+    		}
     	}
-
-    	file << "\nLINES " << sum2 << " " << sum2*3 << "\n";
+    	std::vector<SIPL::int2> edges;
+		int maxEdgeDistance = getParam(parameters, "max-edge-distance");
     	for(int i = 0; i < sum2; i++) {
-    		file << "2 " << edgesArray[i*2] << " " << edgesArray[i*2+1] << "\n";
+    		if(SArray[CArray[edgesArray[i*2]]] >= minTreeLength && SArray[CArray[edgesArray[i*2+1]]] >= minTreeLength ) {
+    			// Check length of edge
+    			int3 A = vertices[indexes[edgesArray[i*2]]];
+    			int3 B = vertices[indexes[edgesArray[i*2+1]]];
+    			float distance = A.distance(B);
+    			if(getParamStr(parameters, "centerline-vtk-file") != "off" &&
+    					distance > maxEdgeDistance) {
+					float3 direction(B.x-A.x,B.y-A.y,B.z-A.z);
+					float3 Af(A.x,A.y,A.z);
+					int previous = indexes[edgesArray[i*2]];
+    				for(int j = maxEdgeDistance; j < distance; j += maxEdgeDistance) {
+    					float3 newPos = Af + ((float)j/distance)*direction;
+    					int3 newVertex(round(newPos.x), round(newPos.y), round(newPos.z));
+    					// Create new vertex
+    					vertices.push_back(newVertex);
+    					// Add new edge
+    					SIPL::int2 edge(previous, counter);
+    					edges.push_back(edge);
+    					previous = counter;
+    					counter++;
+    				}
+    				// Connect previous vertex to B
+    				SIPL::int2 edge(previous, indexes[edgesArray[i*2+1]]);
+    				edges.push_back(edge);
+    			} else {
+					SIPL::int2 v(indexes[edgesArray[i*2]],indexes[edgesArray[i*2+1]]);
+					edges.push_back(v);
+    			}
+    		}
     	}
 
-    	file.close();
+    	// Remove loops from graph
+    	removeLoops(vertices, edges, size);
+
+    	ocl.queue.finish();
+    	char * centerlinesData = createCenterlineVoxels(vertices, edges, radiusB, size);
+    	ocl.queue.enqueueWriteImage(
+    			centerlines,
+    			CL_FALSE,
+    			offset,
+    			region,
+    			0, 0,
+    			centerlinesData
+		);
+		ocl.queue.enqueueWriteImage(
+    			radius,
+    			CL_FALSE,
+    			offset,
+    			region,
+    			0, 0,
+    			radiusB
+		);
+
+		if(getParamStr(parameters, "centerline-vtk-file") != "off")
+			writeToVtkFile(parameters, vertices, edges);
+
     	delete[] verticesArray;
     	delete[] edgesArray;
+    	delete[] CArray;
+    	delete[] SArray;
+    	delete[] indexes;
+    } else {
+    	// Do rasterization of centerline on GPU
+    	Kernel RSTKernel(ocl.program, "removeSmallTrees");
+		RSTKernel.setArg(0, edges);
+		RSTKernel.setArg(1, vertices);
+		RSTKernel.setArg(2, C);
+		RSTKernel.setArg(3, S);
+		RSTKernel.setArg(4, minTreeLength);
+		if(no3Dwrite) {
+			Buffer centerlinesBuffer = Buffer(
+					ocl.context,
+					CL_MEM_WRITE_ONLY,
+					sizeof(char)*totalSize
+			);
+
+			initCharBuffer.setArg(0, centerlinesBuffer);
+			ocl.queue.enqueueNDRangeKernel(
+					initCharBuffer,
+					NullRange,
+					NDRange(totalSize),
+					NullRange
+			);
+
+			RSTKernel.setArg(5, centerlinesBuffer);
+			RSTKernel.setArg(6, size.x);
+			RSTKernel.setArg(7, size.y);
+
+			ocl.queue.enqueueNDRangeKernel(
+					RSTKernel,
+					NullRange,
+					NDRange(sum2),
+					NullRange
+			);
+
+			ocl.queue.enqueueCopyBufferToImage(
+					centerlinesBuffer,
+					centerlines,
+					0,
+					offset,
+					region
+			);
+
+		} else {
+
+			Kernel init3DImage(ocl.program, "init3DImage");
+			init3DImage.setArg(0, centerlines);
+			ocl.queue.enqueueNDRangeKernel(
+				init3DImage,
+				NullRange,
+				NDRange(size.x, size.y, size.z),
+				NullRange
+			);
+
+			RSTKernel.setArg(5, centerlines);
+
+			ocl.queue.enqueueNDRangeKernel(
+					RSTKernel,
+					NullRange,
+					NDRange(sum2),
+					NullRange
+			);
+		}
     }
 
 if(getParamBool(parameters, "timing")) {
@@ -2353,20 +3754,45 @@ if(getParamBool(parameters, "timing")) {
     startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
     endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
     std::cout << "RUNTIME of removing small trees: " << (end-start)*1.0e-6 << " ms" << std::endl;
-} 
+}
     return centerlines;
 }
 
-void writeDataToDisk(TSFOutput * output, std::string storageDirectory) {
+void writeDataToDisk(TSFOutput * output, std::string storageDirectory, std::string name) {
 	SIPL::int3 * size = output->getSize();
-	if(output->hasCenterlineVoxels())
-		writeToRaw<char>(output->getCenterlineVoxels(), storageDirectory + "centerline.raw", size->x, size->y, size->z);
+	if(output->hasCenterlineVoxels()) {
+		// Create MHD file
+		std::ofstream file;
+		std::string filename = storageDirectory + name + ".centerline.mhd";
+		file.open(filename.c_str());
+		file << "ObjectType = Image\n";
+		file << "NDims = 3\n";
+		file << "DimSize = " << output->getSize()->x << " " << output->getSize()->y << " " << output->getSize()->z << "\n";
+		file << "ElementSpacing = " << output->getSpacing().x << " " << output->getSpacing().y << " " << output->getSpacing().z << "\n";
+		file << "ElementType = MET_CHAR\n";
+		file << "ElementDataFile = " << name << ".centerline.raw\n";
+		file.close();
+		writeToRaw<char>(output->getCenterlineVoxels(), storageDirectory + name + ".centerline.raw", size->x, size->y, size->z);
+	}
 
-	if(output->hasSegmentation())
-		writeToRaw<char>(output->getSegmentation(), storageDirectory + "segmentation.raw", size->x, size->y, size->z);
+	if(output->hasSegmentation()) {
+		// Create MHD file
+		std::ofstream file;
+		std::string filename = storageDirectory + name + ".segmentation.mhd";
+		file.open(filename.c_str());
+		file << "ObjectType = Image\n";
+		file << "NDims = 3\n";
+		file << "DimSize = " << output->getSize()->x << " " << output->getSize()->y << " " << output->getSize()->z << "\n";
+		file << "ElementSpacing = " << output->getSpacing().x << " " << output->getSpacing().y << " " << output->getSpacing().z << "\n";
+		file << "ElementType = MET_CHAR\n";
+		file << "ElementDataFile = " << name << ".segmentation.raw\n";
+		file.close();
+
+		writeToRaw<char>(output->getSegmentation(), storageDirectory + name + ".segmentation.raw", size->x, size->y, size->z);
+	}
 }
 
-void runCircleFittingAndNewCenterlineAlg(OpenCL * ocl, cl::Image3D &dataset, SIPL::int3 * size, paramList &parameters, TSFOutput * output) {
+void runCircleFittingAndNewCenterlineAlg(OpenCL * ocl, cl::Image3D * dataset, SIPL::int3 * size, paramList &parameters, TSFOutput * output) {
     INIT_TIMER
     Image3D vectorField, radius;
     Image3D * TDF = new Image3D;
@@ -2384,15 +3810,17 @@ void runCircleFittingAndNewCenterlineAlg(OpenCL * ocl, cl::Image3D &dataset, SIP
 
     runCircleFittingMethod(*ocl, dataset, *size, parameters, vectorField, *TDF, radius);
     output->setTDF(TDF);
+    if(getParamBool(parameters, "tdf-only"))
+    	return;
 
     Image3D * centerline = new Image3D;
-    *centerline = runNewCenterlineAlg(*ocl, *size, parameters, vectorField, *TDF, radius, dataset);
+    *centerline = runNewCenterlineAlg(*ocl, *size, parameters, vectorField, *TDF, radius);
     output->setCenterlineVoxels(centerline);
 
     Image3D * segmentation = new Image3D;
     if(!getParamBool(parameters, "no-segmentation")) {
     	if(!getParamBool(parameters, "sphere-segmentation")) {
-			*segmentation = runInverseGradientSegmentation(*ocl, *centerline, vectorField, *size, parameters);
+			*segmentation = runInverseGradientSegmentation(*ocl, *centerline, vectorField, radius, *size, parameters);
     	} else {
 			*segmentation = runSphereSegmentation(*ocl, *centerline, radius, *size, parameters);
     	}
@@ -2400,17 +3828,999 @@ void runCircleFittingAndNewCenterlineAlg(OpenCL * ocl, cl::Image3D &dataset, SIP
     }
 
 	if(getParamStr(parameters, "storage-dir") != "off") {
-		writeDataToDisk(output, getParamStr(parameters, "storage-dir"));
+		writeDataToDisk(output, getParamStr(parameters, "storage-dir"), getParamStr(parameters, "storage-name"));
     }
 
 }
 
-void runCircleFittingAndRidgeTraversal(OpenCL * ocl, Image3D &dataset, SIPL::int3 * size, paramList &parameters, TSFOutput * output) {
+class CrossSection {
+public:
+	int3 pos;
+	float TDF;
+	std::vector<CrossSection *> neighbors;
+	int label;
+	int index;
+	float3 direction;
+};
+
+class CrossSectionCompare {
+private:
+	float * dist;
+public:
+	CrossSectionCompare(float * dist) { this->dist = dist; };
+	bool operator() (const CrossSection * a, const CrossSection * b) {
+		return dist[a->index] > dist[b->index];
+	};
+};
+
+std::vector<CrossSection *> createGraph(TubeSegmentation &T, SIPL::int3 size) {
+	// Create vector
+	std::vector<CrossSection *> sections;
+	float threshold = 0.5f;
+
+	// Go through TS.TDF and add all with TDF above threshold
+	int counter = 0;
+	float thetaLimit = 0.5;
+	for(int z = 1; z < size.z-1; z++) {
+	for(int y = 1; y < size.y-1; y++) {
+	for(int x = 1; x < size.x-1; x++) {
+		int3 pos(x,y,z);
+		float tdf = T.TDF[POS(pos)];
+		if(tdf > threshold) {
+			int maxD = std::min(std::max((int)round(T.radius[POS(pos)]), 1), 5);
+		    //std::cout << SQR_MAG(pos) << " " << SQR_MAG_SMALL(pos) << std::endl;
+			//std::cout << "radius" << TS.radius[POS(pos)] << std::endl;
+			//std::cout << "maxD "<< maxD <<std::endl;
+			float3 e1 = getTubeDirection(T, pos, size);
+			bool invalid = false;
+		    for(int a = -maxD; a <= maxD; a++) {
+		    for(int b = -maxD; b <= maxD; b++) {
+		    for(int c = -maxD; c <= maxD; c++) {
+		        if(a == 0 && b == 0 && c == 0)
+		            continue;
+		        const int3 n = pos + int3(a,b,c);
+		        if(!inBounds(n, size))
+		        	continue;
+		        float3 r(a,b,c);
+		        const float dp = e1.dot(r);
+		        float3 r_projected = float3(r.x-e1.x*dp,r.y-e1.y*dp,r.z-e1.z*dp);
+		        float3 rn = r.normalize();
+		        float3 rpn = r_projected.normalize();
+		        float theta = acos((double)rn.dot(rpn));
+		        //std::cout << "theta: " << theta << std::endl;
+
+		        if((theta < thetaLimit && r.length() < maxD-0.5f)) {
+		        	//std::cout << SQR_MAG(n) << std::endl;
+		        	if(T.radius[POS(pos)]<= 3) {
+		            //if(TS.TDF[POS(n)] > TS.TDF[POS(pos)]) {
+		            if(SQR_MAG_SMALL(n) < SQR_MAG_SMALL(pos)) {
+		                invalid = true;
+		                break;
+		            }
+		            } else {
+		            if(SQR_MAG(n) < SQR_MAG(pos)) {
+		            //if(TS.TDF[POS(n)] > TS.TDF[POS(pos)]) {
+		                invalid = true;
+		                break;
+		            }
+		            }
+		        }
+		    }}}
+		    if(!invalid) {
+				CrossSection * cs = new CrossSection;
+				cs->pos = pos;
+				cs->TDF = tdf;
+				cs->label = -1;//counter;
+				cs->direction = e1;
+				counter++;
+				sections.push_back(cs);
+		    }
+		}
+	}}}
+
+
+	// For each cross section c_i
+	for(int i = 0; i < sections.size(); i++) {
+		CrossSection * c_i = sections[i];
+		// For each cross section c_j
+		for(int j = 0; j < i; j++) {
+			CrossSection * c_j = sections[j];
+			// If all criterias are ok: Add c_j as neighbor to c_i
+			if(c_i->pos.distance(c_j->pos) < 4 && !(c_i->pos == c_j->pos)) {
+				float3 e1_i = c_i->direction;
+				float3 e1_j = c_j->direction;
+				int3 cint = c_i->pos - c_j->pos;
+				float3 c = cint.normalize();
+
+				if(acos((double)fabs(e1_i.dot(e1_j))) > 1.05) // 60 degrees
+					continue;
+
+				if(acos((double)fabs(e1_i.dot(c))) > 1.05)
+					continue;
+
+				if(acos((double)fabs(e1_j.dot(c))) > 1.05)
+					continue;
+
+				int distance = ceil(c_i->pos.distance(c_j->pos));
+				float3 direction(c_j->pos.x-c_i->pos.x,c_j->pos.y-c_i->pos.y,c_j->pos.z-c_i->pos.z);
+				bool invalid = false;
+				for(int i = 0; i < distance; i++) {
+					float frac = (float)i/distance;
+					float3 n = c_i->pos + frac*direction;
+					int3 in(round(n.x),round(n.y),round(n.z));
+					//float3 e1 = getTubeDirection(TS, in, size);
+					//cost += (1-fabs(a->direction.dot(e1)))+(1-fabs(b->direction.dot(e1)));
+					/*
+					if(T.intensity[POS(in)] > 0.5f) {
+						invalid = true;
+						break;
+					}
+					*/
+				}
+				//if(invalid)
+				//	continue;
+
+
+				c_i->neighbors.push_back(c_j);
+				c_j->neighbors.push_back(c_i);
+				//sectionPairs.push_back(c_i);
+			}
+			// If no pair is found, dont add it
+		}
+	}
+
+	std::vector<CrossSection *> sectionPairs;
+	for(int i = 0; i < sections.size(); i++) {
+		CrossSection * c_i = sections[i];
+		if(c_i->neighbors.size()>0) {
+			sectionPairs.push_back(c_i);
+		}
+	}
+
+	return sectionPairs;
+}
+
+class Connection;
+
+class Segment {
+public:
+	std::vector<CrossSection *> sections;
+	std::vector<Connection *> connections;
+	float benefit;
+	float cost;
+	int index;
+};
+
+class Connection {
+public:
+	Segment * source;
+	Segment * target;
+	CrossSection * source_section;
+	CrossSection * target_section;
+	float cost;
+};
+
+bool segmentCompare(Segment * a, Segment * b) {
+	return a->benefit > b->benefit;
+}
+
+bool segmentInSegmentation(Segment * s, unordered_set<int> &segmentation, int3 size) {
+	bool in = false;
+	for(int i = 0; i < s->sections.size(); i++) {
+		CrossSection * c = s->sections[i];
+		if(segmentation.find(POS(c->pos)) != segmentation.end()) {
+			in = true;
+			break;
+		}
+	}
+	return in;
+}
+
+float calculateBenefit(CrossSection * a, CrossSection * b, TubeSegmentation &TS, int3 size) {
+	float benefit = 0.0f;
+	int distance = ceil(a->pos.distance(b->pos));
+	float3 direction(b->pos.x-a->pos.x,b->pos.y-a->pos.y,b->pos.z-a->pos.z);
+	for(int i = 0; i < distance; i++) {
+		float frac = (float)i/distance;
+		float3 n = a->pos + frac*direction;
+		int3 in(round(n.x),round(n.y),round(n.z));
+		benefit += (TS.TDF[POS(in)]);
+	}
+
+	return benefit;
+}
+
+void inverseGradientRegionGrowing(Segment * s, TubeSegmentation &TS, unordered_set<int> &segmentation, int3 size) {
+    std::vector<int3> centerpoints;
+	for(int c = 0; c < s->sections.size()-1; c++) {
+		CrossSection * a = s->sections[c];
+		CrossSection * b = s->sections[c+1];
+		int distance = ceil(a->pos.distance(b->pos));
+		float3 direction(b->pos.x-a->pos.x,b->pos.y-a->pos.y,b->pos.z-a->pos.z);
+		for(int i = 0; i < distance; i++) {
+			float frac = (float)i/distance;
+			float3 n = a->pos + frac*direction;
+			int3 in(round(n.x),round(n.y),round(n.z));
+			centerpoints.push_back(in);
+		}
+		segmentation.insert(POS(a->pos));//test
+		segmentation.insert(POS(b->pos));//test
+	}
+
+	// Dilate the centerline
+	std::vector<int3> dilatedCenterline;
+	for(int i = 0; i < centerpoints.size(); i++) {
+		int3 pos = centerpoints[i];
+		for(int a = -1; a < 2; a++) {
+		for(int b = -1; b < 2; b++) {
+		for(int c = -1; c < 2; c++) {
+			int3 n = pos + int3(a,b,c);
+			if(inBounds(n, size) && segmentation.find(POS(n)) == segmentation.end()) {
+				segmentation.insert(POS(n));
+				dilatedCenterline.push_back(n);
+			}
+		}}}
+	}
+	/*
+
+	std::queue<int3> queue;
+	for(int3 pos : dilatedCenterline) {
+		for(int a = -1; a < 2; a++) {
+		for(int b = -1; b < 2; b++) {
+		for(int c = -1; c < 2; c++) {
+			int3 n = pos + int3(a,b,c);
+			if(inBounds(n, size) && segmentation.find(POS(n)) == segmentation.end()) {
+				queue.push(n);
+			}
+		}}}
+	}
+
+	while(!queue.empty()) {
+		int3 X = queue.front();
+		float FNXw = SQR_MAG(X);
+		queue.pop();
+		for(int a = -1; a < 2; a++) {
+		for(int b = -1; b < 2; b++) {
+		for(int c = -1; c < 2; c++) {
+			if(a == 0 && b == 0 && c == 0)
+				continue;
+
+			int3 Y = X + int3(a,b,c);
+			if(inBounds(Y, size) && segmentation.find(POS(Y)) == segmentation.end()) {
+
+				float3 FNY;
+				FNY.x = TS.Fx[POS(Y)];
+				FNY.y = TS.Fy[POS(Y)];
+				FNY.z = TS.Fz[POS(Y)];
+				float FNYw = FNY.length();
+				FNY = FNY.normalize();
+				if(FNYw > FNXw || FNXw < 0.1f) {
+
+					int3 Z;
+					float maxDotProduct = -2.0f;
+					for(int a2 = -1; a2 < 2; a2++) {
+					for(int b2 = -1; b2 < 2; b2++) {
+					for(int c2 = -1; c2 < 2; c2++) {
+						if(a2 == 0 && b2 == 0 && c2 == 0)
+							continue;
+						int3 Zc;
+						Zc.x = Y.x+a2;
+						Zc.y = Y.y+b2;
+						Zc.z = Y.z+c2;
+						float3 YZ;
+						YZ.x = Zc.x-Y.x;
+						YZ.y = Zc.y-Y.y;
+						YZ.z = Zc.z-Y.z;
+						YZ = YZ.normalize();
+						if(FNY.dot(YZ) > maxDotProduct) {
+							maxDotProduct = FNY.dot(YZ);
+							Z = Zc;
+						}
+					}}}
+
+					if(Z.x == X.x && Z.y == X.y && Z.z == X.z) {
+						segmentation.insert(POS(X));
+						queue.push(Y);
+					}
+				}
+			}
+		}}}
+	}
+	*/
+
+}
+
+std::vector<Segment *> createSegments(OpenCL &ocl, TubeSegmentation &TS, std::vector<CrossSection *> &crossSections, SIPL::int3 size) {
+	// Create segment vector
+	std::vector<Segment *> segments;
+
+	// Do a graph component labeling
+	unordered_set<int> visited;
+    int labelCounter = 0;
+    std::vector<std::vector<CrossSection *> > labels;
+	for(int i = 0; i < crossSections.size(); i++) {
+		CrossSection * c = crossSections[i];
+		// Do a bfs on c
+		// Check to see if point has been processed before doing a BFS
+		if(visited.find(c->label) != visited.end())
+			continue;
+
+        c->label = labelCounter;
+        labelCounter++;
+        std::vector<CrossSection *> list;
+
+		std::stack<CrossSection *> stack;
+		stack.push(c);
+		while(!stack.empty()) {
+			CrossSection * current = stack.top();
+			stack.pop();
+			// Check label of neighbors to see if they have been added
+			if(current->label != c->label || c->pos == current->pos) {
+                list.push_back(current);
+				// Change label of neighbors if not
+				current->label = c->label;
+				// Add neighbors to stack
+
+				for(int j = 0; j < current->neighbors.size(); j++) {
+					CrossSection * n = current->neighbors[j];
+					if(n->label != c->label)
+						stack.push(n);
+				}
+			}
+		}
+		visited.insert(c->label);
+        labels.push_back(list);
+	}
+
+	std::cout << "finished graph component labeling" << std::endl;
+
+	// Do a floyd warshall all pairs shortest path
+	int totalSize = crossSections.size();
+	std::cout << "number of cross sections is " << totalSize << std::endl;
+
+
+    // For each label
+
+	for(int i = 0; i < labels.size(); i++) {
+		std::vector<CrossSection *> list = labels[i];
+        // Do floyd warshall on all pairs
+        int totalSize = list.size();
+        float * dist = new float[totalSize*totalSize];
+        int * pred = new int[totalSize*totalSize];
+
+        for(int u = 0; u < totalSize; u++) {
+            CrossSection * U = list[u];
+            U->index = u;
+        }
+        #define DPOS(U, V) V+U*totalSize
+	// For each cross section U
+	for(int u = 0; u < totalSize; u++) {
+		CrossSection * U = list[u];
+		// For each cross section V
+		for(int v = 0; v < totalSize; v++) {
+			dist[DPOS(u,v)] = 99999999;
+			pred[DPOS(u,v)] = -1;
+		}
+		dist[DPOS(U->index,U->index)] = 0;
+		for(int j = 0; j < U->neighbors.size(); j++) {
+			CrossSection * V = U->neighbors[j];
+			// TODO calculate more advanced weight
+			dist[DPOS(U->index,V->index)] = ceil(U->pos.distance(V->pos)) - calculateBenefit(U, V, TS, size); //(1-V->TDF);
+			pred[DPOS(U->index,V->index)] = U->index;
+		}
+	}
+	for(int t = 0; t < totalSize; t++) {
+		//CrossSection * T = crossSections[t];
+		//std::cout << "processing t=" << t << std::endl;
+		// For each cross section U
+		for(int u = 0; u < totalSize; u++) {
+			//CrossSection * U = crossSections[u];
+			// For each cross section V
+			for(int v = 0; v < totalSize; v++) {
+				//CrossSection * V = crossSections[v];
+				float newLength = dist[DPOS(u, t)] + dist[DPOS(t,v)];
+				if(newLength < dist[DPOS(u,v)]) {
+					dist[DPOS(u,v)] = newLength;
+					pred[DPOS(u,v)] = pred[DPOS(t,v)];
+				}
+			}
+		}
+}
+
+
+
+	for(int s = 0; s < list.size(); s++) { // Source
+		CrossSection * S = list[s];
+		for(int t = 0; t < list.size(); t++) { // Target
+			CrossSection * T = list[t];
+			if(S->label == T->label && S->index != T->index) {
+				Segment * segment = new Segment;
+				// add all cross sections in segment
+				float benefit = 0.0f;
+				segment->sections.push_back(T);
+				int current = T->index;
+				while(current != S->index) {
+					CrossSection * C = list[current];
+					segment->sections.push_back(C);
+					current = pred[DPOS(S->index,current)];// get predecessor
+					benefit += calculateBenefit(C, list[current], TS, size);
+				}
+				segment->sections.push_back(list[current]);
+				segment->benefit = benefit;
+				segments.push_back(segment);
+			}
+		}
+	}
+
+        delete[] dist;
+        delete[] pred;
+
+    }
+	std::cout << "finished performing floyd warshall" << std::endl;
+
+	std::cout << "finished creating segments" << std::endl;
+	std::cout << "total number of segments is " << segments.size() << std::endl;
+
+
+	// Sort the segment vector on benefit
+	std::sort(segments.begin(), segments.end(), segmentCompare);
+	unordered_set<int> segmentation;
+
+	// Go through sorted vector and do a region growing
+	std::vector<Segment *> filteredSegments;
+	int counter = 0;
+	for(int i = 0; i < segments.size(); i++) {
+		Segment * s = segments[i];
+		if(!segmentInSegmentation(s, segmentation, size)) {
+			//std::cout << "adding segment with benefit: " << s->benefit << std::endl;
+			// Do region growing and Add all segmented voxels to a set
+			inverseGradientRegionGrowing(s, TS, segmentation, size);
+			filteredSegments.push_back(s);
+			s->index = counter;
+			counter++;
+		}
+	}
+
+	std::cout << "total number of segments after remove overlapping segments " << filteredSegments.size() << std::endl;
+
+	return filteredSegments;
+}
+
+int selectRoot(std::vector<Segment *> segments) {
+	int root = 0;
+	for(int i = 1; i < segments.size(); i++) {
+		if(segments[i]->benefit > segments[root]->benefit)
+			root = i;
+	}
+	return root;
+}
+
+void DFS(Segment * current, int * ordering, int &counter, unordered_set<int> &visited) {
+	if(visited.find(current->index) != visited.end())
+		return;
+	ordering[counter] = current->index;
+	//std::cout << counter << ": " << current->index << std::endl;
+	counter++;
+	for(int i = 0; i < current->connections.size(); i++) {
+		Connection * edge = current->connections[i];
+		DFS(edge->target, ordering, counter, visited);
+	}
+	visited.insert(current->index);
+}
+
+int * createDepthFirstOrdering(std::vector<Segment *> segments, int root, int &Ns) {
+	int * ordering = new int[segments.size()];
+	int counter = 0;
+
+	// Give imdexes to segments
+	for(int i = 0; i < segments.size(); i++) {
+		segments[i]->index = i;
+	}
+
+	unordered_set<int> visited;
+
+	DFS(segments[root], ordering, counter, visited);
+
+	Ns = counter;
+	int * reversedOrdering = new int[Ns];
+	for(int i = 0; i < Ns; i++) {
+		reversedOrdering[i] = ordering[Ns-i-1];
+	}
+
+	delete[] ordering;
+	return reversedOrdering;
+}
+
+class ConnectionComparator {
+public:
+	bool operator()(Connection * a, Connection *b) const {
+		return a->cost > b->cost;
+	}
+};
+
+std::vector<Segment *> minimumSpanningTree(Segment * root, int3 size) {
+	// Need a priority queue on Connection objects based on the cost
+	std::priority_queue<Connection *, std::vector<Connection *>, ConnectionComparator> queue;
+	std::vector<Segment *> result;
+	unordered_set<int> visited;
+	result.push_back(root);
+	visited.insert(root->index);
+
+	// Add all connections of the root to the queue
+	for(int i = 0; i < root->connections.size(); i++) {
+		Connection * c = root->connections[i];
+		queue.push(c);
+	}
+	// Remove connections from root
+	root->connections = std::vector<Connection *>();
+
+	while(!queue.empty()) {
+	// Select minimum connection
+	// Check if target is already added
+	// if not, add all of its connection to the queue
+	// add this connection to the source
+	// Add target segment and clear its connections
+	// Also add cost to the segment object
+		Connection * c = queue.top();
+		//std::cout << c->cost << std::endl;
+		queue.pop();
+		if(visited.find(c->target->index) != visited.end())
+			continue;
+
+		for(int i = 0; i < c->target->connections.size(); i++) {
+			Connection * cn = c->target->connections[i];
+			if(visited.find(cn->target->index) == visited.end())
+				queue.push(cn);
+		}
+
+		c->source->connections.push_back(c);
+		// c->target->connections.clear(); doest his delete the objects?
+		c->target->connections = std::vector<Connection *>();
+		c->target->cost = c->cost;
+		result.push_back(c->target);
+		visited.insert(c->target->index);
+	}
+
+	return result;
+}
+
+std::vector<Segment *> findOptimalSubtree(std::vector<Segment *> segments, int * depthFirstOrdering, int Ns) {
+
+	float * score = new float[Ns]();
+	float r = 2.0;
+
+	// Stage 1 bottom up
+	for(int j = 0; j < Ns; j++) {
+		int mj = depthFirstOrdering[j];
+		score[mj] = segments[mj]->benefit - r * segments[mj]->cost;
+		/*std::cout << "cross sections: " << segments[mj]->sections.size() << " benefit: "
+				<< segments[mj]->benefit << " cost: " << segments[mj]->cost <<
+				" children: " << segments[mj]->connections.size() << std::endl;*/
+		// For all children of mj
+		for(int n = 0; n < segments[mj]->connections.size(); n++) {
+			Connection * c = segments[mj]->connections[n];
+			int k = c->target->index; //child
+			if(score[k] >= 0)
+				score[mj] += score[k];
+		}
+	}
+
+	// Stage 2 top down
+	bool * v = new bool[Ns];
+	for(int i = 1; i < Ns; i++)
+		v[i] = false;
+	v[0] = true;
+
+	for(int j = Ns-1; j >= 0; j--) {
+		int mj = depthFirstOrdering[j];
+		if(v[mj]) {
+			// For all children of mj
+			for(int n = 0; n < segments[mj]->connections.size(); n++) {
+				Connection * c = segments[mj]->connections[n];
+				int k = c->target->index; //child
+				if(score[k] >= 0)
+					v[k] = true;
+			}
+		}
+	}
+
+	delete[] score;
+
+	std::vector<Segment *> finalSegments;
+	for(int i = 0; i < Ns; i++) {
+		if(v[i]) {
+			finalSegments.push_back(segments[i]);
+
+			// for all children, check if they are true in v, if not remove connections
+			std::vector<Connection *> connections;
+			for(int n = 0; n < segments[i]->connections.size(); n++) {
+				Connection * c = segments[i]->connections[n];
+				int k = c->target->index; //child
+				if(v[k]) {
+					// keep connection
+					connections.push_back(c);
+				} else {
+					delete c;
+				}
+			}
+			segments[i]->connections = connections;
+		}
+	}
+	delete[] v;
+	return finalSegments;
+}
+
+float calculateConnectionCost(CrossSection * a, CrossSection * b, TubeSegmentation &TS, int3 size) {
+	float cost = 0.0f;
+	int distance = ceil(a->pos.distance(b->pos));
+	float3 direction(b->pos.x-a->pos.x,b->pos.y-a->pos.y,b->pos.z-a->pos.z);
+	float maxIntensity = -1.0f;
+	for(int i = 0; i < distance; i++) {
+		float frac = (float)i/distance;
+		float3 n = a->pos + frac*direction;
+		int3 in(round(n.x),round(n.y),round(n.z));
+		cost += /*SQR_MAG(in) +*/ (1.0f-TS.TDF[POS(in)]);
+        //float3 e1 = getTubeDirection(TS, in, size);
+        //cost += (1-fabs(a->direction.dot(e1)))+(1-fabs(b->direction.dot(e1)));
+		if(TS.intensity[POS(in)] > maxIntensity) {
+			maxIntensity = TS.intensity[POS(in)];
+		}
+	}
+	/*
+	if(maxIntensity > 0.2 && maxIntensity < 0.3) {
+		cost = cost*2;
+	}
+	if(maxIntensity >= 0.3 && maxIntensity < 0.5) {
+		cost = cost*4;
+	}
+	if(maxIntensity >= 0.5) {
+		cost = cost*8;
+	}
+	*/
+	return cost;
+}
+
+void createConnections(TubeSegmentation &TS, std::vector<Segment *> segments, int3 size) {
+	// For all pairs of segments
+	for(int k = 0; k < segments.size(); k++) {
+		Segment * s_k = segments[k];
+		for(int l = 0; l < k; l++) {
+			Segment * s_l = segments[l];
+			// For each C_k, cross sections in S_k, calculate costs and select the one with least cost
+			float bestCost = 999999999.0f;
+			CrossSection * c_k_best, * c_l_best;
+			bool found = false;
+			for(int i = 0; i < s_k->sections.size(); i++){
+				CrossSection * c_k = s_k->sections[i];
+				for(int j = 0; j < s_l->sections.size(); j++){
+					CrossSection * c_l = s_l->sections[j];
+					if(c_k->pos.distance(c_l->pos) > 20)
+						continue;
+
+					float3 c(c_k->pos.x-c_l->pos.x, c_k->pos.y-c_l->pos.y,c_k->pos.z-c_l->pos.z);
+					c = c.normalize();
+					if(acos(fabs(c_k->direction.dot(c))) > 1.05f)
+						continue;
+					if(acos(fabs(c_l->direction.dot(c))) > 1.05f)
+						continue;
+
+					/*
+                    float rk = TS.radius[POS(c_k->pos)];
+                    float rl = TS.radius[POS(c_l->pos)];
+
+                    if(rk > 2 || rl > 2) {
+                        if(std::max(rk,rl) / std::min(rk,rl) >= 2)
+                            continue;
+                    }
+                    */
+
+					float cost = calculateConnectionCost(c_k, c_l, TS, size);
+					if(cost < bestCost) {
+						bestCost = cost;
+						c_k_best = c_k;
+						c_l_best = c_l;
+						found = true;
+					}
+				}
+			}
+
+
+			// See if they are allowed to connect
+			if(found) {
+				/*if(bestCost < 2) {
+					std::cout << bestCost << std::endl;
+					std::cout << "labels: " << c_k_best->label << " " << c_l_best->label << std::endl;
+					std::cout << "distance: " << c_k_best->pos.distance(c_l_best->pos) << std::endl;
+				}*/
+				// If so, create connection object and add to segemnt
+				Connection * c = new Connection;
+				c->cost = bestCost;
+				c->source = s_k;
+				c->source_section = c_k_best;
+				c->target = s_l;
+				c->target_section = c_l_best;
+				s_k->connections.push_back(c);
+				Connection * c2 = new Connection;
+				c2->cost = bestCost;
+				c2->source = s_l;
+				c2->source_section = c_l_best;
+				c2->target = s_k;
+				c2->target_section = c_k_best;
+				s_l->connections.push_back(c2);
+			}
+		}
+	}
+}
+
+
+#ifdef USE_SIPL_VISUALIZATION
+SIPL::Volume<float3> * visualizeSegments(std::vector<Segment *> segments, int3 size) {
+	SIPL::Volume<float3> * connections = new SIPL::Volume<float3>(size);
+    for(Segment * s : segments) {
+    	for(int i = 0; i < s->sections.size()-1; i++) {
+    		CrossSection * a = s->sections[i];
+    		CrossSection * b = s->sections[i+1];
+			int distance = ceil(a->pos.distance(b->pos));
+			float3 direction(b->pos.x-a->pos.x,b->pos.y-a->pos.y,b->pos.z-a->pos.z);
+			for(int i = 0; i < distance; i++) {
+				float frac = (float)i/distance;
+				float3 n = a->pos + frac*direction;
+				int3 in(round(n.x),round(n.y),round(n.z));
+				float3 v = connections->get(in);
+				v.x = 1.0f;
+				connections->set(in, v);
+			}
+		}
+		for(Connection * c : s->connections) {
+			CrossSection * a = c->source_section;
+			CrossSection * b = c->target_section;
+			int distance = ceil(a->pos.distance(b->pos));
+			float3 direction(b->pos.x-a->pos.x,b->pos.y-a->pos.y,b->pos.z-a->pos.z);
+			for(int i = 0; i < distance; i++) {
+				float frac = (float)i/distance;
+				float3 n = a->pos + frac*direction;
+				int3 in(round(n.x),round(n.y),round(n.z));
+				float3 v = connections->get(in);
+				v.y = 1.0f;
+				connections->set(in, v);
+			}
+
+		}
+    }
+    connections->showMIP();
+    return connections;
+}
+#endif
+
+void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D * dataset, SIPL::int3 * size, paramList &parameters, TSFOutput * output) {
+    INIT_TIMER
+    Image3D vectorField, radius, vectorFieldSmall;
+    Image3D * TDF = new Image3D;
+    const int totalSize = size->x*size->y*size->z;
+	const bool no3Dwrite = !getParamBool(parameters, "3d_write");
+
+    cl::size_t<3> offset;
+    offset[0] = 0;
+    offset[1] = 0;
+    offset[2] = 0;
+    cl::size_t<3> region;
+    region[0] = size->x;
+    region[1] = size->y;
+    region[2] = size->z;
+
+    runCircleFittingMethod(*ocl, dataset, *size, parameters, vectorField, *TDF, radius);
+
+
+    // Transfer from device to host
+    TubeSegmentation TS;
+    TS.Fx = new float[totalSize];
+    TS.Fy = new float[totalSize];
+    TS.Fz = new float[totalSize];
+    TS.FxSmall = new float[totalSize];
+    TS.FySmall = new float[totalSize];
+    TS.FzSmall = new float[totalSize];
+    if((no3Dwrite && !getParamBool(parameters, "16bit-vectors")) || getParamBool(parameters, "32bit-vectors")) {
+    	// 32 bit vector fields
+        float * Fs = new float[totalSize*4];
+        ocl->queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
+#pragma omp parallel for
+        for(int i = 0; i < totalSize; i++) {
+            TS.Fx[i] = Fs[i*4];
+            TS.Fy[i] = Fs[i*4+1];
+            TS.Fz[i] = Fs[i*4+2];
+        }
+        delete[] Fs;
+        if(getParam(parameters, "radius-min") < 2.5) {
+		float * FsSmall = new float[totalSize*4];
+        ocl->queue.enqueueReadImage(vectorFieldSmall, CL_TRUE, offset, region, 0, 0, FsSmall);
+#pragma omp parallel for
+        for(int i = 0; i < totalSize; i++) {
+            TS.FxSmall[i] = FsSmall[i*4];
+            TS.FySmall[i] = FsSmall[i*4+1];
+            TS.FzSmall[i] = FsSmall[i*4+2];
+        }
+        delete[] FsSmall;
+        }
+
+    } else {
+    	// 16 bit vector fields
+        short * Fs = new short[totalSize*4];
+        ocl->queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
+#pragma omp parallel for
+        for(int i = 0; i < totalSize; i++) {
+            TS.Fx[i] = MAX(-1.0f, Fs[i*4] / 32767.0f);
+            TS.Fy[i] = MAX(-1.0f, Fs[i*4+1] / 32767.0f);;
+            TS.Fz[i] = MAX(-1.0f, Fs[i*4+2] / 32767.0f);
+        }
+        delete[] Fs;
+        if(getParam(parameters, "radius-min") < 2.5) {
+		short * FsSmall = new short[totalSize*4];
+        ocl->queue.enqueueReadImage(vectorFieldSmall, CL_TRUE, offset, region, 0, 0, FsSmall);
+#pragma omp parallel for
+        for(int i = 0; i < totalSize; i++) {
+            TS.FxSmall[i] = MAX(-1.0f, FsSmall[i*4] / 32767.0f);
+            TS.FySmall[i] = MAX(-1.0f, FsSmall[i*4+1] / 32767.0f);
+            TS.FzSmall[i] = MAX(-1.0f, FsSmall[i*4+2] / 32767.0f);
+        }
+        delete[] FsSmall;
+        }
+
+    }
+    TS.radius = new float[totalSize];
+    TS.TDF = new float[totalSize];
+    //TS.intensity = new float[totalSize];
+    ocl->queue.enqueueReadImage(*TDF, CL_TRUE, offset, region, 0, 0, TS.TDF);
+    output->setTDF(TS.TDF);
+    ocl->queue.enqueueReadImage(radius, CL_TRUE, offset, region, 0, 0, TS.radius);
+    //ocl->queue.enqueueReadImage(dataset, CL_TRUE, offset, region, 0, 0, TS.intensity);
+
+    // Create pairs of voxels with high TDF
+    std::vector<CrossSection *> crossSections = createGraph(TS, *size);
+
+    // Display pairs
+	#ifdef USE_SIPL_VISUALIZATION
+    SIPL::Volume<bool> * pairs = new SIPL::Volume<bool>(*size);
+    pairs->fill(false);
+    for(CrossSection * c : crossSections) {
+    	pairs->set(c->pos, true);
+    }
+    pairs->showMIP();
+	#endif
+
+    // Create segments from pairs
+    std::vector<Segment *> segments = createSegments(*ocl, TS, crossSections, *size);
+
+	#ifdef USE_SIPL_VISUALIZATION
+    visualizeSegments(segments, *size);
+	#endif
+
+    // Create connections between segments
+    std::cout << "creating connections..." << std::endl;
+    std::cout << "number of segments is " << segments.size() << std::endl;
+    createConnections(TS, segments, *size);
+    std::cout << "finished creating connections." << std::endl;
+    std::cout << "number of segments is " << segments.size() << std::endl;
+
+    // Display connections, in a separate color for instance
+	#ifdef USE_SIPL_VISUALIZATION
+    visualizeSegments(segments, *size);
+	#endif
+
+    // Do minimum spanning tree on segments, where each segment is a node and the connetions are edges
+    // must also select a root segment
+    std::cout << "running minimum spanning tree" << std::endl;
+    int root = selectRoot(segments);
+    segments = minimumSpanningTree(segments[root], *size);
+    std::cout << "finished running minimum spanning tree" << std::endl;
+    std::cout << "number of segments is " << segments.size() << std::endl;
+
+    // Visualize
+	#ifdef USE_SIPL_VISUALIZATION
+    visualizeSegments(segments, *size);
+	#endif
+
+    // Display which connections have been retained and which are removed
+
+    // create depth first ordering
+    std::cout << "creating depth first ordering..." << std::endl;
+    int Ns;
+    int * depthFirstOrderingOfSegments = createDepthFirstOrdering(segments, root, Ns);
+    std::cout << "finished creating depth first ordering" << std::endl;
+    std::cout << "Ns is " << Ns << std::endl;
+    std::cout << "root is " << root << std::endl;
+
+	// have to take into account that not all segments are part of the final tree, for instance, return Ns
+    // Do the dynamic programming algorithm for locating the best subtree
+    std::cout << "finding optimal subtree..." << std::endl;
+    std::vector<Segment *> finalSegments = findOptimalSubtree(segments, depthFirstOrderingOfSegments, Ns);
+    std::cout << "finished." << std::endl;
+    std::cout << "number of segments is " << finalSegments.size() << std::endl;
+
+    // TODO Display final segments and the connections
+	#ifdef USE_SIPL_VISUALIZATION
+    visualizeSegments(finalSegments, *size);
+	#endif
+
+    char * centerline = new char[totalSize]();
+    std::vector<int3> vertices;
+    std::vector<SIPL::int2> edges;
+    int counter = 0;
+    for(int j = 0; j < finalSegments.size(); j++) {
+    	Segment * s = finalSegments[j];
+    	for(int i = 0; i < s->sections.size()-1; i++) {
+    		CrossSection * a = s->sections[i];
+    		CrossSection * b = s->sections[i+1];
+    		vertices.push_back(a->pos);
+    		vertices.push_back(b->pos);
+    		// TODO: NB there are some cases in which a == b here. FIXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+    		//std::cout << a->index << " " << b->index << std::endl;
+    		a->index = counter;
+    		b->index = counter+1;
+    		//std::cout << a->index << " " << b->index << std::endl;
+    		counter += 2;
+    		edges.push_back(SIPL::int2(a->index, b->index));
+			int distance = ceil(a->pos.distance(b->pos));
+			float3 direction(b->pos.x-a->pos.x,b->pos.y-a->pos.y,b->pos.z-a->pos.z);
+			for(int i = 0; i < distance; i++) {
+				float frac = (float)i/distance;
+				float3 n = a->pos + frac*direction;
+				int3 in(round(n.x),round(n.y),round(n.z));
+				centerline[in.x+in.y*size->x+in.z*size->x*size->y] = 1;
+			}
+		}
+    	for(int i = 0; i < s->connections.size(); i++) {
+    		Connection * c = s->connections[i];
+			CrossSection * a = c->source_section;
+			CrossSection * b = c->target_section;
+    		vertices.push_back(a->pos);
+    		vertices.push_back(b->pos);
+    		a->index = counter;
+    		b->index = counter+1;
+    		counter += 2;
+    		edges.push_back(SIPL::int2(a->index, b->index));
+			int distance = ceil(a->pos.distance(b->pos));
+			float3 direction(b->pos.x-a->pos.x,b->pos.y-a->pos.y,b->pos.z-a->pos.z);
+			for(int i = 0; i < distance; i++) {
+				float frac = (float)i/distance;
+				float3 n = a->pos + frac*direction;
+				int3 in(round(n.x),round(n.y),round(n.z));
+				centerline[in.x+in.y*size->x+in.z*size->x*size->y] = 1;
+			}
+
+		}
+    }
+    output->setCenterlineVoxels(centerline);
+    if(getParamStr(parameters, "centerline-vtk-file") != "off") {
+    	writeToVtkFile(parameters, vertices, edges);
+    }
+
+
+    Image3D * volume = new Image3D;
+    if(!getParamBool(parameters, "no-segmentation")) {
+        *volume = Image3D(ocl->context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, ImageFormat(CL_R, CL_SIGNED_INT8), size->x, size->y, size->z, 0, 0, centerline);
+		if(!getParamBool(parameters, "sphere-segmentation")) {
+			*volume = runInverseGradientSegmentation(*ocl, *volume, vectorField, radius, *size, parameters);
+    	} else {
+			*volume = runSphereSegmentation(*ocl,*volume, radius, *size, parameters);
+    	}
+		output->setSegmentation(volume);
+    }
+
+
+
+	if(getParamStr(parameters, "storage-dir") != "off") {
+        writeDataToDisk(output, getParamStr(parameters, "storage-dir"), getParamStr(parameters, "storage-name"));
+    }
+
+}
+
+
+void runCircleFittingAndRidgeTraversal(OpenCL * ocl, Image3D * dataset, SIPL::int3 * size, paramList &parameters, TSFOutput * output) {
     
     INIT_TIMER
     cl::Event startEvent, endEvent;
     cl_ulong start, end;
-    Image3D vectorField, radius;
+    Image3D vectorField, radius,vectorFieldSmall;
     Image3D * TDF = new Image3D;
     TubeSegmentation TS;
     runCircleFittingMethod(*ocl, dataset, *size, parameters, vectorField, *TDF, radius);
@@ -2432,7 +4842,8 @@ void runCircleFittingAndRidgeTraversal(OpenCL * ocl, Image3D &dataset, SIPL::int
     TS.Fx = new float[totalSize];
     TS.Fy = new float[totalSize];
     TS.Fz = new float[totalSize];
-    if(no3Dwrite || getParamBool(parameters, "32bit-vectors")) {
+    TS.TDF = new float[totalSize];
+    if(!getParamBool(parameters, "16bit-vectors")) {
     	// 32 bit vector fields
         float * Fs = new float[totalSize*4];
         ocl->queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
@@ -2443,6 +4854,7 @@ void runCircleFittingAndRidgeTraversal(OpenCL * ocl, Image3D &dataset, SIPL::int
             TS.Fz[i] = Fs[i*4+2];
         }
         delete[] Fs;
+        ocl->queue.enqueueReadImage(*TDF, CL_TRUE, offset, region, 0, 0, TS.TDF);
     } else {
     	// 16 bit vector fields
         short * Fs = new short[totalSize*4];
@@ -2454,10 +4866,17 @@ void runCircleFittingAndRidgeTraversal(OpenCL * ocl, Image3D &dataset, SIPL::int
             TS.Fz[i] = MAX(-1.0f, Fs[i*4+2] / 32767.0f);
         }
         delete[] Fs;
+
+        // Convert 16 bit TDF to 32 bit
+        unsigned short * tempTDF = new unsigned short[totalSize];
+        ocl->queue.enqueueReadImage(*TDF, CL_TRUE, offset, region, 0, 0, tempTDF);
+#pragma omp parallel for
+        for(int i = 0; i < totalSize; i++) {
+            TS.TDF[i] = (float)tempTDF[i] / 65535.0f;
+        }
+        delete[] tempTDF;
     }
     TS.radius = new float[totalSize];
-    TS.TDF = new float[totalSize];
-    ocl->queue.enqueueReadImage(*TDF, CL_TRUE, offset, region, 0, 0, TS.TDF);
     output->setTDF(TS.TDF);
     ocl->queue.enqueueReadImage(radius, CL_TRUE, offset, region, 0, 0, TS.radius);
     std::stack<CenterlinePoint> centerlineStack;
@@ -2474,7 +4893,7 @@ void runCircleFittingAndRidgeTraversal(OpenCL * ocl, Image3D &dataset, SIPL::int
     if(!getParamBool(parameters, "no-segmentation")) {
         *volume = Image3D(ocl->context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, ImageFormat(CL_R, CL_SIGNED_INT8), size->x, size->y, size->z, 0, 0, TS.centerline);
 		if(!getParamBool(parameters, "sphere-segmentation")) {
-			*volume = runInverseGradientSegmentation(*ocl, *volume, vectorField, *size, parameters);
+			*volume = runInverseGradientSegmentation(*ocl, *volume, vectorField, radius, *size, parameters);
     	} else {
 			*volume = runSphereSegmentation(*ocl,*volume, radius, *size, parameters);
     	}
@@ -2483,7 +4902,7 @@ void runCircleFittingAndRidgeTraversal(OpenCL * ocl, Image3D &dataset, SIPL::int
 
 
     if(getParamStr(parameters, "storage-dir") != "off") {
-        writeDataToDisk(output, getParamStr(parameters, "storage-dir"));
+        writeDataToDisk(output, getParamStr(parameters, "storage-dir"), getParamStr(parameters, "storage-name"));
     }
 
 }
@@ -2552,6 +4971,7 @@ Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &par
     std::string typeName = "";
     std::string rawFilename = "";
     bool typeFound = false, sizeFound = false, rawFilenameFound = false;
+    SIPL::float3 spacing(1,1,1);
     do {
         std::string line;
         std::getline(mhdFile, line);
@@ -2584,6 +5004,17 @@ Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &par
             size->z = atoi(sizeZ.c_str());
 
             sizeFound = true;
+		} else if(line.substr(0, 14) == "ElementSpacing") {
+            std::string sizeString = line.substr(14+3);
+            std::string sizeX = sizeString.substr(0,sizeString.find(" "));
+            sizeString = sizeString.substr(sizeString.find(" ")+1);
+            std::string sizeY = sizeString.substr(0,sizeString.find(" "));
+            sizeString = sizeString.substr(sizeString.find(" ")+1);
+            std::string sizeZ = sizeString.substr(0,sizeString.find(" "));
+
+            spacing.x = atof(sizeX.c_str());
+            spacing.y = atof(sizeY.c_str());
+            spacing.z = atof(sizeZ.c_str());
         }
 
     } while(!mhdFile.eof());
@@ -2640,6 +5071,19 @@ Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &par
         data = (void *)file->data();
         ocl.queue.enqueueWriteImage(dataset, CL_FALSE, offset, region2, 0, 0, data);
         getLimits<unsigned short>(parameters, data, totalSize, &minimum, &maximum);
+
+        if(getParamStr(parameters, "parameters") == "Lung-Airways-CT") {
+        	// If parameter preset is airway and the volume loaded is unsigned;
+        	// Change min and max to be unsigned as well, and change Threshold in cropping
+			char * str = new char[255];
+        	minimum = atof(parameters.strings["minimum"].get().c_str())+1024.0f;
+        	sprintf(str, "%f", minimum);
+        	parameters.strings["minimum"].set(str);
+			maximum = atof(parameters.strings["maximum"].get().c_str())+1024.0f;
+        	sprintf(str, "%f", maximum);
+        	parameters.strings["maximum"].set(str);
+        }
+
     } else if(typeName == "MET_CHAR") {
         type = 1;
         file->open(rawFilename, size->x*size->y*size->z*sizeof(char));
@@ -2706,6 +5150,7 @@ Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &par
 			cropDatasetKernel = Kernel(ocl.program, "cropDatasetLung");
 			minScanLines = getParam(parameters, "min-scan-lines-lung");
 			cropping_start_z = "middle";
+			cropDatasetKernel.setArg(3, type);
         } else if(cropping == "threshold") {
         	cropDatasetKernel = Kernel(ocl.program, "cropDatasetThreshold");
 			minScanLines = getParam(parameters, "min-scan-lines-threshold");
@@ -2833,7 +5278,7 @@ Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &par
         int SIZE_Y = y2-y1;
         int SIZE_Z = z2-z1;
         if(SIZE_X == 0 || SIZE_Y == 0 || SIZE_Z == 0) {
-        	char * str;
+        	char * str = new char[255];
         	sprintf(str, "Invalid cropping to new size %d, %d, %d", SIZE_X, SIZE_Y, SIZE_Z);
         	throw SIPL::SIPLException(str, __LINE__, __FILE__);
         }
@@ -2942,6 +5387,7 @@ Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &par
     	}
     }
     output->setShiftVector(shiftVector);
+    output->setSpacing(spacing);
 
     // Run toFloat kernel
 
@@ -3017,7 +5463,8 @@ Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &par
     return convertedDataset;
 }
 
-TSFOutput::TSFOutput(OpenCL * ocl, SIPL::int3 * size) {
+TSFOutput::TSFOutput(OpenCL * ocl, SIPL::int3 * size, bool TDFis16bit) {
+	this->TDFis16bit = TDFis16bit;
 	this->ocl = ocl;
 	this->size = size;
 	hostHasCenterlineVoxels = false;
@@ -3092,8 +5539,19 @@ float * TSFOutput::getTDF() {
 		region[0] = size->x;
 		region[1] = size->y;
 		region[2] = size->z;
-		TDF = new float[size->x*size->y*size->z];
-		ocl->queue.enqueueReadImage(*oclTDF,CL_TRUE, origin, region, 0, 0, TDF);		hostHasTDF = true;
+		int totalSize = size->x*size->y*size->z;
+		TDF = new float[totalSize];
+		if(TDFis16bit) {
+			unsigned short * tempTDF = new unsigned short[totalSize];
+			ocl->queue.enqueueReadImage(*oclTDF,CL_TRUE, origin, region, 0, 0, tempTDF);
+			for(int i = 0; i < totalSize;i++) {
+				TDF[i] = (float)tempTDF[i] / 65535.0f;
+			}
+			delete[] tempTDF;
+		} else {
+			ocl->queue.enqueueReadImage(*oclTDF,CL_TRUE, origin, region, 0, 0, TDF);
+		}
+		hostHasTDF = true;
 		return TDF;
 	} else {
 		throw SIPL::SIPLException("Trying to fetch non existing data from TSFOutput", __LINE__, __FILE__);
@@ -3156,3 +5614,34 @@ void TSFOutput::setShiftVector(SIPL::int3 shiftVector) {
 	this->shiftVector = shiftVector;
 }
 
+SIPL::float3 TSFOutput::getSpacing() const {
+	return spacing;
+}
+
+void TSFOutput::setSpacing(SIPL::float3 spacing) {
+	this->spacing = spacing;
+}
+
+void TSFGarbageCollector::addMemObject(cl::Memory* mem) {
+    memObjects.insert(mem);
+}
+
+void TSFGarbageCollector::deleteMemObject(cl::Memory* mem) {
+    memObjects.erase(mem);
+    delete mem;
+    mem = NULL;
+}
+
+void TSFGarbageCollector::deleteAllMemObjects() {
+    std::set<cl::Memory *>::iterator it;
+    for(it = memObjects.begin(); it != memObjects.end(); it++) {
+        cl::Memory * mem = *it;
+        delete (mem);
+        mem = NULL;
+    }
+    memObjects.clear();
+}
+
+TSFGarbageCollector::~TSFGarbageCollector() {
+    deleteAllMemObjects();
+}

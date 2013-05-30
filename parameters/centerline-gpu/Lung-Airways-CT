@@ -1,0 +1,11 @@
+mode black
+min-mean-tdf 0.45
+tdf-high 0.45
+small-blur 0.5
+large-blur 1.0
+fmax 0.3
+cropping lung
+minimum -1024
+maximum -400
+min-scan-lines-lung 128
+min-tree-length 100

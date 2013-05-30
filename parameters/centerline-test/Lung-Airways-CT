@@ -5,3 +5,4 @@ large-blur 1.0
 cropping lung
 minimum -1024
 maximum -100
+min-tree-length 25

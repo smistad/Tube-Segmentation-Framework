@@ -3,4 +3,4 @@
 	url = https://github.com/SINTEFMedisinskTeknologi/OpenCLUtilities.git
 [submodule "SIPL"]
 	path = SIPL
-	url = https://github.com/SINTEFMedisinskTeknologi/SIPL.git
+	url = https://github.com/smistad/SIPL.git

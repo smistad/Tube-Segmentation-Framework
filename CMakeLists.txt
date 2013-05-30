@@ -22,7 +22,6 @@ endif()
 # OpenCLUtilities
 ###########
 add_subdirectory(OpenCLUtilities)
-#include_directories(${OPENCL_INCLUDE_DIRS})
 find_package(OCL-Utilities PATHS "${Tube-Segmentation-Framework_BINARY_DIR}/OpenCLUtilities" REQUIRED)
 include(${OCL-Utilities_USE_FILE})
 
@@ -30,7 +29,6 @@ include(${OCL-Utilities_USE_FILE})
 # SIPL
 ###########
 add_subdirectory(SIPL)
-#include_directories(${SIPL_INCLUDE_DIRS})
 find_package(SIPL PATHS "${Tube-Segmentation-Framework_BINARY_DIR}/SIPL" REQUIRED)
 include(${SIPL_USE_FILE})
 
@@ -70,19 +68,31 @@ target_link_libraries(tubeSegmentationLib OCL-Utilities SIPL ${Boost_LIBRARIES} 
 #
 # tubeSegmentation executable
 ###########
-add_executable(tubeSegmentation main.cpp tube-segmentation.cpp histogram-pyramids.cpp parameters.cpp)
-target_link_libraries(tubeSegmentation SIPL OCL-Utilities ${Boost_LIBRARIES} ${OPENCL_LIBRARIES})
+if(SIPL_USE_GTK)
+    add_executable(tubeSegmentation main.cpp tube-segmentation.cpp histogram-pyramids.cpp parameters.cpp)
+    target_link_libraries(tubeSegmentation SIPL OCL-Utilities ${Boost_LIBRARIES} ${OPENCL_LIBRARIES})
+endif()
 
 #------------------------------------------------------------------------------
 # Testing
 #------------------------------------------------------------------------------
 find_package(GTest)
 if(GTEST_FOUND)
+if(SIPL_USE_GTK)
 	message("Google test framework found. Enabling testing ...")
 	target_link_libraries(tubeSegmentationLib OCL-Utilities SIPL ${Boost_LIBRARIES})
 	enable_testing()
 	add_subdirectory(tests)
 endif()
+endif()
+
+#------------------------------------------------------------------------------
+# Set variables
+#------------------------------------------------------------------------------
+
+set(PARAMETERS_DIR ${PROJECT_SOURCE_DIR}/parameters)
+set(KERNELS_DIR ${PROJECT_SOURCE_DIR})
+set(TESTDATA_DIR ${PROJECT_SOURCE_DIR}/tests/data)
 
 #------------------------------------------------------------------------------
 # Configure file for find_package module 
@@ -94,6 +104,8 @@ set( Tube-Segmentation-Framework_INCLUDE_DIRS
 
 set(Tube-Segmentation-Framework_LIBRARY_DIRS
     ${Tube-Segmentation-Framework_BINARY_DIR}
+    ${OCL-Utilities_LIBRARY_DIRS}
+    ${SIPL_BINARY_LIBRARY_DIRS}
 )    
 
 configure_file (
@@ -104,10 +116,6 @@ configure_file (
 #------------------------------------------------------------------------------
 # Configure file for settings, filepaths, parameters ...
 #------------------------------------------------------------------------------
-
-set(PARAMETERS_DIR ${PROJECT_SOURCE_DIR}/parameters)
-set(KERNELS_DIR ${PROJECT_SOURCE_DIR})
-set(TESTDATA_DIR ${PROJECT_SOURCE_DIR}/tests/data)
 
 configure_file(
  "${PROJECT_SOURCE_DIR}/CMake/tsf-config.h.in"
