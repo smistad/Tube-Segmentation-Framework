@@ -1210,7 +1210,7 @@ __kernel void splineTDF(
 
     float currentVoxelMagnitude = length(read_imagef(vectorField, sampler, pos).xyz);
 
-    float maxRadius[12]; // 12 is maximum nr of arms atm.
+    float maxRadius[20]; // 12 is maximum nr of arms atm.
     //float minAverageMag = 0.01f; // 0.01
     float avgRadius = 0.0f;
     for(int j = 0; j < arms; j++) {
@@ -1314,11 +1314,14 @@ __kernel void splineTDF(
         avgRadius = 0.0;
     }
 
+    if(invalid != 1) {
     float avgSymmetry = 0.0f;
     float worstSymmetry = 2.0f;
+    //printf("new symmetry %d\n", invalid);
     for(int j = 0; j < arms/2; j++) {
         float symmetry = min(maxRadius[j], maxRadius[arms/2 + j]) /
             max(maxRadius[j], maxRadius[arms/2+j]);
+        //printf("%f - %f\n", maxRadius[j], maxRadius[arms/2+j]);
         if(symmetry < worstSymmetry)
          worstSymmetry = symmetry;
         avgSymmetry += min(maxRadius[j], maxRadius[arms/2 + j]) /
@@ -1328,8 +1331,7 @@ __kernel void splineTDF(
 
     R[LPOS(pos)] = avgRadius;
     //if(sum/(arms*(samples-1)) >= 0.1f && sum/(arms*(samples-1)) < 2.0f) {
-    if(invalid != 1) {
-        //T[LPOS(pos)] = sum / (arms*(samples-1));
+        //T[LPOS(pos)] = FLOAT_TO_UNORM16(sum / (arms*(samples-1)));
         T[LPOS(pos)] = FLOAT_TO_UNORM16(avgSymmetry);
     } else {
         T[LPOS(pos)] = 0;

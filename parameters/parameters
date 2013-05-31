@@ -3,9 +3,9 @@ device str gpu gpu cpu "Which type of processor to use" general
 mode str white black white "Extract black or white tubular structures" general
 display bool false "Display results" advanced
 centerline-method str gpu test gpu ridge "Centerline extraction method" general
-gvf-iterations num 250 0 2000 50 "Number of GVF iterations" gradient-vector-flow
+gvf-iterations num 250 0 4000 50 "Number of GVF iterations" gradient-vector-flow
 radius-min num 0.5 0.5 50.0 0.5 "Minimum radius of tubular structures" tube-detection-filter
-radius-max num 15.0 2.0 100.0 1.0 "Maximum radius of tubular structures" tube-detection-filter
+radius-max num 15.0 2.0 300.0 1.0 "Maximum radius of tubular structures" tube-detection-filter
 radius-step num 1.0 0.0 5.0 0.5 "Step size of radius" tube-detection-filter
 fmax num 0.2 0.01 0.9 0.01 "Maximum gradient length (for contrast invariance)" general
 gvf-mu num 0.05 0.0 0.05 0.01 "Mu regularization constant of GVF" gradient-vector-flow
