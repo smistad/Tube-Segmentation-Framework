@@ -1466,9 +1466,9 @@ Image3D runGVF(OpenCL &ocl, Image3D * vectorField, paramList &parameters, SIPL::
 
 void runSplineTDF(
         OpenCL &ocl,
-        Image3D *vectorField,
-        paramList &parameters,
         SIPL::int3 &size,
+        paramList &parameters,
+        Image3D *vectorField,
         Buffer *TDF,
         Buffer *radius,
         float radiusMin,
@@ -2102,7 +2102,11 @@ if(getParamBool(parameters, "timing")) {
     }
     Buffer radiusLarge = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
 
-    runCircleFittingTDF(ocl,size,&vectorField,&TDFlarge,&radiusLarge,std::max(2.5f, radiusMin),radiusMax,radiusStep);
+    if(getParamBool(parameters,"use-spline-tdf")) {
+        runSplineTDF(ocl,size,parameters,&vectorField,&TDFlarge,&radiusLarge,std::max(2.5f, radiusMin),radiusMax,radiusStep);
+    } else {
+        runCircleFittingTDF(ocl,size,&vectorField,&TDFlarge,&radiusLarge,std::max(2.5f, radiusMin),radiusMax,radiusStep);
+    }
 
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
