@@ -1573,7 +1573,7 @@ __kernel void circleFittingTDF(
 
 __kernel void splineTDF(
         __read_only image3d_t vectorField,
-        __global float * T,
+        __global TDF_TYPE * T,
         __private float rMin,
         __private float rMax,
         __private float rStep,
@@ -1720,9 +1720,9 @@ __kernel void splineTDF(
     R[LPOS(pos)] = avgRadius;
     if(sum/(arms*(samples-1)) >= 0.1f && sum/(arms*(samples-1)) < 2.0f) {
         //T[LPOS(pos)] = sum / (arms*(samples-1));
-        T[LPOS(pos)] = avgSymmetry;
+        T[LPOS(pos)] = FLOAT_TO_UNORM16(avgSymmetry);
     } else {
-        T[LPOS(pos)] = 0.0f;
+        T[LPOS(pos)] = 0;
     }
 }
 
