@@ -1,4 +1,4 @@
-# name type default (valid values)/range description group
+# name type default (valid values)/range description group. NB. File should end with newline
 device str gpu gpu cpu "Which type of processor to use" general
 mode str white black white "Extract black or white tubular structures" general
 display bool false "Display results" advanced
