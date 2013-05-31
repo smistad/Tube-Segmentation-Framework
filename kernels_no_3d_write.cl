@@ -1571,6 +1571,161 @@ __kernel void circleFittingTDF(
     Radius[LPOS(pos)] = maxRadius;
 }
 
+__kernel void splineTDF(
+        __read_only image3d_t vectorField,
+        __global float * T,
+        __private float rMin,
+        __private float rMax,
+        __private float rStep,
+        __global float * blendingFunctions,
+        __private const int arms,
+        __private const int samples,
+        __global float * R,
+        __private const float minAverageMag
+    ) {
+    const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
+    int invalid = 0;
+
+    // Find Hessian Matrix
+    const float3 Fx = gradient(vectorField, pos, 0, 1);
+    const float3 Fy = gradient(vectorField, pos, 1, 2);
+    const float3 Fz = gradient(vectorField, pos, 2, 3);
+
+    float Hessian[3][3] = {
+        {Fx.x, Fy.x, Fz.x},
+        {Fy.x, Fy.y, Fz.y},
+        {Fz.x, Fz.y, Fz.z}
+    };
+
+    // Eigen decomposition
+    float eigenValues[3];
+    float eigenVectors[3][3];
+    eigen_decomposition(Hessian, eigenVectors, eigenValues);
+    const float3 lambda = {eigenValues[0], eigenValues[1], eigenValues[2]};
+    const float3 e1 = {eigenVectors[0][0], eigenVectors[1][0], eigenVectors[2][0]};
+    const float3 e2 = {eigenVectors[0][1], eigenVectors[1][1], eigenVectors[2][1]};
+    const float3 e3 = {eigenVectors[0][2], eigenVectors[1][2], eigenVectors[2][2]};
+
+    float currentVoxelMagnitude = length(read_imagef(vectorField, sampler, pos).xyz);
+
+    float maxRadius[12]; // 12 is maximum nr of arms atm.
+    //float minAverageMag = 0.01f; // 0.01
+    float avgRadius = 0.0f;
+    for(int j = 0; j < arms; j++) {
+        maxRadius[j] = 999;
+        float alpha = 2 * M_PI_F * j / arms;
+        float4 V_alpha = cos(alpha)*e3.xyzz + sin(alpha)*e2.xyzz;
+        float prevMagnitude2 = currentVoxelMagnitude;
+        float4 position = convert_float4(pos) + rMin*V_alpha;
+        float prevMagnitude = length(read_imagef(vectorField, interpolationSampler, position).xyz);
+        int up = prevMagnitude2 > prevMagnitude ? 0 : 1;
+
+        // Perform the actual line search
+        for(float radius = rMin+rStep; radius <= rMax; radius += rStep) {
+            position = convert_float4(pos) + radius*V_alpha;
+            float4 vec = read_imagef(vectorField, interpolationSampler, position);
+            vec.w = 0.0f;
+            float magnitude = length(vec.xyz);
+
+            // Is a border point found?
+            if(up == 1 && magnitude < prevMagnitude && (prevMagnitude+magnitude)/2.0f - currentVoxelMagnitude > minAverageMag) { // Dot produt here is test
+                maxRadius[j] = radius;
+                avgRadius += radius;
+                break;
+            } // End found border point
+
+            if(magnitude > prevMagnitude) {
+                up = 1;
+            }
+            prevMagnitude = magnitude;
+        } // End for each radius
+
+        if(maxRadius[j] == 999) {
+            invalid = 1;
+            break;
+        }
+    } // End for arms
+
+    // Have all line searches found valid points?
+    float sum = 0.0f;
+    if(invalid == 0) {
+        float3 planeNormal;
+        if(dot(cross(e2,e3),e1) > 0) {
+            planeNormal = -e1.xyz;
+        } else {
+            planeNormal = e1.xyz;
+        }
+        // Create spline segments
+        for(int j = 0; j < arms && invalid == 0; j++) {
+            // The four control points for each spline segment
+            float4 Pk_1, Pk, Pk1, Pk2, V_alpha;
+            float alpha;
+            if(j == 0) {
+                alpha = 2 * M_PI_F * (arms-1) / arms;
+                V_alpha = cos(alpha)*e3.xyzz + sin(alpha)*e2.xyzz ;
+                Pk_1 = convert_float4(pos) + maxRadius[arms-1]*V_alpha;
+            } else {
+                alpha = 2 * M_PI_F * (j-1) / arms;
+                V_alpha = cos(alpha)*e3.xyzz + sin(alpha)*e2.xyzz ;
+                Pk_1 = convert_float4(pos) + maxRadius[j-1]*V_alpha;
+            }
+            alpha = 2 * M_PI_F * (j) / arms;
+            V_alpha = cos(alpha)*e3.xyzz + sin(alpha)*e2.xyzz ;
+            Pk = convert_float4(pos) + maxRadius[j]*V_alpha;
+            alpha = 2 * M_PI_F * ((j+1) % arms) / arms;
+            V_alpha = cos(alpha)*e3.xyzz + sin(alpha)*e2.xyzz ;
+            Pk1 = convert_float4(pos) + maxRadius[(j+1) % arms]*V_alpha;
+            alpha = 2 * M_PI_F * ((j+2) % arms) / arms;
+            V_alpha = cos(alpha)*e3.xyzz + sin(alpha)*e2.xyzz ;
+            Pk2 = convert_float4(pos) + maxRadius[(j+2) % arms]*V_alpha;
+
+            float4 prevPos = Pk;
+            for(int i = 1; i < samples; i++) {
+                float4 position = blendingFunctions[i*4]*Pk_1 +
+                    blendingFunctions[i*4+1]*Pk +
+                    blendingFunctions[i*4+2]*Pk1 +
+                    blendingFunctions[i*4+3]*Pk2;
+
+                // Sample from normalized vector field, sign is important
+                float4 Fn = read_imagef(vectorField, interpolationSampler, position);
+                //Fn = -Fn;
+                Fn.w = 0.0f;
+                Fn = -normalize(Fn); // Normalize
+
+                // Estimate spline normal
+                float3 tangent = normalize(position.xyz - prevPos.xyz);
+                float3 normal = normalize(cross(tangent, planeNormal));
+
+                if(dot(Fn.xyz, normal) < 0) {
+                    invalid = 1;
+                    sum = 0.0f;
+                    break;
+                }
+                sum += dot(Fn.xyz, normal);
+                prevPos = position;
+            } // End For each sample on the spline segment
+        }
+        avgRadius = avgRadius / arms;
+    } else {// End valid
+        avgRadius = 0.0;
+    }
+
+    float avgSymmetry = 0.0f;
+    for(int j = 0; j < arms/2; j++) {
+        avgSymmetry += min(maxRadius[j], maxRadius[arms/2 + j]) /
+            max(maxRadius[j], maxRadius[arms/2+j]);
+    }
+    avgSymmetry /= arms/2;
+
+    R[LPOS(pos)] = avgRadius;
+    if(sum/(arms*(samples-1)) >= 0.1f && sum/(arms*(samples-1)) < 2.0f) {
+        //T[LPOS(pos)] = sum / (arms*(samples-1));
+        T[LPOS(pos)] = avgSymmetry;
+    } else {
+        T[LPOS(pos)] = 0.0f;
+    }
+}
+
 __kernel void GVF3DIteration_one_component(
 		__global VECTOR_FIELD_TYPE * init_vector_field,
 		__global VECTOR_FIELD_TYPE const * restrict read_vector_field,
