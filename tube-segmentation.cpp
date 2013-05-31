@@ -1464,6 +1464,24 @@ Image3D runGVF(OpenCL &ocl, Image3D * vectorField, paramList &parameters, SIPL::
 	}
 }
 
+void runCircleFittingTDF(OpenCL &ocl, int3 &size, Image3D * vectorField, Buffer * TDF, Buffer * radius, float radiusMin, float radiusMax, float radiusStep) {
+    Kernel circleFittingTDFKernel(ocl.program, "circleFittingTDF");
+    circleFittingTDFKernel.setArg(0, *vectorField);
+    circleFittingTDFKernel.setArg(1, *TDF);
+    circleFittingTDFKernel.setArg(2, *radius);
+    circleFittingTDFKernel.setArg(3, radiusMin);
+    circleFittingTDFKernel.setArg(4, radiusMax);
+    circleFittingTDFKernel.setArg(5, radiusStep);
+
+    ocl.queue.enqueueNDRangeKernel(
+            circleFittingTDFKernel,
+            NullRange,
+            NDRange(size.x,size.y,size.z),
+            NDRange(4,4,4)
+    );
+
+}
+
 void runCircleFittingMethod(OpenCL &ocl, Image3D * dataset, SIPL::int3 size, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radiusImage) {
     // Set up parameters
     const float radiusMin = getParam(parameters, "radius-min");
@@ -1489,7 +1507,6 @@ void runCircleFittingMethod(OpenCL &ocl, Image3D * dataset, SIPL::int3 size, par
     // Create kernels
     Kernel blurVolumeWithGaussianKernel(ocl.program, "blurVolumeWithGaussian");
     Kernel createVectorFieldKernel(ocl.program, "createVectorField");
-    Kernel circleFittingTDFKernel(ocl.program, "circleFittingTDF");
     Kernel combineKernel = Kernel(ocl.program, "combine");
 
     cl::Event startEvent, endEvent;
@@ -1719,19 +1736,7 @@ if(getParamBool(parameters, "timing")) {
     GC->addMemObject(TDFsmallBuffer);
     Buffer * radiusSmallBuffer = new Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
     GC->addMemObject(radiusSmallBuffer);
-    circleFittingTDFKernel.setArg(0, *vectorFieldSmall);
-    circleFittingTDFKernel.setArg(1, *TDFsmallBuffer);
-    circleFittingTDFKernel.setArg(2, *radiusSmallBuffer);
-    circleFittingTDFKernel.setArg(3, radiusMin);
-    circleFittingTDFKernel.setArg(4, 3.0f);
-    circleFittingTDFKernel.setArg(5, 0.5f);
-
-    ocl.queue.enqueueNDRangeKernel(
-            circleFittingTDFKernel,
-            NullRange,
-            NDRange(size.x,size.y,size.z),
-            NDRange(4,4,4)
-    );
+    runCircleFittingTDF(ocl,size,vectorFieldSmall,TDFsmallBuffer,radiusSmallBuffer,radiusMin,3.0f,0.5f);
 
 
     if(radiusMax < 2.5) {
@@ -2045,19 +2050,7 @@ if(getParamBool(parameters, "timing")) {
     }
     Buffer radiusLarge = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
 
-    circleFittingTDFKernel.setArg(0, vectorField);
-    circleFittingTDFKernel.setArg(1, TDFlarge);
-    circleFittingTDFKernel.setArg(2, radiusLarge);
-    circleFittingTDFKernel.setArg(3, std::max(2.5f, radiusMin));
-    circleFittingTDFKernel.setArg(4, radiusMax);
-    circleFittingTDFKernel.setArg(5, 1.5f);
-
-    ocl.queue.enqueueNDRangeKernel(
-            circleFittingTDFKernel,
-            NullRange,
-            NDRange(size.x,size.y,size.z),
-            NDRange(4,4,4)
-    );
+    runCircleFittingTDF(ocl,size,&vectorField,&TDFlarge,&radiusLarge,std::max(2.5f, radiusMin),radiusMax,radiusStep);
 
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
