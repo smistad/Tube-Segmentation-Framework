@@ -1497,16 +1497,16 @@ void runSplineTDF(
     );
 
     Kernel TDFKernel(ocl.program, "splineTDF");
-    TDFKernel.setArg(0, vectorField);
-    TDFKernel.setArg(1, TDF);
+    TDFKernel.setArg(0, *vectorField);
+    TDFKernel.setArg(1, *TDF);
     TDFKernel.setArg(2, std::max(1.0f, radiusMin));
     TDFKernel.setArg(3, radiusMax);
     TDFKernel.setArg(4, radiusStep);
     TDFKernel.setArg(5, bufferBlendingFunctions);
     TDFKernel.setArg(6, 8); // arms
     TDFKernel.setArg(7, samples); // samples per arm
-    TDFKernel.setArg(8, radius);
-    TDFKernel.setArg(9, 0.0001f);
+    TDFKernel.setArg(8, *radius);
+    TDFKernel.setArg(9, 0.3f);
 
     ocl.queue.enqueueNDRangeKernel(
             TDFKernel,

@@ -1189,9 +1189,9 @@ __kernel void splineTDF(
     int invalid = 0;
 
     // Find Hessian Matrix
-    const float3 Fx = gradient(vectorField, pos, 0, 1);
-    const float3 Fy = gradient(vectorField, pos, 1, 2);
-    const float3 Fz = gradient(vectorField, pos, 2, 3);
+    const float3 Fx = gradientNormalized(vectorField, pos, 0, 1);
+    const float3 Fy = gradientNormalized(vectorField, pos, 1, 2);
+    const float3 Fz = gradientNormalized(vectorField, pos, 2, 3);
 
     float Hessian[3][3] = {
         {Fx.x, Fy.x, Fz.x},
@@ -1298,11 +1298,13 @@ __kernel void splineTDF(
                 float3 tangent = normalize(position.xyz - prevPos.xyz);
                 float3 normal = normalize(cross(tangent, planeNormal));
 
+                /*
                 if(dot(Fn.xyz, normal) < 0) {
                     invalid = 1;
                     sum = 0.0f;
                     break;
                 }
+                */
                 sum += dot(Fn.xyz, normal);
                 prevPos = position;
             } // End For each sample on the spline segment
