@@ -1,6 +1,6 @@
 #include "tube-segmentation.hpp"
 #include "SIPL/Types.hpp"
-//#define USE_SIPL_VISUALIZATION
+#define USE_SIPL_VISUALIZATION
 #ifdef USE_SIPL_VISUALIZATION
 #include "SIPL/Core.hpp"
 #endif
@@ -2178,6 +2178,10 @@ if(getParamBool(parameters, "timing")) {
 // get vector field
     SIPL::Volume<SIPL::float3> * vis = new SIPL::Volume<SIPL::float3>(size);
     SIPL::Volume<float> * magnitude = new SIPL::Volume<float>(size);
+    TubeSegmentation T;
+    T.Fx = new float[totalSize];
+    T.Fy =new float[totalSize];
+    T.Fz =new float[totalSize];
     if((!getParamBool(parameters, "16bit-vectors"))) {
      // 32 bit vector fields
         float * Fs = new float[totalSize*4];
@@ -2189,6 +2193,9 @@ if(getParamBool(parameters, "timing")) {
             v.x = Fs[i*4];
             v.y = Fs[i*4+1];
             v.z = Fs[i*4+2];
+            T.Fx[i] = v.x;
+            T.Fy[i] = v.y;
+            T.Fz[i] = v.z;
             vis->set(i, v);
             magnitude->set(i, v.length());
         }
@@ -2204,6 +2211,9 @@ if(getParamBool(parameters, "timing")) {
             v.x = MAX(-1.0f, Fs[i*4] / 32767.0f);
             v.y = MAX(-1.0f, Fs[i*4+1] / 32767.0f);;
             v.z = MAX(-1.0f, Fs[i*4+2] / 32767.0f);
+            T.Fx[i] = v.x;
+            T.Fy[i] = v.y;
+            T.Fz[i] = v.z;
             vis->set(i, v);
             magnitude->set(i, v.length());
         }
@@ -2211,11 +2221,34 @@ if(getParamBool(parameters, "timing")) {
     }
     //vis->show();
     magnitude->show(0.1, 0.2);
+
+
     SIPL::Volume<float> * radius= new SIPL::Volume<float>(size);
     float * rad = new float[totalSize];
 ocl.queue.enqueueReadImage(radiusImage, CL_TRUE, offset, region, 0, 0, rad);
 radius->setData(rad);
 radius->show(40, 80);
+    SIPL::Volume<float> * tdf = new SIPL::Volume<float>(size);
+    float *tdfData = new float[totalSize];
+ocl.queue.enqueueReadImage(TDF, CL_TRUE, offset, region, 0, 0, tdfData);
+    tdf->setData(tdfData);
+    tdf->show();
+    // Create direction map
+    SIPL::Volume<SIPL::float3> * directions = new SIPL::Volume<SIPL::float3>(size);
+    for(int z = 0; z < size.z; z++) {
+    for(int y = 0; y < size.y; y++) {
+    for(int x = 0; x < size.x; x++) {
+        int3 pos(x,y,z);
+        SIPL::float3 value(0,0,0);
+        if(radius->get(pos) > 0) {
+            value = getTubeDirection(T,pos,size);
+        }
+        directions->set(pos,value);
+    }}}
+    delete[] T.Fx;
+    delete[] T.Fy;
+    delete[] T.Fz;
+    directions->show();
 //}
 
 #endif
