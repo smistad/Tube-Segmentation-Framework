@@ -1662,7 +1662,7 @@ if(getParamBool(parameters, "timing")) {
         createVectorFieldKernel.setArg(0, *blurredVolume);
         createVectorFieldKernel.setArg(1, vectorFieldBuffer);
         createVectorFieldKernel.setArg(2, vectorFieldBuffer2);
-        createVectorFieldKernel.setArg(3, 0.2f);
+        createVectorFieldKernel.setArg(3, Fmax);
         createVectorFieldKernel.setArg(4, vectorSign);
         createVectorFieldKernel.setArg(5, maxZ);
 
@@ -1752,7 +1752,7 @@ if(getParamBool(parameters, "timing")) {
         // Run create vector field
         createVectorFieldKernel.setArg(0, *blurredVolume);
         createVectorFieldKernel.setArg(1, *vectorFieldSmall);
-        createVectorFieldKernel.setArg(2, 0.2f);
+        createVectorFieldKernel.setArg(2, Fmax);
         createVectorFieldKernel.setArg(3, vectorSign);
 
         ocl.queue.enqueueNDRangeKernel(
@@ -1967,7 +1967,7 @@ if(getParamBool(parameters, "timing")) {
         createVectorFieldKernel.setArg(0, *blurredVolume);
         createVectorFieldKernel.setArg(1, vectorFieldBuffer);
         createVectorFieldKernel.setArg(2, vectorFieldBuffer2);
-        createVectorFieldKernel.setArg(3, 0.4f);
+        createVectorFieldKernel.setArg(3, Fmax);
         createVectorFieldKernel.setArg(4, vectorSign);
         createVectorFieldKernel.setArg(5, maxZ);
 
@@ -2039,7 +2039,7 @@ if(getParamBool(parameters, "timing")) {
         // Run create vector field
         createVectorFieldKernel.setArg(0, *blurredVolume);
         createVectorFieldKernel.setArg(1, *initVectorField);
-        createVectorFieldKernel.setArg(2, 0.4f);
+        createVectorFieldKernel.setArg(2, Fmax);
         createVectorFieldKernel.setArg(3, vectorSign);
 
         ocl.queue.enqueueNDRangeKernel(
@@ -2104,7 +2104,7 @@ if(getParamBool(parameters, "timing")) {
     Buffer radiusLarge = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
 
     if(getParamBool(parameters,"use-spline-tdf")) {
-        runSplineTDF(ocl,size,parameters,&vectorField,&TDFlarge,&radiusLarge,std::max(2.5f, radiusMin),radiusMax,radiusStep);
+        runSplineTDF(ocl,size,parameters,&vectorField,&TDFlarge,&radiusLarge,std::max(1.5f, radiusMin),radiusMax,radiusStep);
     } else {
         runCircleFittingTDF(ocl,size,&vectorField,&TDFlarge,&radiusLarge,std::max(2.5f, radiusMin),radiusMax,radiusStep);
     }
@@ -2226,7 +2226,7 @@ if(getParamBool(parameters, "timing")) {
         delete[] tempTDF;
     }
     //vis->show();
-    magnitude->show(0.1, 0.2);
+    magnitude->show(0.5, 1.0);
 
 
     SIPL::Volume<float> * radius= new SIPL::Volume<float>(size);
