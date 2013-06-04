@@ -1281,14 +1281,18 @@ __kernel void splineTDF(
                 float3 tangent = normalize(position.xyz - prevPos.xyz);
                 float3 normal = normalize(cross(tangent, planeNormal));
 
-                if(dot(Fn.xyz, normal) < 0.0f) {
-                    invalid = 1;
-                    sum = 0.0f;
-                    //break;
-                }
-                sum += 1-fabs(dot(Fn.xyz, e1));
                 prevPos = position;
             } // End For each sample on the spline segment
+            alpha = 2 * M_PI_F * (j) / arms;
+            V_alpha = cos(alpha)*e3.xyzz + sin(alpha)*e2.xyzz ;
+            float4 Fn = normalize(read_imagef(vectorField, interpolationSampler, Pk));
+            if(dot(Fn.xyz, -normalize(V_alpha.xyz)) < 0.0f) {
+                invalid = 1;
+                sum = 0.0f;
+                //break;
+            }
+            sum += 1-fabs(dot(Fn.xyz, e1));
+
         }
         avgRadius = avgRadius / arms;
     } else {// End valid
@@ -1315,7 +1319,7 @@ __kernel void splineTDF(
 
     //if(sum/(arms*(samples-1)) >= 0.1f && sum/(arms*(samples-1)) < 2.0f) {
         //T[LPOS(pos)] = FLOAT_TO_UNORM16(sum / (arms*(samples-1)));
-        T[LPOS(pos)] = FLOAT_TO_UNORM16(min(1.0f, (sum / (arms*(samples-1)))*avgSymmetry+0.2f));
+        T[LPOS(pos)] = FLOAT_TO_UNORM16(min(1.0f, min(1.0f, (sum / (arms))*avgSymmetry+0.2f)));
     } else {
         T[LPOS(pos)] = 0;
     }

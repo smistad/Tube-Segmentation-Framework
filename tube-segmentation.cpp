@@ -1,6 +1,6 @@
 #include "tube-segmentation.hpp"
 #include "SIPL/Types.hpp"
-//#define USE_SIPL_VISUALIZATION
+#define USE_SIPL_VISUALIZATION
 #ifdef USE_SIPL_VISUALIZATION
 #include "SIPL/Core.hpp"
 #endif
@@ -1504,10 +1504,10 @@ void runSplineTDF(
     TDFKernel.setArg(3, radiusMax);
     TDFKernel.setArg(4, radiusStep);
     TDFKernel.setArg(5, bufferBlendingFunctions);
-    TDFKernel.setArg(6, 20); // arms
+    TDFKernel.setArg(6, 12); // arms
     TDFKernel.setArg(7, samples); // samples per arm
     TDFKernel.setArg(8, *radius);
-    TDFKernel.setArg(9, 0.3f);
+    TDFKernel.setArg(9, 0.1f);
 
     ocl.queue.enqueueNDRangeKernel(
             TDFKernel,
@@ -1662,7 +1662,7 @@ if(getParamBool(parameters, "timing")) {
         createVectorFieldKernel.setArg(0, *blurredVolume);
         createVectorFieldKernel.setArg(1, vectorFieldBuffer);
         createVectorFieldKernel.setArg(2, vectorFieldBuffer2);
-        createVectorFieldKernel.setArg(3, Fmax);
+        createVectorFieldKernel.setArg(3, 0.2f);
         createVectorFieldKernel.setArg(4, vectorSign);
         createVectorFieldKernel.setArg(5, maxZ);
 
@@ -1752,7 +1752,7 @@ if(getParamBool(parameters, "timing")) {
         // Run create vector field
         createVectorFieldKernel.setArg(0, *blurredVolume);
         createVectorFieldKernel.setArg(1, *vectorFieldSmall);
-        createVectorFieldKernel.setArg(2, Fmax);
+        createVectorFieldKernel.setArg(2, 0.2f);
         createVectorFieldKernel.setArg(3, vectorSign);
 
         ocl.queue.enqueueNDRangeKernel(
@@ -1967,7 +1967,7 @@ if(getParamBool(parameters, "timing")) {
         createVectorFieldKernel.setArg(0, *blurredVolume);
         createVectorFieldKernel.setArg(1, vectorFieldBuffer);
         createVectorFieldKernel.setArg(2, vectorFieldBuffer2);
-        createVectorFieldKernel.setArg(3, Fmax);
+        createVectorFieldKernel.setArg(3, 0.4f);
         createVectorFieldKernel.setArg(4, vectorSign);
         createVectorFieldKernel.setArg(5, maxZ);
 
@@ -2039,7 +2039,7 @@ if(getParamBool(parameters, "timing")) {
         // Run create vector field
         createVectorFieldKernel.setArg(0, *blurredVolume);
         createVectorFieldKernel.setArg(1, *initVectorField);
-        createVectorFieldKernel.setArg(2, Fmax);
+        createVectorFieldKernel.setArg(2, 0.4f);
         createVectorFieldKernel.setArg(3, vectorSign);
 
         ocl.queue.enqueueNDRangeKernel(
@@ -2104,7 +2104,7 @@ if(getParamBool(parameters, "timing")) {
     Buffer radiusLarge = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
 
     if(getParamBool(parameters,"use-spline-tdf")) {
-        runSplineTDF(ocl,size,parameters,&vectorField,&TDFlarge,&radiusLarge,std::max(5.0f, radiusMin),radiusMax,radiusStep);
+        runSplineTDF(ocl,size,parameters,&vectorField,&TDFlarge,&radiusLarge,std::max(2.5f, radiusMin),radiusMax,radiusStep);
     } else {
         runCircleFittingTDF(ocl,size,&vectorField,&TDFlarge,&radiusLarge,std::max(2.5f, radiusMin),radiusMax,radiusStep);
     }
