@@ -1137,8 +1137,8 @@ __kernel void circleFittingTDF(
             float4 position = floatPos + radius*V_alpha.xyzz;
             float3 V = -read_imagef(vectorField, interpolationSampler, position).xyz;
             radiusSum += dot(V, V_alpha);
-            //if(dot(normalize(V), normalize(V_alpha)) < 0.2f)
-            //	negatives++;
+            if(dot(normalize(V), normalize(V_alpha)) < 0.0f)
+            	negatives++;
         }
         if(negatives > 0)
         	continue;
@@ -1150,23 +1150,6 @@ __kernel void circleFittingTDF(
             break;
         }
     }
-
-    int samples = 32;
-    int negatives = 0;
-	int stride = 1;
-	for(int j = 0; j < samples; j++) {
-		float3 V_alpha = cosValues[j*stride]*e3 + sinValues[j*stride]*e2;
-		float4 position = floatPos + maxRadius*V_alpha.xyzz;
-		float3 V = -read_imagef(vectorField, interpolationSampler, position).xyz;
-		if(dot(normalize(V), normalize(V_alpha)) < 0.2f)
-			negatives++;
-	}
-	/*
-	if(negatives > 0 || read_imagef(dataset, sampler, pos).x > 0.4f) {
-		maxSum = 0;
-		maxRadius = 0;
-	}
-	*/
 
 	// Store result
     T[LPOS(pos)] = FLOAT_TO_UNORM16(maxSum);
@@ -1298,14 +1281,12 @@ __kernel void splineTDF(
                 float3 tangent = normalize(position.xyz - prevPos.xyz);
                 float3 normal = normalize(cross(tangent, planeNormal));
 
-                /*
-                if(dot(Fn.xyz, normal) < 0) {
+                if(dot(Fn.xyz, normal) < 0.0f) {
                     invalid = 1;
                     sum = 0.0f;
-                    break;
+                    //break;
                 }
-                */
-                sum += dot(Fn.xyz, normal);
+                sum += 1-fabs(dot(Fn.xyz, e1));
                 prevPos = position;
             } // End For each sample on the spline segment
         }
@@ -1314,25 +1295,27 @@ __kernel void splineTDF(
         avgRadius = 0.0;
     }
 
+    R[LPOS(pos)] = avgRadius;
     if(invalid != 1) {
     float avgSymmetry = 0.0f;
-    float worstSymmetry = 2.0f;
+    //float worstSymmetry = 2.0f;
     //printf("new symmetry %d\n", invalid);
     for(int j = 0; j < arms/2; j++) {
+        /*
         float symmetry = min(maxRadius[j], maxRadius[arms/2 + j]) /
             max(maxRadius[j], maxRadius[arms/2+j]);
         //printf("%f - %f\n", maxRadius[j], maxRadius[arms/2+j]);
         if(symmetry < worstSymmetry)
          worstSymmetry = symmetry;
+         */
         avgSymmetry += min(maxRadius[j], maxRadius[arms/2 + j]) /
             max(maxRadius[j], maxRadius[arms/2+j]);
     }
     avgSymmetry /= arms/2;
 
-    R[LPOS(pos)] = avgRadius;
     //if(sum/(arms*(samples-1)) >= 0.1f && sum/(arms*(samples-1)) < 2.0f) {
         //T[LPOS(pos)] = FLOAT_TO_UNORM16(sum / (arms*(samples-1)));
-        T[LPOS(pos)] = FLOAT_TO_UNORM16(avgSymmetry);
+        T[LPOS(pos)] = FLOAT_TO_UNORM16(min(1.0f, (sum / (arms*(samples-1)))*avgSymmetry+0.2f));
     } else {
         T[LPOS(pos)] = 0;
     }
@@ -1416,7 +1399,7 @@ __kernel void findCandidateCenterpoints2(
 
     const float thetaLimit = 0.5f;
     const float radii = read_imagef(radius, sampler, pos).x;
-    const int maxD = max(min(round(radii), 5.0f), 1.0f);
+    const int maxD = max(min(round(radii), 8.0f), 1.0f);
     bool invalid = false;
 
     // Find Hessian Matrix
@@ -1460,7 +1443,7 @@ __kernel void findCandidateCenterpoints2(
 			*/
 			if(SQR_MAG(n) < SQR_MAG(pos)) {
 				invalid = true;
-				break;
+				//break;
 			//}
 			}
 

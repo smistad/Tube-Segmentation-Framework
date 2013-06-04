@@ -1,6 +1,6 @@
 #include "tube-segmentation.hpp"
 #include "SIPL/Types.hpp"
-#define USE_SIPL_VISUALIZATION
+//#define USE_SIPL_VISUALIZATION
 #ifdef USE_SIPL_VISUALIZATION
 #include "SIPL/Core.hpp"
 #endif
@@ -2104,7 +2104,7 @@ if(getParamBool(parameters, "timing")) {
     Buffer radiusLarge = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
 
     if(getParamBool(parameters,"use-spline-tdf")) {
-        runSplineTDF(ocl,size,parameters,&vectorField,&TDFlarge,&radiusLarge,std::max(4.0f, radiusMin),radiusMax,radiusStep);
+        runSplineTDF(ocl,size,parameters,&vectorField,&TDFlarge,&radiusLarge,std::max(5.0f, radiusMin),radiusMax,radiusStep);
     } else {
         runCircleFittingTDF(ocl,size,&vectorField,&TDFlarge,&radiusLarge,std::max(2.5f, radiusMin),radiusMax,radiusStep);
     }
@@ -2182,6 +2182,7 @@ if(getParamBool(parameters, "timing")) {
     T.Fx = new float[totalSize];
     T.Fy =new float[totalSize];
     T.Fz =new float[totalSize];
+    float *tdfData = new float[totalSize];
     if((!getParamBool(parameters, "16bit-vectors"))) {
      // 32 bit vector fields
         float * Fs = new float[totalSize*4];
@@ -2201,9 +2202,12 @@ if(getParamBool(parameters, "timing")) {
         }
         delete[] Fs;
 
+        ocl.queue.enqueueReadImage(TDF, CL_TRUE, offset, region, 0, 0, tdfData);
     } else {
      // 16 bit vector fields
         short * Fs = new short[totalSize*4];
+        unsigned short * tempTDF = new unsigned short[totalSize];
+        ocl.queue.enqueueReadImage(TDF, CL_TRUE, offset, region, 0, 0, tempTDF);
         ocl.queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
 #pragma omp parallel for
         for(int i = 0; i < totalSize; i++) {
@@ -2216,8 +2220,10 @@ if(getParamBool(parameters, "timing")) {
             T.Fz[i] = v.z;
             vis->set(i, v);
             magnitude->set(i, v.length());
+            tdfData[i] = tempTDF[i] / 65535.0f;
         }
         delete[] Fs;
+        delete[] tempTDF;
     }
     //vis->show();
     magnitude->show(0.1, 0.2);
@@ -2229,8 +2235,6 @@ ocl.queue.enqueueReadImage(radiusImage, CL_TRUE, offset, region, 0, 0, rad);
 radius->setData(rad);
 radius->show(40, 80);
     SIPL::Volume<float> * tdf = new SIPL::Volume<float>(size);
-    float *tdfData = new float[totalSize];
-ocl.queue.enqueueReadImage(TDF, CL_TRUE, offset, region, 0, 0, tdfData);
     tdf->setData(tdfData);
     tdf->show();
     // Create direction map
