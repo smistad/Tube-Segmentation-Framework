@@ -1121,7 +1121,7 @@ __kernel void circleFittingTDF(
         float radiusSum = 0.0f;
         int samples = 32;
         int stride = 1;
-        int negatives = 0;
+        //int negatives = 0;
         /*
         if(radius < 3) {
             samples = 8;
@@ -1137,11 +1137,11 @@ __kernel void circleFittingTDF(
             float4 position = floatPos + radius*V_alpha.xyzz;
             float3 V = -read_imagef(vectorField, interpolationSampler, position).xyz;
             radiusSum += dot(V, V_alpha);
-            if(dot(normalize(V), normalize(V_alpha)) < 0.0f)
-            	negatives++;
+            //if(dot(normalize(V), normalize(V_alpha)) < 0.0f)
+            //	negatives++;
         }
-        if(negatives > 0)
-        	continue;
+        //if(negatives > 0)
+        //	continue;
         radiusSum /= samples;
         if(radiusSum > maxSum) {
             maxSum = radiusSum;
@@ -1193,7 +1193,7 @@ __kernel void splineTDF(
 
     float currentVoxelMagnitude = length(read_imagef(vectorField, sampler, pos).xyz);
 
-    float maxRadius[20]; // 12 is maximum nr of arms atm.
+    float maxRadius[12]; // 12 is maximum nr of arms atm.
     //float minAverageMag = 0.01f; // 0.01
     float avgRadius = 0.0f;
     for(int j = 0; j < arms; j++) {
@@ -1242,6 +1242,7 @@ __kernel void splineTDF(
         }
         // Create spline segments
         for(int j = 0; j < arms && invalid == 0; j++) {
+            /*
             // The four control points for each spline segment
             float4 Pk_1, Pk, Pk1, Pk2, V_alpha;
             float alpha;
@@ -1283,8 +1284,10 @@ __kernel void splineTDF(
 
                 prevPos = position;
             } // End For each sample on the spline segment
-            alpha = 2 * M_PI_F * (j) / arms;
-            V_alpha = cos(alpha)*e3.xyzz + sin(alpha)*e2.xyzz ;
+            */
+            const float alpha = 2 * M_PI_F * (j) / arms;
+            const float4 V_alpha = cos(alpha)*e3.xyzz + sin(alpha)*e2.xyzz ;
+            const float4 Pk = convert_float4(pos) + maxRadius[j]*V_alpha;
             float4 Fn = normalize(read_imagef(vectorField, interpolationSampler, Pk));
             if(dot(Fn.xyz, -normalize(V_alpha.xyz)) < 0.0f) {
                 invalid = 1;
@@ -1301,24 +1304,12 @@ __kernel void splineTDF(
 
     R[LPOS(pos)] = avgRadius;
     if(invalid != 1) {
-    float avgSymmetry = 0.0f;
-    //float worstSymmetry = 2.0f;
-    //printf("new symmetry %d\n", invalid);
-    for(int j = 0; j < arms/2; j++) {
-        /*
-        float symmetry = min(maxRadius[j], maxRadius[arms/2 + j]) /
-            max(maxRadius[j], maxRadius[arms/2+j]);
-        //printf("%f - %f\n", maxRadius[j], maxRadius[arms/2+j]);
-        if(symmetry < worstSymmetry)
-         worstSymmetry = symmetry;
-         */
-        avgSymmetry += min(maxRadius[j], maxRadius[arms/2 + j]) /
-            max(maxRadius[j], maxRadius[arms/2+j]);
-    }
-    avgSymmetry /= arms/2;
-
-    //if(sum/(arms*(samples-1)) >= 0.1f && sum/(arms*(samples-1)) < 2.0f) {
-        //T[LPOS(pos)] = FLOAT_TO_UNORM16(sum / (arms*(samples-1)));
+        float avgSymmetry = 0.0f;
+        for(int j = 0; j < arms/2; j++) {
+           avgSymmetry += min(maxRadius[j], maxRadius[arms/2 + j]) /
+                max(maxRadius[j], maxRadius[arms/2+j]);
+        }
+        avgSymmetry /= arms/2;
         T[LPOS(pos)] = FLOAT_TO_UNORM16(min(1.0f, min(1.0f, (sum / (arms))*avgSymmetry+0.2f)));
     } else {
         T[LPOS(pos)] = 0;

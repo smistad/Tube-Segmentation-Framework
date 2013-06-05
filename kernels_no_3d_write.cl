@@ -1587,9 +1587,9 @@ __kernel void splineTDF(
     int invalid = 0;
 
     // Find Hessian Matrix
-    const float3 Fx = gradient(vectorField, pos, 0, 1);
-    const float3 Fy = gradient(vectorField, pos, 1, 2);
-    const float3 Fz = gradient(vectorField, pos, 2, 3);
+    const float3 Fx = gradientNormalized(vectorField, pos, 0, 1);
+    const float3 Fy = gradientNormalized(vectorField, pos, 1, 2);
+    const float3 Fz = gradientNormalized(vectorField, pos, 2, 3);
 
     float Hessian[3][3] = {
         {Fx.x, Fy.x, Fz.x},
@@ -1657,6 +1657,7 @@ __kernel void splineTDF(
         }
         // Create spline segments
         for(int j = 0; j < arms && invalid == 0; j++) {
+            /*
             // The four control points for each spline segment
             float4 Pk_1, Pk, Pk1, Pk2, V_alpha;
             float alpha;
@@ -1696,31 +1697,35 @@ __kernel void splineTDF(
                 float3 tangent = normalize(position.xyz - prevPos.xyz);
                 float3 normal = normalize(cross(tangent, planeNormal));
 
-                if(dot(Fn.xyz, normal) < 0) {
-                    invalid = 1;
-                    sum = 0.0f;
-                    break;
-                }
-                sum += dot(Fn.xyz, normal);
                 prevPos = position;
             } // End For each sample on the spline segment
+            */
+            const float alpha = 2 * M_PI_F * (j) / arms;
+            const float4 V_alpha = cos(alpha)*e3.xyzz + sin(alpha)*e2.xyzz ;
+            const float4 Pk = convert_float4(pos) + maxRadius[j]*V_alpha;
+            float4 Fn = normalize(read_imagef(vectorField, interpolationSampler, Pk));
+            if(dot(Fn.xyz, -normalize(V_alpha.xyz)) < 0.0f) {
+                invalid = 1;
+                sum = 0.0f;
+                //break;
+            }
+            sum += 1-fabs(dot(Fn.xyz, e1));
+
         }
         avgRadius = avgRadius / arms;
     } else {// End valid
         avgRadius = 0.0;
     }
 
-    float avgSymmetry = 0.0f;
-    for(int j = 0; j < arms/2; j++) {
-        avgSymmetry += min(maxRadius[j], maxRadius[arms/2 + j]) /
-            max(maxRadius[j], maxRadius[arms/2+j]);
-    }
-    avgSymmetry /= arms/2;
-
     R[LPOS(pos)] = avgRadius;
-    if(sum/(arms*(samples-1)) >= 0.1f && sum/(arms*(samples-1)) < 2.0f) {
-        //T[LPOS(pos)] = sum / (arms*(samples-1));
-        T[LPOS(pos)] = FLOAT_TO_UNORM16(avgSymmetry);
+    if(invalid != 1) {
+        float avgSymmetry = 0.0f;
+        for(int j = 0; j < arms/2; j++) {
+           avgSymmetry += min(maxRadius[j], maxRadius[arms/2 + j]) /
+                max(maxRadius[j], maxRadius[arms/2+j]);
+        }
+        avgSymmetry /= arms/2;
+        T[LPOS(pos)] = FLOAT_TO_UNORM16(min(1.0f, min(1.0f, (sum / (arms))*avgSymmetry+0.2f)));
     } else {
         T[LPOS(pos)] = 0;
     }
