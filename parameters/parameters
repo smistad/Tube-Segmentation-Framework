@@ -16,7 +16,7 @@ min-distance num 5 0 100 1 "Minimum length for accepting centerlines (ridge trav
 m-low num 0.05 0.0 0.2 0.01 "Threshold of vector field magnitude (ridge traversal)" centerline-ridge
 tdf-low num 0.5 0.0 1.0 0.1 "TDF response lower threshold (ridge traversal)" centerline-ridge
 max-below-tdf-low num 0 0 5 1 "Number of allowed voxels below TDF lower threshold (ridge traversal)" centerline-ridge
-min-mean-tdf num 0.5 0.1 1.0 0.01 "Minimum mean TDF response along centerline" centerline-general
+min-mean-tdf num 0.5 0.0 1.0 0.01 "Minimum mean TDF response along centerline" centerline-general
 min-tree-length num 5 0 1000 5 "Minimum centerline tree length" centerline-general
 timing bool false "Timing of application" advanced
 cube-size num 4 0 10 1 "Grid size of (parallel centerline extraction)" centerline-gpu
