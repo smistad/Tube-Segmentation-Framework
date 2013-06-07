@@ -1310,7 +1310,7 @@ __kernel void splineTDF(
                 max(maxRadius[j], maxRadius[arms/2+j]);
         }
         avgSymmetry /= arms/2;
-        T[LPOS(pos)] = FLOAT_TO_UNORM16(min(1.0f, min(1.0f, (sum / (arms))*avgSymmetry+0.2f)));
+        T[LPOS(pos)] = FLOAT_TO_UNORM16(min(1.0f, (sum / (arms))*avgSymmetry+0.2f));
     } else {
         T[LPOS(pos)] = 0;
     }
