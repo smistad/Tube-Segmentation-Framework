@@ -1477,6 +1477,7 @@ void runSplineTDF(
         float radiusStep
     ) {
 
+    /*
     // Create blending functions
     int samples = 3;
     float s = 0.5;
@@ -1496,6 +1497,7 @@ void runSplineTDF(
      sizeof(float)*samples*4,
      blendingFunctions
     );
+    */
 
     Kernel TDFKernel(ocl.program, "splineTDF");
     TDFKernel.setArg(0, *vectorField);
@@ -1503,11 +1505,11 @@ void runSplineTDF(
     TDFKernel.setArg(2, std::max(1.0f, radiusMin));
     TDFKernel.setArg(3, radiusMax);
     TDFKernel.setArg(4, radiusStep);
-    TDFKernel.setArg(5, bufferBlendingFunctions);
-    TDFKernel.setArg(6, 12); // arms
-    TDFKernel.setArg(7, samples); // samples per arm
-    TDFKernel.setArg(8, *radius);
-    TDFKernel.setArg(9, 0.1f);
+    //TDFKernel.setArg(5, bufferBlendingFunctions);
+    TDFKernel.setArg(5, 12); // arms
+    //TDFKernel.setArg(6, samples); // samples per arm
+    TDFKernel.setArg(6, *radius);
+    TDFKernel.setArg(7, 0.1f);
 
     ocl.queue.enqueueNDRangeKernel(
             TDFKernel,

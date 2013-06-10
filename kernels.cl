@@ -1162,9 +1162,9 @@ __kernel void splineTDF(
         __private float rMin,
         __private float rMax,
         __private float rStep,
-        __global float * blendingFunctions,
+        //__global float * blendingFunctions,
         __private const int arms,
-        __private const int samples,
+        //__private const int samples,
         __global float * R,
         __private const float minAverageMag
     ) {

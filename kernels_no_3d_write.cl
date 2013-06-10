@@ -1577,9 +1577,9 @@ __kernel void splineTDF(
         __private float rMin,
         __private float rMax,
         __private float rStep,
-        __global float * blendingFunctions,
+        //__global float * blendingFunctions,
         __private const int arms,
-        __private const int samples,
+        //__private const int samples,
         __global float * R,
         __private const float minAverageMag
     ) {
@@ -1649,12 +1649,14 @@ __kernel void splineTDF(
     // Have all line searches found valid points?
     float sum = 0.0f;
     if(invalid == 0) {
+        /*
         float3 planeNormal;
         if(dot(cross(e2,e3),e1) > 0) {
             planeNormal = -e1.xyz;
         } else {
             planeNormal = e1.xyz;
         }
+        */
         // Create spline segments
         for(int j = 0; j < arms && invalid == 0; j++) {
             /*
@@ -1703,7 +1705,7 @@ __kernel void splineTDF(
             const float alpha = 2 * M_PI_F * (j) / arms;
             const float4 V_alpha = cos(alpha)*e3.xyzz + sin(alpha)*e2.xyzz ;
             const float4 Pk = convert_float4(pos) + maxRadius[j]*V_alpha;
-            float4 Fn = normalize(read_imagef(vectorField, interpolationSampler, Pk));
+            const float4 Fn = normalize(read_imagef(vectorField, interpolationSampler, Pk));
             if(dot(Fn.xyz, -normalize(V_alpha.xyz)) < 0.0f) {
                 invalid = 1;
                 sum = 0.0f;
