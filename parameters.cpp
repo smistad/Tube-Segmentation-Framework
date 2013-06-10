@@ -152,7 +152,12 @@ void setParameter(paramList &parameters, string name, string value) {
 		parameters.numerics[name] = v;
 	} else if(parameters.strings.count(name) > 0) {
 		StringParameter v = parameters.strings[name];
-		v.set(value);
+		if(name == "parameters") {
+		    // Set parameters value without any validation
+		    v.setWithoutValidation(value);
+		} else {
+            v.set(value);
+		}
 		parameters.strings[name] = v;
 	} else {
     	std::string str = "Can not set value for parameter with name: " + name;
@@ -291,6 +296,10 @@ void StringParameter::set(string value) {
 	}
 }
 
+void StringParameter::setWithoutValidation(std::string value) {
+    this->value = value;
+}
+
 bool StringParameter::validate(string value) {
 	if(possibilities.size() > 0) {
 		vector<string>::iterator it;
@@ -366,6 +375,7 @@ void NumericParameter::setGroup(std::string group) {
 std::string StringParameter::getGroup() const {
 	return group;
 }
+
 
 void StringParameter::setGroup(std::string group) {
 	this->group = group;
