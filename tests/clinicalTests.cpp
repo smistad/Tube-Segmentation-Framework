@@ -46,7 +46,15 @@ TEST_F(ClinicalTests, LungAirwaysCT) {
         return;
     }
     loadParameterPreset(parameters, PARAMETERS_DIR);
-	result = runClinicalData(parameters, name);
+    try {
+        result = runClinicalData(parameters, name);
+    } catch(SIPL::SIPLException e) {
+        // Out of memory on GPU
+        // Try to run cropped version instead
+        std::cout << "Exception occurred. Trying cropped volume instead." << std::endl;
+        setParameter(parameters, "cropping", "no");
+        result = runClinicalData(parameters, name+"-cropped");
+    }
 	EXPECT_GT(1.5, result.averageDistanceFromCenterline);
 	EXPECT_LT(75.0, result.percentageExtractedCenterlines);
 	EXPECT_LT(0.7, result.precision);
@@ -63,7 +71,15 @@ TEST_F(ClinicalTests, NeuroVesselsMRA) {
         return;
     }
     loadParameterPreset(parameters, PARAMETERS_DIR);
-	result = runClinicalData(parameters, name);
+    try {
+        result = runClinicalData(parameters, name);
+    } catch(SIPL::SIPLException e) {
+        // Out of memory on GPU
+        // Try to run cropped version instead
+        std::cout << "Exception occurred. Trying cropped volume instead." << std::endl;
+        setParameter(parameters, "cropping", "no");
+        result = runClinicalData(parameters, name+"-cropped");
+    }
 	EXPECT_GT(1.5, result.averageDistanceFromCenterline);
 	EXPECT_LT(75.0, result.percentageExtractedCenterlines);
 	EXPECT_LT(0.7, result.precision);
@@ -80,7 +96,15 @@ TEST_F(ClinicalTests, NeuroVesselsUSA) {
         return;
     }
     loadParameterPreset(parameters, PARAMETERS_DIR);
-	result = runClinicalData(parameters, name);
+    try {
+        result = runClinicalData(parameters, name);
+    } catch(SIPL::SIPLException e) {
+        // Out of memory on GPU
+        // Try to run cropped version instead
+        std::cout << "Exception occurred. Trying cropped volume instead." << std::endl;
+        setParameter(parameters, "cropping", "no");
+        result = runClinicalData(parameters, name+"-cropped");
+    }
 	EXPECT_GT(1.5, result.averageDistanceFromCenterline);
 	EXPECT_LT(75.0, result.percentageExtractedCenterlines);
 	EXPECT_LT(0.7, result.precision);
