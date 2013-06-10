@@ -1,5 +1,6 @@
 #include "tube-segmentation.hpp"
 #include "SIPL/Types.hpp"
+//#define USE_SIPL_VISUALIZATION
 #ifdef USE_SIPL_VISUALIZATION
 #include "SIPL/Core.hpp"
 #endif
@@ -1464,6 +1465,76 @@ Image3D runGVF(OpenCL &ocl, Image3D * vectorField, paramList &parameters, SIPL::
 	}
 }
 
+void runSplineTDF(
+        OpenCL &ocl,
+        SIPL::int3 &size,
+        paramList &parameters,
+        Image3D *vectorField,
+        Buffer *TDF,
+        Buffer *radius,
+        float radiusMin,
+        float radiusMax,
+        float radiusStep
+    ) {
+
+    // Create blending functions
+    int samples = 3;
+    float s = 0.5;
+    float * blendingFunctions = new float[4*samples]; // 4 * samples per arm
+    for(int i = 0; i < samples; i++) {
+        float u = (float)i / (samples-1);
+        blendingFunctions[i*4] = -s*u*u*u + 2*s*u*u - s*u;
+        blendingFunctions[i*4+1] = (2-s)*u*u*u + (s-3)*u*u + 1;
+        blendingFunctions[i*4+2] = (s-2)*u*u*u + (3-2*s)*u*u + s*u;
+        blendingFunctions[i*4+3] = s*u*u*u - s*u*u;
+    }
+
+    // Transfer to device
+    Buffer bufferBlendingFunctions = Buffer(
+     ocl.context,
+     CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+     sizeof(float)*samples*4,
+     blendingFunctions
+    );
+
+    Kernel TDFKernel(ocl.program, "splineTDF");
+    TDFKernel.setArg(0, *vectorField);
+    TDFKernel.setArg(1, *TDF);
+    TDFKernel.setArg(2, std::max(1.0f, radiusMin));
+    TDFKernel.setArg(3, radiusMax);
+    TDFKernel.setArg(4, radiusStep);
+    TDFKernel.setArg(5, bufferBlendingFunctions);
+    TDFKernel.setArg(6, 12); // arms
+    TDFKernel.setArg(7, samples); // samples per arm
+    TDFKernel.setArg(8, *radius);
+    TDFKernel.setArg(9, 0.1f);
+
+    ocl.queue.enqueueNDRangeKernel(
+            TDFKernel,
+            NullRange,
+            NDRange(size.x,size.y,size.z),
+            NDRange(4,4,4)
+    );
+}
+
+void runCircleFittingTDF(OpenCL &ocl, int3 &size, Image3D * vectorField, Buffer * TDF, Buffer * radius, float radiusMin, float radiusMax, float radiusStep) {
+    Kernel circleFittingTDFKernel(ocl.program, "circleFittingTDF");
+    circleFittingTDFKernel.setArg(0, *vectorField);
+    circleFittingTDFKernel.setArg(1, *TDF);
+    circleFittingTDFKernel.setArg(2, *radius);
+    circleFittingTDFKernel.setArg(3, radiusMin);
+    circleFittingTDFKernel.setArg(4, radiusMax);
+    circleFittingTDFKernel.setArg(5, radiusStep);
+
+    ocl.queue.enqueueNDRangeKernel(
+            circleFittingTDFKernel,
+            NullRange,
+            NDRange(size.x,size.y,size.z),
+            NDRange(4,4,4)
+    );
+
+}
+
 void runCircleFittingMethod(OpenCL &ocl, Image3D * dataset, SIPL::int3 size, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radiusImage) {
     // Set up parameters
     const float radiusMin = getParam(parameters, "radius-min");
@@ -1489,7 +1560,6 @@ void runCircleFittingMethod(OpenCL &ocl, Image3D * dataset, SIPL::int3 size, par
     // Create kernels
     Kernel blurVolumeWithGaussianKernel(ocl.program, "blurVolumeWithGaussian");
     Kernel createVectorFieldKernel(ocl.program, "createVectorField");
-    Kernel circleFittingTDFKernel(ocl.program, "circleFittingTDF");
     Kernel combineKernel = Kernel(ocl.program, "combine");
 
     cl::Event startEvent, endEvent;
@@ -1719,19 +1789,7 @@ if(getParamBool(parameters, "timing")) {
     GC->addMemObject(TDFsmallBuffer);
     Buffer * radiusSmallBuffer = new Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
     GC->addMemObject(radiusSmallBuffer);
-    circleFittingTDFKernel.setArg(0, *vectorFieldSmall);
-    circleFittingTDFKernel.setArg(1, *TDFsmallBuffer);
-    circleFittingTDFKernel.setArg(2, *radiusSmallBuffer);
-    circleFittingTDFKernel.setArg(3, radiusMin);
-    circleFittingTDFKernel.setArg(4, 3.0f);
-    circleFittingTDFKernel.setArg(5, 0.5f);
-
-    ocl.queue.enqueueNDRangeKernel(
-            circleFittingTDFKernel,
-            NullRange,
-            NDRange(size.x,size.y,size.z),
-            NDRange(4,4,4)
-    );
+    runCircleFittingTDF(ocl,size,vectorFieldSmall,TDFsmallBuffer,radiusSmallBuffer,radiusMin,3.0f,0.5f);
 
 
     if(radiusMax < 2.5) {
@@ -2045,19 +2103,11 @@ if(getParamBool(parameters, "timing")) {
     }
     Buffer radiusLarge = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
 
-    circleFittingTDFKernel.setArg(0, vectorField);
-    circleFittingTDFKernel.setArg(1, TDFlarge);
-    circleFittingTDFKernel.setArg(2, radiusLarge);
-    circleFittingTDFKernel.setArg(3, std::max(2.5f, radiusMin));
-    circleFittingTDFKernel.setArg(4, radiusMax);
-    circleFittingTDFKernel.setArg(5, 1.5f);
-
-    ocl.queue.enqueueNDRangeKernel(
-            circleFittingTDFKernel,
-            NullRange,
-            NDRange(size.x,size.y,size.z),
-            NDRange(4,4,4)
-    );
+    if(getParamBool(parameters,"use-spline-tdf")) {
+        runSplineTDF(ocl,size,parameters,&vectorField,&TDFlarge,&radiusLarge,std::max(1.5f, radiusMin),radiusMax,radiusStep);
+    } else {
+        runCircleFittingTDF(ocl,size,&vectorField,&TDFlarge,&radiusLarge,std::max(2.5f, radiusMin),radiusMax,radiusStep);
+    }
 
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
@@ -2123,7 +2173,89 @@ if(getParamBool(parameters, "timing")) {
     endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
     std::cout << "RUNTIME of combine: " << (end-start)*1.0e-6 << " ms" << std::endl;
 }
+#ifdef USE_SIPL_VISUALIZATION
+//if(getParamBool(parameters, "show-vector-field")) {
+// get vector field
+    SIPL::Volume<SIPL::float3> * vis = new SIPL::Volume<SIPL::float3>(size);
+    SIPL::Volume<float> * magnitude = new SIPL::Volume<float>(size);
+    TubeSegmentation T;
+    T.Fx = new float[totalSize];
+    T.Fy =new float[totalSize];
+    T.Fz =new float[totalSize];
+    float *tdfData = new float[totalSize];
+    if((!getParamBool(parameters, "16bit-vectors"))) {
+     // 32 bit vector fields
+        float * Fs = new float[totalSize*4];
+        ocl.queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
+#pragma omp parallel for
+        for(int i = 0; i < totalSize; i++) {
 
+         SIPL::float3 v;
+            v.x = Fs[i*4];
+            v.y = Fs[i*4+1];
+            v.z = Fs[i*4+2];
+            T.Fx[i] = v.x;
+            T.Fy[i] = v.y;
+            T.Fz[i] = v.z;
+            vis->set(i, v);
+            magnitude->set(i, v.length());
+        }
+        delete[] Fs;
+
+        ocl.queue.enqueueReadImage(TDF, CL_TRUE, offset, region, 0, 0, tdfData);
+    } else {
+     // 16 bit vector fields
+        short * Fs = new short[totalSize*4];
+        unsigned short * tempTDF = new unsigned short[totalSize];
+        ocl.queue.enqueueReadImage(TDF, CL_TRUE, offset, region, 0, 0, tempTDF);
+        ocl.queue.enqueueReadImage(vectorField, CL_TRUE, offset, region, 0, 0, Fs);
+#pragma omp parallel for
+        for(int i = 0; i < totalSize; i++) {
+         SIPL::float3 v;
+            v.x = MAX(-1.0f, Fs[i*4] / 32767.0f);
+            v.y = MAX(-1.0f, Fs[i*4+1] / 32767.0f);;
+            v.z = MAX(-1.0f, Fs[i*4+2] / 32767.0f);
+            T.Fx[i] = v.x;
+            T.Fy[i] = v.y;
+            T.Fz[i] = v.z;
+            vis->set(i, v);
+            magnitude->set(i, v.length());
+            tdfData[i] = tempTDF[i] / 65535.0f;
+        }
+        delete[] Fs;
+        delete[] tempTDF;
+    }
+    //vis->show();
+    magnitude->show(0.5, 1.0);
+
+
+    SIPL::Volume<float> * radius= new SIPL::Volume<float>(size);
+    float * rad = new float[totalSize];
+ocl.queue.enqueueReadImage(radiusImage, CL_TRUE, offset, region, 0, 0, rad);
+radius->setData(rad);
+radius->show(40, 80);
+    SIPL::Volume<float> * tdf = new SIPL::Volume<float>(size);
+    tdf->setData(tdfData);
+    tdf->show();
+    // Create direction map
+    SIPL::Volume<SIPL::float3> * directions = new SIPL::Volume<SIPL::float3>(size);
+    for(int z = 0; z < size.z; z++) {
+    for(int y = 0; y < size.y; y++) {
+    for(int x = 0; x < size.x; x++) {
+        int3 pos(x,y,z);
+        SIPL::float3 value(0,0,0);
+        if(radius->get(pos) > 0) {
+            value = getTubeDirection(T,pos,size);
+        }
+        directions->set(pos,value);
+    }}}
+    delete[] T.Fx;
+    delete[] T.Fy;
+    delete[] T.Fz;
+    directions->show();
+//}
+
+#endif
 }
 
 

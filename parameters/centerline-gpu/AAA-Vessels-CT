@@ -1,0 +1,14 @@
+mode white
+minimum 50
+maximum 150
+fmax 0.3
+use-spline-tdf
+small-blur 1.0
+large-blur 2.0
+gvf-iterations 10000
+radius-min 3.5
+radius-max 150
+tdf-high 0.5
+min-mean-tdf 0.5
+max-distance 50
+min-tree-length 50

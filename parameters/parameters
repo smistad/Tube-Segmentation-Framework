@@ -1,11 +1,11 @@
-# name type default (valid values)/range description group
+# name type default (valid values)/range description group. NB. File should end with newline
 device str gpu gpu cpu "Which type of processor to use" general
 mode str white black white "Extract black or white tubular structures" general
 display bool false "Display results" advanced
 centerline-method str gpu test gpu ridge "Centerline extraction method" general
-gvf-iterations num 250 0 2000 50 "Number of GVF iterations" gradient-vector-flow
+gvf-iterations num 250 0 10000 50 "Number of GVF iterations" gradient-vector-flow
 radius-min num 0.5 0.5 50.0 0.5 "Minimum radius of tubular structures" tube-detection-filter
-radius-max num 15.0 2.0 50.0 1.0 "Maximum radius of tubular structures" tube-detection-filter
+radius-max num 15.0 2.0 300.0 1.0 "Maximum radius of tubular structures" tube-detection-filter
 radius-step num 1.0 0.0 5.0 0.5 "Step size of radius" tube-detection-filter
 fmax num 0.2 0.01 0.9 0.01 "Maximum gradient length (for contrast invariance)" general
 gvf-mu num 0.05 0.0 0.05 0.01 "Mu regularization constant of GVF" gradient-vector-flow
@@ -16,7 +16,7 @@ min-distance num 5 0 100 1 "Minimum length for accepting centerlines (ridge trav
 m-low num 0.05 0.0 0.2 0.01 "Threshold of vector field magnitude (ridge traversal)" centerline-ridge
 tdf-low num 0.5 0.0 1.0 0.1 "TDF response lower threshold (ridge traversal)" centerline-ridge
 max-below-tdf-low num 0 0 5 1 "Number of allowed voxels below TDF lower threshold (ridge traversal)" centerline-ridge
-min-mean-tdf num 0.5 0.1 1.0 0.01 "Minimum mean TDF response along centerline" centerline-general
+min-mean-tdf num 0.5 0.0 1.0 0.01 "Minimum mean TDF response along centerline" centerline-general
 min-tree-length num 5 0 1000 5 "Minimum centerline tree length" centerline-general
 timing bool false "Timing of application" advanced
 cube-size num 4 0 10 1 "Grid size of (parallel centerline extraction)" centerline-gpu
@@ -38,7 +38,8 @@ storage-dir str off "Directory of where to store results (ommit to skip)" storag
 storage-name str unnamed "Storage name" storage
 32bit-vectors bool false "Force the use of 32 bit vectors" advanced
 16bit-vectors bool true "Force the use of 16 bit vectors" advanced
-parameters str none none Liver-Vessels-CT Liver-Vessels-MR Lung-Airways-CT Neuro-Vessels-USA Neuro-Vessels-MRA Phantom-Acc-US Synthetic-Vascusynth "Which parameter preset to use" preset
+parameters str none none AAA-Vessels-CT Liver-Vessels-CT Liver-Vessels-MR Lung-Airways-CT Neuro-Vessels-USA Neuro-Vessels-MRA Phantom-Acc-US Synthetic-Vascusynth "Which parameter preset to use" preset
 loop-removal bool true "Perform loop removal on centerlines on CPU" advanced
 timer-total bool false "Measure the total execution time" advanced
 max-edge-distance num 3 2 30 1 "Maxium distance between two vertices in the vtk centerline file. If an edge has a length above it, more vertices and edges will be created in between" centerline-gpu
+use-spline-tdf bool false "Use Spline TDF" tube-detection-filter

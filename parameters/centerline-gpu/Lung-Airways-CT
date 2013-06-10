@@ -1,6 +1,9 @@
 mode black
-min-mean-tdf 0.45
-tdf-high 0.45
+use-spline-tdf
+gvf-iterations 2000
+radius-max 80
+min-mean-tdf 0.5
+tdf-high 0.5
 small-blur 0.5
 large-blur 1.0
 fmax 0.3

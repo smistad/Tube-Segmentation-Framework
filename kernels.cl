@@ -1121,7 +1121,7 @@ __kernel void circleFittingTDF(
         float radiusSum = 0.0f;
         int samples = 32;
         int stride = 1;
-        int negatives = 0;
+        //int negatives = 0;
         /*
         if(radius < 3) {
             samples = 8;
@@ -1137,11 +1137,11 @@ __kernel void circleFittingTDF(
             float4 position = floatPos + radius*V_alpha.xyzz;
             float3 V = -read_imagef(vectorField, interpolationSampler, position).xyz;
             radiusSum += dot(V, V_alpha);
-            //if(dot(normalize(V), normalize(V_alpha)) < 0.2f)
+            //if(dot(normalize(V), normalize(V_alpha)) < 0.0f)
             //	negatives++;
         }
-        if(negatives > 0)
-        	continue;
+        //if(negatives > 0)
+        //	continue;
         radiusSum /= samples;
         if(radiusSum > maxSum) {
             maxSum = radiusSum;
@@ -1151,26 +1151,169 @@ __kernel void circleFittingTDF(
         }
     }
 
-    int samples = 32;
-    int negatives = 0;
-	int stride = 1;
-	for(int j = 0; j < samples; j++) {
-		float3 V_alpha = cosValues[j*stride]*e3 + sinValues[j*stride]*e2;
-		float4 position = floatPos + maxRadius*V_alpha.xyzz;
-		float3 V = -read_imagef(vectorField, interpolationSampler, position).xyz;
-		if(dot(normalize(V), normalize(V_alpha)) < 0.2f)
-			negatives++;
-	}
-	/*
-	if(negatives > 0 || read_imagef(dataset, sampler, pos).x > 0.4f) {
-		maxSum = 0;
-		maxRadius = 0;
-	}
-	*/
-
 	// Store result
     T[LPOS(pos)] = FLOAT_TO_UNORM16(maxSum);
     Radius[LPOS(pos)] = maxRadius;
+}
+
+__kernel void splineTDF(
+        __read_only image3d_t vectorField,
+        __global TDF_TYPE * T,
+        __private float rMin,
+        __private float rMax,
+        __private float rStep,
+        __global float * blendingFunctions,
+        __private const int arms,
+        __private const int samples,
+        __global float * R,
+        __private const float minAverageMag
+    ) {
+    const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
+    int invalid = 0;
+
+    // Find Hessian Matrix
+    const float3 Fx = gradientNormalized(vectorField, pos, 0, 1);
+    const float3 Fy = gradientNormalized(vectorField, pos, 1, 2);
+    const float3 Fz = gradientNormalized(vectorField, pos, 2, 3);
+
+    float Hessian[3][3] = {
+        {Fx.x, Fy.x, Fz.x},
+        {Fy.x, Fy.y, Fz.y},
+        {Fz.x, Fz.y, Fz.z}
+    };
+
+    // Eigen decomposition
+    float eigenValues[3];
+    float eigenVectors[3][3];
+    eigen_decomposition(Hessian, eigenVectors, eigenValues);
+    const float3 lambda = {eigenValues[0], eigenValues[1], eigenValues[2]};
+    const float3 e1 = {eigenVectors[0][0], eigenVectors[1][0], eigenVectors[2][0]};
+    const float3 e2 = {eigenVectors[0][1], eigenVectors[1][1], eigenVectors[2][1]};
+    const float3 e3 = {eigenVectors[0][2], eigenVectors[1][2], eigenVectors[2][2]};
+
+    float currentVoxelMagnitude = length(read_imagef(vectorField, sampler, pos).xyz);
+
+    float maxRadius[12]; // 12 is maximum nr of arms atm.
+    //float minAverageMag = 0.01f; // 0.01
+    float avgRadius = 0.0f;
+    for(int j = 0; j < arms; j++) {
+        maxRadius[j] = 999;
+        float alpha = 2 * M_PI_F * j / arms;
+        float4 V_alpha = cos(alpha)*e3.xyzz + sin(alpha)*e2.xyzz;
+        float prevMagnitude2 = currentVoxelMagnitude;
+        float4 position = convert_float4(pos) + rMin*V_alpha;
+        float prevMagnitude = length(read_imagef(vectorField, interpolationSampler, position).xyz);
+        int up = prevMagnitude2 > prevMagnitude ? 0 : 1;
+
+        // Perform the actual line search
+        for(float radius = rMin+rStep; radius <= rMax; radius += rStep) {
+            position = convert_float4(pos) + radius*V_alpha;
+            float4 vec = read_imagef(vectorField, interpolationSampler, position);
+            vec.w = 0.0f;
+            float magnitude = length(vec.xyz);
+
+            // Is a border point found?
+            if(up == 1 && magnitude < prevMagnitude && (prevMagnitude+magnitude)/2.0f - currentVoxelMagnitude > minAverageMag) { // Dot produt here is test
+                maxRadius[j] = radius;
+                avgRadius += radius;
+                break;
+            } // End found border point
+
+            if(magnitude > prevMagnitude) {
+                up = 1;
+            }
+            prevMagnitude = magnitude;
+        } // End for each radius
+
+        if(maxRadius[j] == 999) {
+            invalid = 1;
+            break;
+        }
+    } // End for arms
+
+    // Have all line searches found valid points?
+    float sum = 0.0f;
+    if(invalid == 0) {
+        float3 planeNormal;
+        if(dot(cross(e2,e3),e1) > 0) {
+            planeNormal = -e1.xyz;
+        } else {
+            planeNormal = e1.xyz;
+        }
+        // Create spline segments
+        for(int j = 0; j < arms && invalid == 0; j++) {
+            /*
+            // The four control points for each spline segment
+            float4 Pk_1, Pk, Pk1, Pk2, V_alpha;
+            float alpha;
+            if(j == 0) {
+                alpha = 2 * M_PI_F * (arms-1) / arms;
+                V_alpha = cos(alpha)*e3.xyzz + sin(alpha)*e2.xyzz ;
+                Pk_1 = convert_float4(pos) + maxRadius[arms-1]*V_alpha;
+            } else {
+                alpha = 2 * M_PI_F * (j-1) / arms;
+                V_alpha = cos(alpha)*e3.xyzz + sin(alpha)*e2.xyzz ;
+                Pk_1 = convert_float4(pos) + maxRadius[j-1]*V_alpha;
+            }
+            alpha = 2 * M_PI_F * (j) / arms;
+            V_alpha = cos(alpha)*e3.xyzz + sin(alpha)*e2.xyzz ;
+            Pk = convert_float4(pos) + maxRadius[j]*V_alpha;
+            alpha = 2 * M_PI_F * ((j+1) % arms) / arms;
+            V_alpha = cos(alpha)*e3.xyzz + sin(alpha)*e2.xyzz ;
+            Pk1 = convert_float4(pos) + maxRadius[(j+1) % arms]*V_alpha;
+            alpha = 2 * M_PI_F * ((j+2) % arms) / arms;
+            V_alpha = cos(alpha)*e3.xyzz + sin(alpha)*e2.xyzz ;
+            Pk2 = convert_float4(pos) + maxRadius[(j+2) % arms]*V_alpha;
+
+            float4 prevPos = Pk;
+            for(int i = 1; i < samples; i++) {
+                float4 position = blendingFunctions[i*4]*Pk_1 +
+                    blendingFunctions[i*4+1]*Pk +
+                    blendingFunctions[i*4+2]*Pk1 +
+                    blendingFunctions[i*4+3]*Pk2;
+
+                // Sample from normalized vector field, sign is important
+                float4 Fn = read_imagef(vectorField, interpolationSampler, position);
+                //Fn = -Fn;
+                Fn.w = 0.0f;
+                Fn = -normalize(Fn); // Normalize
+
+                // Estimate spline normal
+                float3 tangent = normalize(position.xyz - prevPos.xyz);
+                float3 normal = normalize(cross(tangent, planeNormal));
+
+                prevPos = position;
+            } // End For each sample on the spline segment
+            */
+            const float alpha = 2 * M_PI_F * (j) / arms;
+            const float4 V_alpha = cos(alpha)*e3.xyzz + sin(alpha)*e2.xyzz ;
+            const float4 Pk = convert_float4(pos) + maxRadius[j]*V_alpha;
+            float4 Fn = normalize(read_imagef(vectorField, interpolationSampler, Pk));
+            if(dot(Fn.xyz, -normalize(V_alpha.xyz)) < 0.0f) {
+                invalid = 1;
+                sum = 0.0f;
+                //break;
+            }
+            sum += 1-fabs(dot(Fn.xyz, e1));
+
+        }
+        avgRadius = avgRadius / arms;
+    } else {// End valid
+        avgRadius = 0.0;
+    }
+
+    R[LPOS(pos)] = avgRadius;
+    if(invalid != 1) {
+        float avgSymmetry = 0.0f;
+        for(int j = 0; j < arms/2; j++) {
+           avgSymmetry += min(maxRadius[j], maxRadius[arms/2 + j]) /
+                max(maxRadius[j], maxRadius[arms/2+j]);
+        }
+        avgSymmetry /= arms/2;
+        T[LPOS(pos)] = FLOAT_TO_UNORM16(min(1.0f, (sum / (arms))*avgSymmetry+0.2f));
+    } else {
+        T[LPOS(pos)] = 0;
+    }
 }
 
 #define SQR_MAG(pos) read_imagef(vectorField, sampler, pos).w
@@ -1251,7 +1394,7 @@ __kernel void findCandidateCenterpoints2(
 
     const float thetaLimit = 0.5f;
     const float radii = read_imagef(radius, sampler, pos).x;
-    const int maxD = max(min(round(radii), 5.0f), 1.0f);
+    const int maxD = max(min(round(radii), 8.0f), 1.0f);
     bool invalid = false;
 
     // Find Hessian Matrix
@@ -1295,7 +1438,7 @@ __kernel void findCandidateCenterpoints2(
 			*/
 			if(SQR_MAG(n) < SQR_MAG(pos)) {
 				invalid = true;
-				break;
+				//break;
 			//}
 			}
 
