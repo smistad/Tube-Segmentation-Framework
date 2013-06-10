@@ -1,7 +1,7 @@
 mode black
 gvf-iterations 250
-min-mean-tdf 0.5
-tdf-high 0.5
+min-mean-tdf 0.45
+tdf-high 0.45
 small-blur 0.5
 large-blur 1.0
 fmax 0.3
