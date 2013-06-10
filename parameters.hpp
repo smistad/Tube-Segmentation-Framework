@@ -63,6 +63,7 @@ public:
 	StringParameter(std::string defaultValue, std::vector<std::string> possibilities, std::string description, std::string group);
 	std::string get();
 	void set(std::string value);
+	void setWithoutValidation(std::string value);
 	bool validate(std::string value);
 	std::vector<std::string> getPossibilities() const;
 	std::string getDescription() const;
