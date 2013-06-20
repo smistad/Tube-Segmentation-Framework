@@ -1884,3 +1884,13 @@ __kernel void GVFgaussSeidel(
     }
 }
 
+
+__kernel void createSqrMag(
+        __read_only image3d_t vectorField,
+        __write_only image3d_t sqrMag
+        ) {
+    const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
+
+    const float4 v = read_imagef(vectorField, sampler, pos);
+
+    write_imagef(sqrMag, pos, v.x*v.x+v.y*v.y+v.z*v.z);
