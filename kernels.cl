@@ -1968,3 +1968,31 @@ __kernel void prolongate(
     const int4 readPos = floor(convert_float4(writePos)/2.0f);
     write_imagef(v_write, writePos, read_imagef(v_l_read, hpSampler, writePos).x + read_imagef(v_l_p1, hpSampler, readPos).x);
 }
+
+__kernel void residual(
+        __read_only image3d_t r,
+        __read_only image3d_t v,
+        __read_only image3d_t sqrMag,
+        __private float mu,
+        __private float spacing,
+        __write_only image3d_t newResidual
+        ) {
+    const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
+
+    const float value = read_imagef(r, hpSampler, pos).x -
+            mu*(
+                    read_imagef(v, hpSampler, pos+(int4)(1,0,0,0)).x+
+                    read_imagef(v, hpSampler, pos-(int4)(1,0,0,0)).x+
+                    read_imagef(v, hpSampler, pos+(int4)(0,1,0,0)).x+
+                    read_imagef(v, hpSampler, pos-(int4)(0,1,0,0)).x+
+                    read_imagef(v, hpSampler, pos+(int4)(0,0,1,0)).x+
+                    read_imagef(v, hpSampler, pos-(int4)(0,0,1,0)).x-
+                    6*read_imagef(v, hpSampler, pos).x
+                ) / (spacing*spacing)
+            - read_imagef(sqrMag, hpSampler, pos).x*read_imagef(v, hpSampler, pos).x;
+
+    write_imagef(newResidual, pos, value);
+}
+
+
+
