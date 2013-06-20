@@ -1246,30 +1246,163 @@ Image3D runMGGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIPL:
     const int totalSize = size.x*size.y*size.z;
 
     Kernel initKernel = Kernel(ocl.program, "MGGVFInit");
-    Kernel finalizeKernel = Kernel(ocl.program, "MGGVFFinish");
-    Image3D resultVectorField;
 
     int v1 = 2;
     int v2 = 2;
     float spacing = 1.0f;
 
+    // TODO create sqrMag
+    Kernel createSqrMagKernel(ocl.program, "createSqrMag");
+    Image3D sqrMag = Image3D(
+            ocl.context,
+            CL_MEM_READ_WRITE,
+            ImageFormat(CL_R, CL_FLOAT),
+            size.x,
+            size.y,
+            size.z
+    );
+
+    createSqrMagKernel.setArg(0, *vectorField);
+    createSqrMagKernel.setArg(1, sqrMag);
+    ocl.queue.enqueueNDRangeKernel(
+            createSqrMagKernel,
+            NullRange,
+            NDRange(size.x,size.y,size.z),
+            NullRange
+    );
+
+    // create fx and rx
+    Image3D fx = Image3D(
+            ocl.context,
+            CL_MEM_READ_WRITE,
+            ImageFormat(CL_R, CL_FLOAT),
+            size.x,
+            size.y,
+            size.z
+    );
+    Image3D *rx = new Image3D(
+            ocl.context,
+            CL_MEM_READ_WRITE,
+            ImageFormat(CL_R, CL_FLOAT),
+            size.x,
+            size.y,
+            size.z
+    );
+    GC->addMemObject(rx);
+    initKernel.setArg(0, *vectorField);
+    initKernel.setArg(1, fx);
+    initKernel.setArg(2, rx);
+    initKernel.setArg(3, 1);
+    ocl.queue.enqueueNDRangeKernel(
+            initKernel,
+            NullRange,
+            NDRange(size.x,size.y,size.z),
+            NullRange
+    );
+
     // X component
-    Image3D fx;
     for(int i = 0; i < GVFIterations; i++) {
         fx = multigridVcycle(ocl,rx,fx,sqrMag,0,v1,v2,l_max,MU,spacing)
     }
 
+    // delete rx
+    GC->deleteMemObject(rx);
+
+    // create fy and ry
+    Image3D fy = Image3D(
+            ocl.context,
+            CL_MEM_READ_WRITE,
+            ImageFormat(CL_R, CL_FLOAT),
+            size.x,
+            size.y,
+            size.z
+    );
+    Image3D *ry = new Image3D(
+            ocl.context,
+            CL_MEM_READ_WRITE,
+            ImageFormat(CL_R, CL_FLOAT),
+            size.x,
+            size.y,
+            size.z
+    );
+    GC->addMemObject(ry);
+    initKernel.setArg(0, *vectorField);
+    initKernel.setArg(1, fy);
+    initKernel.setArg(2, ry);
+    initKernel.setArg(3, 2);
+    ocl.queue.enqueueNDRangeKernel(
+            initKernel,
+            NullRange,
+            NDRange(size.x,size.y,size.z),
+            NullRange
+    );
     // Y component
     for(int i = 0; i < GVFIterations; i++) {
-
+        fy = multigridVcycle(ocl,ry,fy,sqrMag,0,v1,v2,l_max,MU,spacing)
     }
 
+    // delete ry
+    GC->deleteMemObject(ry);
+    // create fz and rz
+    Image3D fz = Image3D(
+            ocl.context,
+            CL_MEM_READ_WRITE,
+            ImageFormat(CL_R, CL_FLOAT),
+            size.x,
+            size.y,
+            size.z
+    );
+    Image3D *rz = new Image3D(
+            ocl.context,
+            CL_MEM_READ_WRITE,
+            ImageFormat(CL_R, CL_FLOAT),
+            size.x,
+            size.y,
+            size.z
+    );
+    GC->addMemObject(rz);
+    initKernel.setArg(0, *vectorField);
+    initKernel.setArg(1, fz);
+    initKernel.setArg(2, rz);
+    initKernel.setArg(3, 3);
+    ocl.queue.enqueueNDRangeKernel(
+            initKernel,
+            NullRange,
+            NDRange(size.x,size.y,size.z),
+            NullRange
+    );
+    GC->deleteMemObject(vectorField);
     // Z component
     for(int i = 0; i < GVFIterations; i++) {
-
+        fz = multigridVcycle(ocl,ry,fz,sqrMag,0,v1,v2,l_max,MU,spacing)
     }
 
-    return resultVectorField;
+    // delete rz
+    GC->deleteMemObject(rz);
+
+
+    Image3D finalVectorField = Image3D(
+            ocl.context,
+            CL_MEM_READ_WRITE,
+            ImageFormat(CL_RGBA, CL_FLOAT),
+            size.x,
+            size.y,
+            size.z
+    );
+    Kernel finalizeKernel = Kernel(ocl.program, "MGGVFFinish");
+    finalizeKernel.setArg(0, fx);
+    finalizeKernel.setArg(1, fy);
+    finalizeKernel.setArg(2, fz);
+    finalizeKernel.setArg(3, finalVectorField);
+    ocl.queue.enqueueNDRangeKernel(
+            finalizeKernel,
+            NullRange,
+            NDRange(size.x,size.y,size.z),
+            NullRange
+    );
+
+
+    return finalVectorField;
 }
 
 Image3D runFastGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIPL::int3 &size) {
