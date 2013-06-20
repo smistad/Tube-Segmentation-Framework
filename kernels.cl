@@ -1960,10 +1960,11 @@ __kernel void restrictVolume(
 }
 
 __kernel void prolongate(
-        __read_only image3d_t v_read,
-        __write_only image3d_t v_write
+        __read_only image3d_t v_l_read,
+        __read_only image3d_t v_l_p1,
+        __write_only image3d_t v_l_write
         ) {
     const int4 writePos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
     const int4 readPos = floor(convert_float4(writePos)/2.0f);
-    write_imagef(v_write, writePos, read_imagef(v_read, hpSampler, readPos).x);
+    write_imagef(v_write, writePos, read_imagef(v_l_read, hpSampler, writePos).x + read_imagef(v_l_p1, hpSampler, readPos).x);
 }

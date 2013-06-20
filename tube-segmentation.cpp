@@ -1097,7 +1097,7 @@ Image3D restrictVolume(
             newSize
     );
 
-    Kernel restrictKernel = Kernel(ocl.program, "restrict");
+    Kernel restrictKernel = Kernel(ocl.program, "restrictVolume");
     restrictKernel.setArg(0, v);
     restrictKernel.setArg(1, v_2);
     ocl.queue.enqueueNDRangeKernel(
@@ -1112,7 +1112,8 @@ Image3D restrictVolume(
 
 Image3D prolongateVolume(
         OpenCL &ocl,
-        Image3D &v,
+        Image3D &v_l,
+        Image3D &v_l_p1,
         SIPL::int3 size
         ) {
     Image3D v_2 = Image3D(
@@ -1125,8 +1126,9 @@ Image3D prolongateVolume(
     );
 
     Kernel prolongateKernel = Kernel(ocl.program, "prolongate");
-    restrictKernel.setArg(0, v);
-    restrictKernel.setArg(1, v_2);
+    restrictKernel.setArg(0, v_l);
+    restrictKernel.setArg(1, v_l_p1);
+    restrictKernel.setArg(2, v_2);
     ocl.queue.enqueueNDRangeKernel(
             restrictKernel,
             NullRange,
@@ -1228,7 +1230,7 @@ Image3D multigridVcycle(
         v_l_p1 = multigridVcycle(ocl, r_l_p1, vl_l_p1, sqrMag_l_p1, l+1,v1,v2,l_max,mu,spacing*2,newSize,originalSize);
 
         // Prolongate
-        v_l = prolongateVolume(ocl, v_l_p1, size);
+        v_l = prolongateVolume(ocl, v_l, v_l_p1, size);
     }
 
     // Post-smoothing
