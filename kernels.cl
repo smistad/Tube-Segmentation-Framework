@@ -1938,3 +1938,23 @@ __kernel void MGGVFFinish(
     value.w = length(value.xyz);
     write_imagef(vectorField,pos,value);
 }
+
+__kernel void restrictVolume(
+        __read_only image3d_t v_read,
+        __read_only image3d_t v_write
+        ) {
+    const int4 writePos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
+    const int4 readPos = writePos*2;
+    const float value = 0.125*(
+            read_imagef(v_read, hpSampler, readPos+(int4)(0,0,0,0)).x +
+            read_imagef(v_read, hpSampler, readPos+(int4)(1,0,0,0)).x +
+            read_imagef(v_read, hpSampler, readPos+(int4)(0,1,0,0)).x +
+            read_imagef(v_read, hpSampler, readPos+(int4)(0,0,1,0)).x +
+            read_imagef(v_read, hpSampler, readPos+(int4)(1,1,0,0)).x +
+            read_imagef(v_read, hpSampler, readPos+(int4)(0,1,1,0)).x +
+            read_imagef(v_read, hpSampler, readPos+(int4)(1,1,1,0)).x +
+            read_imagef(v_read, hpSampler, readPos+(int4)(1,0,1,0)).x
+            );
+
+    write_imagef(v_write, writePos, value);
+}
