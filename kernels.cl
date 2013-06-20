@@ -1852,7 +1852,7 @@ __kernel void GVFgaussSeidel(
     if(red_black == 0) {
         // Compute red and put into v_write
         if(i % 2 == 0) {
-            float value = 2*mu*(
+            float value = (2*mu*(
                     read_imagef(v_read, sampler, pos + (int4)(1,0,0,0)).x+
                     read_imagef(v_read, sampler, pos - (int4)(1,0,0,0)).x+
                     read_imagef(v_read, sampler, pos + (int4)(0,1,0,0)).x+
@@ -1869,7 +1869,7 @@ __kernel void GVFgaussSeidel(
             value = read_imagef(v_read, sampler, pos).x;
         } else {
             // Compute black
-            float value = 2*mu*(
+            float value = (2*mu*(
                     read_imagef(v_read, sampler, pos + (int4)(1,0,0,0)).x+
                     read_imagef(v_read, sampler, pos - (int4)(1,0,0,0)).x+
                     read_imagef(v_read, sampler, pos + (int4)(0,1,0,0)).x+
@@ -1965,8 +1965,8 @@ __kernel void prolongate(
         __write_only image3d_t v_l_write
         ) {
     const int4 writePos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
-    const int4 readPos = floor(convert_float4(writePos)/2.0f);
-    write_imagef(v_write, writePos, read_imagef(v_l_read, hpSampler, writePos).x + read_imagef(v_l_p1, hpSampler, readPos).x);
+    const int4 readPos = convert_int4(floor(convert_float4(writePos)/2.0f));
+    write_imagef(v_l_write, writePos, read_imagef(v_l_read, hpSampler, writePos).x + read_imagef(v_l_p1, hpSampler, readPos).x);
 }
 
 __kernel void residual(
