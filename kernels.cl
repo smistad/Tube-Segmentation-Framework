@@ -1941,7 +1941,7 @@ __kernel void MGGVFFinish(
 
 __kernel void restrictVolume(
         __read_only image3d_t v_read,
-        __read_only image3d_t v_write
+        __write_only image3d_t v_write
         ) {
     const int4 writePos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
     const int4 readPos = writePos*2;
@@ -1957,4 +1957,13 @@ __kernel void restrictVolume(
             );
 
     write_imagef(v_write, writePos, value);
+}
+
+__kernel void prolongate(
+        __read_only image3d_t v_read,
+        __write_only image3d_t v_write
+        ) {
+    const int4 writePos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
+    const int4 readPos = floor(convert_float4(writePos)/2.0f);
+    write_imagef(v_write, writePos, read_imagef(v_read, hpSampler, readPos).x);
 }
