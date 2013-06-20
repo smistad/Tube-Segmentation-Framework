@@ -1923,3 +1923,18 @@ __kernel void MGGVFInit(
     write_imagef(r, pos, r_value);
 }
 
+__kernel void MGGVFFinish(
+        __read_only image3d_t fx,
+        __read_only image3d_t fy,
+        __read_only image3d_t fz,
+        __write_only image3d_t vectorField
+        ) {
+    const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
+
+    float4 value;
+    value.x = read_imagef(fx,sampler,pos).x;
+    value.y = read_imagef(fy,sampler,pos).x;
+    value.z = read_imagef(fz,sampler,pos).x;
+    value.w = length(value.xyz);
+    write_imagef(vectorField,pos,value);
+}
