@@ -1894,3 +1894,32 @@ __kernel void createSqrMag(
     const float4 v = read_imagef(vectorField, sampler, pos);
 
     write_imagef(sqrMag, pos, v.x*v.x+v.y*v.y+v.z*v.z);
+}
+
+__kernel void MGGVFInit(
+        __read_only image3d_t vectorField,
+        __write_only image3d_t f,
+        __write_only image3d_t r,
+        __private int component
+        ) {
+
+    const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
+
+    const float4 v = read_imagef(vectorField, sampler, pos);
+    const float sqrMag = v.x*v.x+v.y*v.y+v.z*v.z;
+    float f_value, r_value;
+    if(component == 1) {
+        f_value = v.x;
+        r_value = -v.x*sqrMag;
+    } else if(component == 2) {
+        f_value = v.y;
+        r_value = -v.y*sqrMag;
+    } else {
+        f_value = v.z;
+        r_value = -v.z*sqrMag;
+    }
+
+    write_imagef(f, pos, f_value);
+    write_imagef(r, pos, r_value);
+}
+
