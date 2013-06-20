@@ -1994,5 +1994,10 @@ __kernel void residual(
     write_imagef(newResidual, pos, value);
 }
 
-
+__kernel void init3DFloat(
+        __write_only image3d_t v
+        ) {
+    const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
+    write_imagef(v, pos, 0.0f);
+}
 
