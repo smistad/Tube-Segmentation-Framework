@@ -1835,3 +1835,52 @@ void eigen_decomposition(float A[SIZE][SIZE], float V[SIZE][SIZE], float d[SIZE]
   tql2(V, d, e);
 }
 
+__kernel void GVFgaussSeidel(
+        __read_only image3d_t r,
+        __read_only image3d_t sqrMag,
+        __private float mu,
+        __private float spacing,
+        __read_only image3d_t v_read,
+        __read_only image3d_t v_write,
+        __private int red_black
+        ) {
+
+    const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
+    // Calculate linear address
+    const int i = pos.x+pos.y*get_global_size(0)+pos.z*get_global_size(0)*get_global_size(1);
+
+    if(red_black == 0) {
+        // Compute red and put into v_write
+        if(i % 2 == 0) {
+            float value = 2*mu*(
+                    read_imagef(v_read, sampler, pos + (int4)(1,0,0,0)).x+
+                    read_imagef(v_read, sampler, pos - (int4)(1,0,0,0)).x+
+                    read_imagef(v_read, sampler, pos + (int4)(0,1,0,0)).x+
+                    read_imagef(v_read, sampler, pos - (int4)(0,1,0,0)).x+
+                    read_imagef(v_read, sampler, pos + (int4)(0,0,1,0)).x+
+                    read_imagef(v_read, sampler, pos - (int4)(0,0,1,0)).x
+                    ) - 2*spacing*spacing*read_imagef(r, sampler, pos).x) /
+                    (12*mu+spacing*spacing*read_imagef(sqrMag, sampler, pos).x);
+            write_imagef(v_write, pos, value);
+        }
+    } else {
+        float value;
+        if(i % 2 == 0) {
+            value = read_imagef(v_read, sampler, pos).x;
+        } else {
+            // Compute black
+            float value = 2*mu*(
+                    read_imagef(v_read, sampler, pos + (int4)(1,0,0,0)).x+
+                    read_imagef(v_read, sampler, pos - (int4)(1,0,0,0)).x+
+                    read_imagef(v_read, sampler, pos + (int4)(0,1,0,0)).x+
+                    read_imagef(v_read, sampler, pos - (int4)(0,1,0,0)).x+
+                    read_imagef(v_read, sampler, pos + (int4)(0,0,1,0)).x+
+                    read_imagef(v_read, sampler, pos - (int4)(0,0,1,0)).x
+                    ) - 2*spacing*spacing*read_imagef(r, sampler, pos).x) /
+                    (12*mu+spacing*spacing*read_imagef(sqrMag, sampler, pos).x);
+
+        }
+        write_imagef(v_write, pos, value);
+    }
+}
+
