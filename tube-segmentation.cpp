@@ -1039,16 +1039,15 @@ Image3D gaussSeidelSmoothing(
     gaussSeidelKernel.setArg(1, sqrMag);
     gaussSeidelKernel.setArg(2, mu);
     gaussSeidelKernel.setArg(3, spacing);
-    Image3D lastOne;
-     for(int i = 0; i < iterations; i++) {
+    for(int i = 0; i < iterations*2; i++) {
          if(i % 2 == 0) {
              gaussSeidelKernel.setArg(4, v);
              gaussSeidelKernel.setArg(5, v_2);
-             lastOne = v_2;
+             gaussSeidelKernel.setArg(6, 0);
          } else {
-             gaussSeidelKernel.setArg(5, v);
              gaussSeidelKernel.setArg(4, v_2);
-             lastOne = v;
+             gaussSeidelKernel.setArg(5, v);
+             gaussSeidelKernel.setArg(6, 1);
          }
 
         ocl.queue.enqueueNDRangeKernel(
@@ -1059,7 +1058,7 @@ Image3D gaussSeidelSmoothing(
         );
     }
 
-     return lastOne;
+    return v;
 }
 
 Image3D restrictVolume(
