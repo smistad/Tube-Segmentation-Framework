@@ -1,6 +1,6 @@
 #include "tube-segmentation.hpp"
 #include "SIPL/Types.hpp"
-//#define USE_SIPL_VISUALIZATION
+#define USE_SIPL_VISUALIZATION
 #ifdef USE_SIPL_VISUALIZATION
 #include "SIPL/Core.hpp"
 #endif
@@ -1013,7 +1013,28 @@ float * createBlurMask(float sigma, int * maskSizePointer) {
     return mask;
 }
 
-Image3D gaussSeidelSmoothing(
+Image3D initSolutionToZero(OpenCL &ocl, SIPL::int3 size) {
+    Image3D v = Image3D(
+            ocl.context,
+            CL_MEM_READ_WRITE,
+            ImageFormat(CL_R, CL_FLOAT),
+            size.x,
+            size.y,
+            size.z
+    );
+
+    Kernel initToZeroKernel(ocl.program, "init3DFloat");
+    initToZeroKernel.setArg(0,v);
+    ocl.queue.enqueueNDRangeKernel(
+            initToZeroKernel,
+            NullRange,
+            NDRange(size.x,size.y,size.z),
+            NullRange
+    );
+
+    return v;
+}
+void gaussSeidelSmoothing(
         OpenCL &ocl,
         Image3D &v,
         Image3D &r,
@@ -1024,6 +1045,7 @@ Image3D gaussSeidelSmoothing(
         float spacing
         ) {
 
+    if(iterations > 0) {
     Kernel gaussSeidelKernel = Kernel(ocl.program, "GVFgaussSeidel");
 
     Image3D v_2 = Image3D(
@@ -1044,10 +1066,12 @@ Image3D gaussSeidelSmoothing(
              gaussSeidelKernel.setArg(4, v);
              gaussSeidelKernel.setArg(5, v_2);
              gaussSeidelKernel.setArg(6, 0);
+             std::cout << "asd" << std::endl;
          } else {
              gaussSeidelKernel.setArg(4, v_2);
              gaussSeidelKernel.setArg(5, v);
              gaussSeidelKernel.setArg(6, 1);
+             std::cout << "asd2" << std::endl;
          }
 
         ocl.queue.enqueueNDRangeKernel(
@@ -1057,8 +1081,7 @@ Image3D gaussSeidelSmoothing(
                 NullRange
         );
     }
-
-    return v;
+    }
 }
 
 Image3D restrictVolume(
@@ -1154,27 +1177,6 @@ Image3D residual(
     return newResidual;
 }
 
-Image3D initSolutionToZero(OpenCL &ocl, SIPL::int3 size) {
-    Image3D v = Image3D(
-            ocl.context,
-            CL_MEM_READ_WRITE,
-            ImageFormat(CL_R, CL_FLOAT),
-            size.x,
-            size.y,
-            size.z
-    );
-
-    Kernel initToZeroKernel(ocl.program, "init3DFloat");
-    initToZeroKernel.setArg(0,v);
-    ocl.queue.enqueueNDRangeKernel(
-            initToZeroKernel,
-            NullRange,
-            NDRange(size.x,size.y,size.z),
-            NullRange
-    );
-
-    return v;
-}
 
 SIPL::int3 calculateNewSize(SIPL::int3 size) {
     bool sizeIsOkay = false;
@@ -1183,25 +1185,30 @@ SIPL::int3 calculateNewSize(SIPL::int3 size) {
         if(floor(p) == p)
             sizeIsOkay = true;
     }
+    std::cout << "finished new size" << std::endl;
     int newSize;
     if(!sizeIsOkay) {
         int maxSize = std::max(size.x, std::max(size.y, size.z));
-        int i = 0;
+        int i = 1;
+    std::cout << "finished new size" << std::endl;
         while(true) {
             if(pow(2.0f, (float)i) >= maxSize) {
                 newSize = (int)pow(2.0f, (float)(i-1));
                 break;
             }
+            i++;
         }
+    std::cout << "finished new size" << std::endl;
     } else {
         newSize = size.x / 2;
     }
+    std::cout << "finished new size" << std::endl;
 
     return SIPL::int3(newSize,newSize,newSize);
 
 }
 
-Image3D multigridVcycle(
+void multigridVcycle(
         OpenCL &ocl,
         Image3D &r_l,
         Image3D &v_l,
@@ -1216,34 +1223,41 @@ Image3D multigridVcycle(
         ) {
 
     // Pre-smoothing
-    v_l = gaussSeidelSmoothing(ocl,v_l,r_l,sqrMag,v1,size,mu,spacing);
+    gaussSeidelSmoothing(ocl,v_l,r_l,sqrMag,v1,size,mu,spacing);
+    std::cout << "finished GS" << std::endl;
 
     if(l < l_max) {
         SIPL::int3 newSize = calculateNewSize(size);
+    std::cout << "finished new size " << newSize.x << " " << newSize.y << " " << newSize.z << std::endl;
 
         // Compute new residual
         Image3D p_l = residual(ocl, r_l, v_l, sqrMag, mu, spacing, size);
+    std::cout << "finished residual" << std::endl;
 
         // Restrict residual
         Image3D r_l_p1 = restrictVolume(ocl, p_l, newSize);
+    std::cout << "finished restrict" << std::endl;
 
         // Restrict sqrMag
         Image3D sqrMag_l_p1 = restrictVolume(ocl, sqrMag, newSize);
+    std::cout << "finished restrict" << std::endl;
 
         // Initialize v_l_p1
         Image3D v_l_p1 = initSolutionToZero(ocl,newSize);
+    std::cout << "finished initialization" << std::endl;
 
         // Solve recursively
-        v_l_p1 = multigridVcycle(ocl, r_l_p1, v_l_p1, sqrMag_l_p1, l+1,v1,v2,l_max,mu,spacing*2,newSize);
+        multigridVcycle(ocl, r_l_p1, v_l_p1, sqrMag_l_p1, l+1,v1,v2,l_max,mu,spacing*2,newSize);
+    std::cout << "finished cycle" << std::endl;
 
         // Prolongate
         v_l = prolongateVolume(ocl, v_l, v_l_p1, size);
+    std::cout << "finished prolongate" << std::endl;
     }
 
     // Post-smoothing
-    v_l = gaussSeidelSmoothing(ocl,v_l,r_l,sqrMag,v2,size,mu,spacing);
-
-    return v_l;
+    gaussSeidelSmoothing(ocl,v_l,r_l,sqrMag,v2,size,mu,spacing);
+    std::cout << "finished GS" << std::endl;
 }
 
 Image3D runMGGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIPL::int3 &size) {
@@ -1257,10 +1271,10 @@ Image3D runMGGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIPL:
 
     int v1 = 2;
     int v2 = 2;
-    int l_max = 5;
+    int l_max = 2;
     float spacing = 1.0f;
 
-    // TODO create sqrMag
+    // create sqrMag
     Kernel createSqrMagKernel(ocl.program, "createSqrMag");
     Image3D sqrMag = Image3D(
             ocl.context,
@@ -1279,6 +1293,7 @@ Image3D runMGGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIPL:
             NDRange(size.x,size.y,size.z),
             NullRange
     );
+    std::cout << "sqrMag created" << std::endl;
 
     // create fx and rx
     Image3D fx = Image3D(
@@ -1308,11 +1323,13 @@ Image3D runMGGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIPL:
             NDRange(size.x,size.y,size.z),
             NullRange
     );
+    std::cout << "fx initialized" << std::endl;
 
     // X component
     for(int i = 0; i < GVFIterations; i++) {
-        fx = multigridVcycle(ocl,*rx,fx,sqrMag,0,v1,v2,l_max,MU,spacing,size);
+        multigridVcycle(ocl,*rx,fx,sqrMag,0,v1,v2,l_max,MU,spacing,size);
     }
+    std::cout << "fx finished" << std::endl;
 
     // delete rx
     GC->deleteMemObject(rx);
@@ -1345,10 +1362,12 @@ Image3D runMGGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIPL:
             NDRange(size.x,size.y,size.z),
             NullRange
     );
+    std::cout << "fy initialized" << std::endl;
     // Y component
     for(int i = 0; i < GVFIterations; i++) {
-        fy = multigridVcycle(ocl,*ry,fy,sqrMag,0,v1,v2,l_max,MU,spacing,size);
+        multigridVcycle(ocl,*ry,fy,sqrMag,0,v1,v2,l_max,MU,spacing,size);
     }
+    std::cout << "fy finished" << std::endl;
 
     // delete ry
     GC->deleteMemObject(ry);
@@ -1380,11 +1399,13 @@ Image3D runMGGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIPL:
             NDRange(size.x,size.y,size.z),
             NullRange
     );
+    std::cout << "fz initialized" << std::endl;
     GC->deleteMemObject(vectorField);
     // Z component
     for(int i = 0; i < GVFIterations; i++) {
-        fz = multigridVcycle(ocl,*rz,fz,sqrMag,0,v1,v2,l_max,MU,spacing,size);
+        multigridVcycle(ocl,*rz,fz,sqrMag,0,v1,v2,l_max,MU,spacing,size);
     }
+    std::cout << "fz finished" << std::endl;
 
     // delete rz
     GC->deleteMemObject(rz);
@@ -1409,6 +1430,7 @@ Image3D runMGGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIPL:
             NDRange(size.x,size.y,size.z),
             NullRange
     );
+    std::cout << "MG GVF finished" << std::endl;
 
 
     return finalVectorField;
@@ -2480,11 +2502,13 @@ if(getParamBool(parameters, "timing")) {
 			}
 		}
 	}
+	vectorField = runMGGVF(ocl,initVectorField,parameters,size);
+	/*
 	if(useSlowGVF) {
 		vectorField = runGVF(ocl, initVectorField, parameters, size, true);
 	} else {
 		vectorField = runGVF(ocl, initVectorField, parameters, size, false);
-	}
+	}*/
 
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);

@@ -1841,13 +1841,23 @@ __kernel void GVFgaussSeidel(
         __private float mu,
         __private float spacing,
         __read_only image3d_t v_read,
-        __read_only image3d_t v_write,
+        __write_only image3d_t v_write,
         __private int red_black
         ) {
+    int4 writePos = {
+        get_global_id(0),
+        get_global_id(1),
+        get_global_id(2),
+        0
+    };
+    // Enforce mirror boundary conditions
+    int4 size = {get_global_size(0), get_global_size(1), get_global_size(2), 0};
+    int4 pos = writePos;
+    pos = select(pos, (int4)(2,2,2,0), pos == (int4)(0,0,0,0));
+    pos = select(pos, size-3, pos >= size-1);
 
-    const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
-    // Calculate linear address
-    const int i = pos.x+pos.y*get_global_size(0)+pos.z*get_global_size(0)*get_global_size(1);
+    // Calculate manhatten address
+    const int i = pos.x+pos.y+pos.z;
 
     if(red_black == 0) {
         // Compute red and put into v_write
@@ -1861,15 +1871,16 @@ __kernel void GVFgaussSeidel(
                     read_imagef(v_read, sampler, pos - (int4)(0,0,1,0)).x
                     ) - 2*spacing*spacing*read_imagef(r, sampler, pos).x) /
                     (12*mu+spacing*spacing*read_imagef(sqrMag, sampler, pos).x);
-            write_imagef(v_write, pos, value);
+            write_imagef(v_write, writePos, value);
         }
     } else {
         float value;
         if(i % 2 == 0) {
+            // Copy red
             value = read_imagef(v_read, sampler, pos).x;
         } else {
             // Compute black
-            float value = (2*mu*(
+            value = (2*mu*(
                     read_imagef(v_read, sampler, pos + (int4)(1,0,0,0)).x+
                     read_imagef(v_read, sampler, pos - (int4)(1,0,0,0)).x+
                     read_imagef(v_read, sampler, pos + (int4)(0,1,0,0)).x+
@@ -1878,9 +1889,8 @@ __kernel void GVFgaussSeidel(
                     read_imagef(v_read, sampler, pos - (int4)(0,0,1,0)).x
                     ) - 2*spacing*spacing*read_imagef(r, sampler, pos).x) /
                     (12*mu+spacing*spacing*read_imagef(sqrMag, sampler, pos).x);
-
         }
-        write_imagef(v_write, pos, value);
+        write_imagef(v_write, writePos, value);
     }
 }
 
@@ -1943,8 +1953,18 @@ __kernel void restrictVolume(
         __read_only image3d_t v_read,
         __write_only image3d_t v_write
         ) {
-    const int4 writePos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
-    const int4 readPos = writePos*2;
+        int4 writePos = {
+        get_global_id(0),
+        get_global_id(1),
+        get_global_id(2),
+        0
+    };
+    // Enforce mirror boundary conditions
+    int4 size = {get_global_size(0)*2, get_global_size(1)*2, get_global_size(2)*2, 0};
+    int4 pos = writePos*2;
+    pos = select(pos, size-3, pos >= size-1);
+
+    const int4 readPos = pos;
     const float value = 0.125*(
             read_imagef(v_read, hpSampler, readPos+(int4)(0,0,0,0)).x +
             read_imagef(v_read, hpSampler, readPos+(int4)(1,0,0,0)).x +
@@ -1977,10 +1997,20 @@ __kernel void residual(
         __private float spacing,
         __write_only image3d_t newResidual
         ) {
-    const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
+    int4 writePos = {
+        get_global_id(0),
+        get_global_id(1),
+        get_global_id(2),
+        0
+    };
+    // Enforce mirror boundary conditions
+    int4 size = {get_global_size(0), get_global_size(1), get_global_size(2), 0};
+    int4 pos = writePos;
+    pos = select(pos, (int4)(2,2,2,0), pos == (int4)(0,0,0,0));
+    pos = select(pos, size-3, pos >= size-1);
 
     const float value = read_imagef(r, hpSampler, pos).x -
-            mu*(
+            (mu*(
                     read_imagef(v, hpSampler, pos+(int4)(1,0,0,0)).x+
                     read_imagef(v, hpSampler, pos-(int4)(1,0,0,0)).x+
                     read_imagef(v, hpSampler, pos+(int4)(0,1,0,0)).x+
@@ -1989,9 +2019,9 @@ __kernel void residual(
                     read_imagef(v, hpSampler, pos-(int4)(0,0,1,0)).x-
                     6*read_imagef(v, hpSampler, pos).x
                 ) / (spacing*spacing)
-            - read_imagef(sqrMag, hpSampler, pos).x*read_imagef(v, hpSampler, pos).x;
+            - read_imagef(sqrMag, hpSampler, pos).x*read_imagef(v, hpSampler, pos).x);
 
-    write_imagef(newResidual, pos, value);
+    write_imagef(newResidual, writePos, value);
 }
 
 __kernel void init3DFloat(
