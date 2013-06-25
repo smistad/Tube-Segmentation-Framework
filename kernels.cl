@@ -1841,8 +1841,7 @@ __kernel void GVFgaussSeidel(
         __private float mu,
         __private float spacing,
         __read_only image3d_t v_read,
-        __write_only image3d_t v_write,
-        __private int red_black
+        __write_only image3d_t v_write
         ) {
     int4 writePos = {
         get_global_id(0),
@@ -1857,41 +1856,76 @@ __kernel void GVFgaussSeidel(
     pos = select(pos, size-3, pos >= size-1);
 
     // Calculate manhatten address
-    const int i = pos.x+pos.y+pos.z;
+    int i = pos.x+pos.y+pos.z;
 
-    if(red_black == 0) {
         // Compute red and put into v_write
         if(i % 2 == 0) {
-            float value = (2*mu*(
+                        float value = native_divide(2.0f*mu*(
                     read_imagef(v_read, sampler, pos + (int4)(1,0,0,0)).x+
                     read_imagef(v_read, sampler, pos - (int4)(1,0,0,0)).x+
                     read_imagef(v_read, sampler, pos + (int4)(0,1,0,0)).x+
                     read_imagef(v_read, sampler, pos - (int4)(0,1,0,0)).x+
                     read_imagef(v_read, sampler, pos + (int4)(0,0,1,0)).x+
                     read_imagef(v_read, sampler, pos - (int4)(0,0,1,0)).x
-                    ) - 2*spacing*spacing*read_imagef(r, sampler, pos).x) /
-                    (12*mu+spacing*spacing*read_imagef(sqrMag, sampler, pos).x);
+                    ) - 2.0f*spacing*spacing*read_imagef(r, sampler, pos).x,
+                    12.0f*mu+spacing*spacing*read_imagef(sqrMag, sampler, pos).x);
             write_imagef(v_write, writePos, value);
+        } else {
+            write_imagef(v_write, writePos, read_imagef(v_read, sampler, pos).x);
         }
-    } else {
-        float value;
+}
+
+__kernel void GVFgaussSeidel2(
+        __read_only image3d_t r,
+        __read_only image3d_t sqrMag,
+        __private float mu,
+        __private float spacing,
+        __read_only image3d_t v_read,
+        __write_only image3d_t v_write
+        ) {
+    int4 writePos = {
+        get_global_id(0),
+        get_global_id(1),
+        get_global_id(2),
+        0
+    };
+    // Enforce mirror boundary conditions
+    int4 size = {get_global_size(0), get_global_size(1), get_global_size(2), 0};
+    int4 pos = writePos;
+    pos = select(pos, (int4)(2,2,2,0), pos == (int4)(0,0,0,0));
+    pos = select(pos, size-3, pos >= size-1);
+
+    // Calculate manhatten address
+    int i = pos.x+pos.y+pos.z;
+
         if(i % 2 == 0) {
             // Copy red
-            value = read_imagef(v_read, sampler, pos).x;
+            float value = read_imagef(v_read, sampler, pos).x;
+        write_imagef(v_write, writePos, value);
         } else {
             // Compute black
-            value = (2*mu*(
+            float value = native_divide(2.0f*mu*(
                     read_imagef(v_read, sampler, pos + (int4)(1,0,0,0)).x+
                     read_imagef(v_read, sampler, pos - (int4)(1,0,0,0)).x+
                     read_imagef(v_read, sampler, pos + (int4)(0,1,0,0)).x+
                     read_imagef(v_read, sampler, pos - (int4)(0,1,0,0)).x+
                     read_imagef(v_read, sampler, pos + (int4)(0,0,1,0)).x+
                     read_imagef(v_read, sampler, pos - (int4)(0,0,1,0)).x
-                    ) - 2*spacing*spacing*read_imagef(r, sampler, pos).x) /
-                    (12*mu+spacing*spacing*read_imagef(sqrMag, sampler, pos).x);
-        }
+                    ) - 2.0f*spacing*spacing*read_imagef(r, sampler, pos).x,
+                    12.0f*mu+spacing*spacing*read_imagef(sqrMag, sampler, pos).x);
         write_imagef(v_write, writePos, value);
-    }
+        }
+}
+
+
+__kernel void addTwoImages(
+        __read_only image3d_t i1,
+        __read_only image3d_t i2,
+        __write_only image3d_t i3
+        ) {
+    const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
+    float v = read_imagef(i1,sampler,pos).x+read_imagef(i2,sampler,pos).x;
+    write_imagef(i3,pos,v);
 }
 
 
@@ -1903,7 +1937,8 @@ __kernel void createSqrMag(
 
     const float4 v = read_imagef(vectorField, sampler, pos);
 
-    write_imagef(sqrMag, pos, v.x*v.x+v.y*v.y+v.z*v.z);
+    float mag = v.x*v.x+v.y*v.y+v.z*v.z;
+    write_imagef(sqrMag, pos, mag);
 }
 
 __kernel void MGGVFInit(
@@ -1989,6 +2024,16 @@ __kernel void prolongate(
     write_imagef(v_l_write, writePos, read_imagef(v_l_read, hpSampler, writePos).x + read_imagef(v_l_p1, hpSampler, readPos).x);
 }
 
+__kernel void prolongate2(
+        __read_only image3d_t v_l_p1,
+        __write_only image3d_t v_l_write
+        ) {
+    const int4 writePos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
+    const int4 readPos = convert_int4(floor(convert_float4(writePos)/2.0f));
+    write_imagef(v_l_write, writePos, read_imagef(v_l_p1, hpSampler, readPos).x);
+}
+
+
 __kernel void residual(
         __read_only image3d_t r,
         __read_only image3d_t v,
@@ -2010,7 +2055,7 @@ __kernel void residual(
     pos = select(pos, size-3, pos >= size-1);
 
     const float value = read_imagef(r, hpSampler, pos).x -
-            (mu*(
+            ((mu*(
                     read_imagef(v, hpSampler, pos+(int4)(1,0,0,0)).x+
                     read_imagef(v, hpSampler, pos-(int4)(1,0,0,0)).x+
                     read_imagef(v, hpSampler, pos+(int4)(0,1,0,0)).x+
@@ -2018,11 +2063,58 @@ __kernel void residual(
                     read_imagef(v, hpSampler, pos+(int4)(0,0,1,0)).x+
                     read_imagef(v, hpSampler, pos-(int4)(0,0,1,0)).x-
                     6*read_imagef(v, hpSampler, pos).x
-                ) / (spacing*spacing)
+                ) / (spacing*spacing))
             - read_imagef(sqrMag, hpSampler, pos).x*read_imagef(v, hpSampler, pos).x);
 
     write_imagef(newResidual, writePos, value);
 }
+
+__kernel void fmgResidual(
+        __read_only image3d_t vectorField,
+        __read_only image3d_t v,
+        __private float mu,
+        __private float spacing,
+        __private int component,
+        __write_only image3d_t newResidual
+        ) {
+    int4 writePos = {
+        get_global_id(0),
+        get_global_id(1),
+        get_global_id(2),
+        0
+    };
+    // Enforce mirror boundary conditions
+    int4 size = {get_global_size(0), get_global_size(1), get_global_size(2), 0};
+    int4 pos = writePos;
+    pos = select(pos, (int4)(2,2,2,0), pos == (int4)(0,0,0,0));
+    pos = select(pos, size-3, pos >= size-1);
+
+    float4 vector = read_imagef(vectorField, sampler, pos).x;
+    float v0;
+    if(component == 0) {
+        v0 = vector.x;
+    } else if(component == 1) {
+       v0 = vector.y;
+    } else {
+       v0 = vector.z;
+    }
+    const float sqrMag = vector.x*vector.x+vector.y*vector.y+vector.z*vector.z;
+
+    float residue = (mu*(
+                    read_imagef(v, hpSampler, pos+(int4)(1,0,0,0)).x+
+                    read_imagef(v, hpSampler, pos-(int4)(1,0,0,0)).x+
+                    read_imagef(v, hpSampler, pos+(int4)(0,1,0,0)).x+
+                    read_imagef(v, hpSampler, pos-(int4)(0,1,0,0)).x+
+                    read_imagef(v, hpSampler, pos+(int4)(0,0,1,0)).x+
+                    read_imagef(v, hpSampler, pos-(int4)(0,0,1,0)).x-
+                    6*read_imagef(v, hpSampler, pos).x)
+                ) / (spacing*spacing);
+
+    const float value = -sqrMag*v0-(residue - sqrMag*read_imagef(v, hpSampler, pos).x);
+
+    write_imagef(newResidual, writePos, value);
+}
+
 
 __kernel void init3DFloat(
         __write_only image3d_t v
