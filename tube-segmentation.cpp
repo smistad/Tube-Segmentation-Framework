@@ -3225,6 +3225,18 @@ Image3D runNewCenterlineAlgWithoutOpenCL(OpenCL &ocl, SIPL::int3 size, paramList
     return centerlines;
 }
 
+void outputRadiusAndPoints(char * centerlinesData, float * radius, int3 &size) {
+    std::ofstream file("/home/smistad/radius_and_centerpoints_18.txt");
+
+    for(int z = 0; z < size.z; z++) {
+    for(int y = 0; y < size.y; y++) {
+    for(int x = 0; x < size.x; x++) {
+        if(centerlinesData[LPOS(x,y,z)] == 1)
+            file << x*0.752f << "," << y*0.752f << "," << z*0.5f << "," << radius[LPOS(x,y,z)]*0.752f << "\n";
+    }}}
+    file.close();
+}
+
 Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radius) {
     if(ocl.platform.getInfo<CL_PLATFORM_VENDOR>().substr(0,5) == "Apple") {
         std::cout << "Apple platform detected. Running centerline extraction without OpenCL." << std::endl;
@@ -3809,6 +3821,7 @@ if(getParamBool(parameters, "timing")) {
     			0, 0,
     			radiusB
 		);
+		outputRadiusAndPoints(centerlinesData, radiusB, size);
 
 		if(getParamStr(parameters, "centerline-vtk-file") != "off")
 			writeToVtkFile(parameters, vertices, edges);
