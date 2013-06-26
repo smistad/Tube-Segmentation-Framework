@@ -3226,13 +3226,12 @@ Image3D runNewCenterlineAlgWithoutOpenCL(OpenCL &ocl, SIPL::int3 size, paramList
 }
 
 void outputRadiusAndPoints(char * centerlinesData, float * radius, int3 &size) {
-    std::ofstream file("/home/smistad/radius_and_centerpoints_18.txt");
-
+    std::ofstream file("/home/hpc-lab/erik/radius_and_centerpoints_18.txt");
     for(int z = 0; z < size.z; z++) {
     for(int y = 0; y < size.y; y++) {
     for(int x = 0; x < size.x; x++) {
         if(centerlinesData[LPOS(x,y,z)] == 1)
-            file << x*0.752f << "," << y*0.752f << "," << z*0.5f << "," << radius[LPOS(x,y,z)]*0.752f << "\n";
+            file << (x+69)*0.752f << "," << (y+86)*0.752f << "," << (z+148)*0.5f << "," << radius[LPOS(x,y,z)]*0.752f << "\n";
     }}}
     file.close();
 }
@@ -5493,6 +5492,7 @@ Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &par
         shiftVector.x = x1;
         shiftVector.y = y1;
         shiftVector.z = z1;
+        std::cout << "shift vector is: " << shiftVector.x << ", " << shiftVector.y << ", " << shiftVector.z << std::endl;
         ocl.queue.enqueueCopyImage(dataset, imageHUvolume, srcOffset, offset, region);
         dataset = imageHUvolume;
         if(getParamBool(parameters, "timing")) {
