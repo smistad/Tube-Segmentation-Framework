@@ -1870,8 +1870,6 @@ __kernel void GVFgaussSeidel(
                     ) - 2.0f*spacing*spacing*read_imagef(r, sampler, pos).x,
                     12.0f*mu+spacing*spacing*read_imagef(sqrMag, sampler, pos).x);
             write_imagef(v_write, writePos, value);
-        } else {
-            write_imagef(v_write, writePos, read_imagef(v_read, sampler, pos).x);
         }
 }
 
@@ -1904,7 +1902,7 @@ __kernel void GVFgaussSeidel2(
         write_imagef(v_write, writePos, value);
         } else {
             // Compute black
-            float value = native_divide(2.0f*mu*(
+                float value = native_divide(2.0f*mu*(
                     read_imagef(v_read, sampler, pos + (int4)(1,0,0,0)).x+
                     read_imagef(v_read, sampler, pos - (int4)(1,0,0,0)).x+
                     read_imagef(v_read, sampler, pos + (int4)(0,1,0,0)).x+
@@ -1913,6 +1911,7 @@ __kernel void GVFgaussSeidel2(
                     read_imagef(v_read, sampler, pos - (int4)(0,0,1,0)).x
                     ) - 2.0f*spacing*spacing*read_imagef(r, sampler, pos).x,
                     12.0f*mu+spacing*spacing*read_imagef(sqrMag, sampler, pos).x);
+
         write_imagef(v_write, writePos, value);
         }
 }
@@ -2089,11 +2088,11 @@ __kernel void fmgResidual(
     pos = select(pos, (int4)(2,2,2,0), pos == (int4)(0,0,0,0));
     pos = select(pos, size-3, pos >= size-1);
 
-    float4 vector = read_imagef(vectorField, sampler, pos).x;
+    float4 vector = read_imagef(vectorField, sampler, pos);
     float v0;
-    if(component == 0) {
+    if(component == 1) {
         v0 = vector.x;
-    } else if(component == 1) {
+    } else if(component == 2) {
        v0 = vector.y;
     } else {
        v0 = vector.z;
@@ -2110,6 +2109,7 @@ __kernel void fmgResidual(
                     6*read_imagef(v, hpSampler, pos).x)
                 ) / (spacing*spacing);
 
+    //printf("sqrMag: %f, vector value: %f %f %f\n", sqrMag, vector.x, vector.y, vector.z);
     const float value = -sqrMag*v0-(residue - sqrMag*read_imagef(v, hpSampler, pos).x);
 
     write_imagef(newResidual, writePos, value);
