@@ -2141,7 +2141,7 @@ __kernel void GVFgaussSeidel(
         __private float mu,
         __private float spacing,
         __read_only image3d_t v_read,
-        __global float * v_write
+        __global VECTOR_FIELD_TYPE * v_write
         ) {
     int4 writePos = {
         get_global_id(0),
@@ -2169,7 +2169,7 @@ __kernel void GVFgaussSeidel(
                     read_imagef(v_read, sampler, pos - (int4)(0,0,1,0)).x
                     ) - 2.0f*spacing*spacing*read_imagef(r, sampler, pos).x,
                     12.0f*mu+spacing*spacing*read_imagef(sqrMag, sampler, pos).x);
-            v_write[LPOS(writePos)] = value;
+            v_write[LPOS(writePos)] = FLOAT_TO_SNORM16(value);
         }
 }
 
@@ -2179,7 +2179,7 @@ __kernel void GVFgaussSeidel2(
         __private float mu,
         __private float spacing,
         __read_only image3d_t v_read,
-        __global float * v_write
+        __global VECTOR_FIELD_TYPE * v_write
         ) {
     int4 writePos = {
         get_global_id(0),
@@ -2211,7 +2211,7 @@ __kernel void GVFgaussSeidel2(
                     read_imagef(v_read, sampler, pos - (int4)(0,0,1,0)).x
                     ) - 2.0f*spacing*spacing*read_imagef(r, sampler, pos).x,
                     12.0f*mu+spacing*spacing*read_imagef(sqrMag, sampler, pos).x);
-            v_write[LPOS(writePos)] = value;
+            v_write[LPOS(writePos)] = FLOAT_TO_SNORM16(value);
         }
 }
 
@@ -2219,30 +2219,30 @@ __kernel void GVFgaussSeidel2(
 __kernel void addTwoImages(
         __read_only image3d_t i1,
         __read_only image3d_t i2,
-        __global float * i3
+        __global VECTOR_FIELD_TYPE * i3
         ) {
     const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
     float v = read_imagef(i1,sampler,pos).x+read_imagef(i2,sampler,pos).x;
-    i3[LPOS(pos)] = v;
+    i3[LPOS(pos)] = FLOAT_TO_SNORM16(v);
 }
 
 
 __kernel void createSqrMag(
         __read_only image3d_t vectorField,
-        __global float * sqrMag
+        __global VECTOR_FIELD_TYPE * sqrMag
         ) {
     const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
 
     const float4 v = read_imagef(vectorField, sampler, pos);
 
     float mag = v.x*v.x+v.y*v.y+v.z*v.z;
-    sqrMag[LPOS(pos)] = mag;
+    sqrMag[LPOS(pos)] = FLOAT_TO_SNORM16(mag);
 }
 
 __kernel void MGGVFInit(
         __read_only image3d_t vectorField,
-        __global float * f,
-        __global float * r,
+        __global VECTOR_FIELD_TYPE * f,
+        __global VECTOR_FIELD_TYPE * r,
         __private int component
         ) {
 
@@ -2262,15 +2262,15 @@ __kernel void MGGVFInit(
         r_value = -v.z*sqrMag;
     }
 
-    f[LPOS(pos)] = f_value;
-    r[LPOS(pos)] = r_value;
+    f[LPOS(pos)] = FLOAT_TO_SNORM16(f_value);
+    r[LPOS(pos)] = FLOAT_TO_SNORM16(r_value);
 }
 
 __kernel void MGGVFFinish(
         __read_only image3d_t fx,
         __read_only image3d_t fy,
         __read_only image3d_t fz,
-        __global float * vectorField
+        __global VECTOR_FIELD_TYPE * vectorField
         ) {
     const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
 
@@ -2279,12 +2279,12 @@ __kernel void MGGVFFinish(
     value.y = read_imagef(fy,sampler,pos).x;
     value.z = read_imagef(fz,sampler,pos).x;
     value.w = length(value.xyz);
-    vstore4(value, LPOS(pos), vectorField);
+    vstore4(FLOAT_TO_SNORM16_4(value), LPOS(pos), vectorField);
 }
 
 __kernel void restrictVolume(
         __read_only image3d_t v_read,
-        __global float * v_write
+        __global VECTOR_FIELD_TYPE * v_write
         ) {
         int4 writePos = {
         get_global_id(0),
@@ -2309,27 +2309,27 @@ __kernel void restrictVolume(
             read_imagef(v_read, hpSampler, readPos+(int4)(1,0,1,0)).x
             );
 
-    v_write[LPOS(writePos)] = value;
+    v_write[LPOS(writePos)] = FLOAT_TO_SNORM16(value);
 }
 
 __kernel void prolongate(
         __read_only image3d_t v_l_read,
         __read_only image3d_t v_l_p1,
-        __global float * v_l_write
+        __global VECTOR_FIELD_TYPE * v_l_write
         ) {
     const int4 writePos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
     const int4 readPos = convert_int4(floor(convert_float4(writePos)/2.0f));
     const float value = read_imagef(v_l_read, hpSampler, writePos).x + read_imagef(v_l_p1, hpSampler, readPos).x;
-    v_l_write[LPOS(writePos)] = value;
+    v_l_write[LPOS(writePos)] = FLOAT_TO_SNORM16(value);
 }
 
 __kernel void prolongate2(
         __read_only image3d_t v_l_p1,
-        __global float * v_l_write
+        __global VECTOR_FIELD_TYPE * v_l_write
         ) {
     const int4 writePos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
     const int4 readPos = convert_int4(floor(convert_float4(writePos)/2.0f));
-    v_l_write[LPOS(writePos)] = read_imagef(v_l_p1, hpSampler, readPos).x;
+    v_l_write[LPOS(writePos)] = FLOAT_TO_SNORM16(read_imagef(v_l_p1, hpSampler, readPos).x);
 }
 
 __kernel void residual(
@@ -2338,7 +2338,7 @@ __kernel void residual(
         __read_only image3d_t sqrMag,
         __private float mu,
         __private float spacing,
-        __global float * newResidual
+        __global VECTOR_FIELD_TYPE * newResidual
         ) {
     int4 writePos = {
         get_global_id(0),
@@ -2364,7 +2364,7 @@ __kernel void residual(
                 ) / (spacing*spacing))
             - read_imagef(sqrMag, hpSampler, pos).x*read_imagef(v, hpSampler, pos).x);
 
-    newResidual[LPOS(writePos)] = value;
+    newResidual[LPOS(writePos)] = FLOAT_TO_SNORM16(value);
 }
 
 __kernel void fmgResidual(
@@ -2373,7 +2373,7 @@ __kernel void fmgResidual(
         __private float mu,
         __private float spacing,
         __private int component,
-        __global float * newResidual
+        __global VECTOR_FIELD_TYPE * newResidual
         ) {
     int4 writePos = {
         get_global_id(0),
@@ -2410,12 +2410,12 @@ __kernel void fmgResidual(
 
     const float value = -sqrMag*v0-(residue - sqrMag*read_imagef(v, hpSampler, pos).x);
 
-    newResidual[LPOS(writePos)] = value;
+    newResidual[LPOS(writePos)] = FLOAT_TO_SNORM16(value);
 }
 
 
 __kernel void initFloatBuffer(
-        __global float * buffer
+        __global VECTOR_FIELD_TYPE * buffer
         ) {
-        buffer[get_global_id(0)] = 0.0f;
+        buffer[get_global_id(0)] = FLOAT_TO_SNORM16(0.0f);
 }
