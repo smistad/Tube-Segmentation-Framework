@@ -1088,7 +1088,6 @@ void gaussSeidelSmoothing(
                 NDRange(size.x,size.y,size.z),
                 NullRange
             );
-
          }
 
     }
@@ -1272,7 +1271,6 @@ void multigridVcycle(
 
         // Compute new residual
         Image3D p_l = residual(ocl, r_l, v_l, sqrMag, mu, spacing, size,imageType);
-        p_l.setDestructorCallback((void (__stdcall *)(cl_mem,void *))(notify), (void *)"p_l");
     std::cout << "finished residual" << std::endl;
 
         // Restrict residual
@@ -1575,7 +1573,7 @@ Image3D runFMGGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIPL
     int v0 = 1;
     int v1 = 2;
     int v2 = 2;
-    int l_max = 6; // TODO this should be calculated
+    int l_max = 8; // TODO this should be calculated
     float spacing = 1.0f;
 
     // create sqrMag
@@ -1616,7 +1614,7 @@ Image3D runFMGGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIPL
 
     // X component
     for(int i = 0; i < GVFIterations; i++) {
-        Image3D rx = computeNewResidual(ocl,fx,*vectorField,MU,spacing,0,size,imageType);
+        Image3D rx = computeNewResidual(ocl,fx,*vectorField,MU,spacing,1,size,imageType);
         Image3D fx2 = fullMultigrid(ocl,rx,sqrMag,0,v0,v1,v2,l_max,MU,spacing,size,imageType);
         ocl.queue.finish();
         addKernel.setArg(0,fx);
@@ -1649,7 +1647,7 @@ Image3D runFMGGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIPL
 
     // Y component
     for(int i = 0; i < GVFIterations; i++) {
-        Image3D ry = computeNewResidual(ocl,fy,*vectorField,MU,spacing,1,size,imageType);
+        Image3D ry = computeNewResidual(ocl,fy,*vectorField,MU,spacing,2,size,imageType);
         Image3D fy2 = fullMultigrid(ocl,ry,sqrMag,0,v0,v1,v2,l_max,MU,spacing,size,imageType);
         ocl.queue.finish();
         addKernel.setArg(0,fy);
@@ -1682,7 +1680,7 @@ Image3D runFMGGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIPL
 
     // Z component
     for(int i = 0; i < GVFIterations; i++) {
-        Image3D rz = computeNewResidual(ocl,fz,*vectorField,MU,spacing,2,size,imageType);
+        Image3D rz = computeNewResidual(ocl,fz,*vectorField,MU,spacing,3,size,imageType);
         Image3D fz2 = fullMultigrid(ocl,rz,sqrMag,0,v0,v1,v2,l_max,MU,spacing,size,imageType);
         ocl.queue.finish();
         addKernel.setArg(0,fz);
