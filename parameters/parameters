@@ -8,7 +8,7 @@ radius-min num 0.5 0.5 50.0 0.5 "Minimum radius of tubular structures" tube-dete
 radius-max num 15.0 2.0 300.0 1.0 "Maximum radius of tubular structures" tube-detection-filter
 radius-step num 1.0 0.0 5.0 0.5 "Step size of radius" tube-detection-filter
 fmax num 0.2 0.01 0.9 0.01 "Maximum gradient length (for contrast invariance)" general
-gvf-mu num 0.05 0.0 0.2 0.01 "Mu regularization constant of GVF" gradient-vector-flow
+gvf-mu num 0.05 0.0 0.5 0.01 "Mu regularization constant of GVF" gradient-vector-flow
 small-blur num 0.0 0.0 5.0 0.5 "Std. Dev. of Gaussian blur for small tubular structures" general
 large-blur num 1.0 0.0 15.0 0.5 "Std. Dev. of Gaussian blur for large tubular structures" general
 tdf-high num 0.5 0.1 1.0 0.1 "TDF response threshold" centerline-general
