@@ -1601,7 +1601,6 @@ __kernel void splineTDF(
     float eigenValues[3];
     float eigenVectors[3][3];
     eigen_decomposition(Hessian, eigenVectors, eigenValues);
-    const float3 lambda = {eigenValues[0], eigenValues[1], eigenValues[2]};
     const float3 e1 = {eigenVectors[0][0], eigenVectors[1][0], eigenVectors[2][0]};
     const float3 e2 = {eigenVectors[0][1], eigenVectors[1][1], eigenVectors[2][1]};
     const float3 e3 = {eigenVectors[0][2], eigenVectors[1][2], eigenVectors[2][2]};
@@ -1611,6 +1610,7 @@ __kernel void splineTDF(
     float maxRadius[12]; // 12 is maximum nr of arms atm.
     //float minAverageMag = 0.01f; // 0.01
     float avgRadius = 0.0f;
+    float sum = 0.0f;
     for(int j = 0; j < arms; j++) {
         maxRadius[j] = 999;
         float alpha = 2 * M_PI_F * j / arms;
@@ -1631,6 +1631,11 @@ __kernel void splineTDF(
             if(up == 1 && magnitude < prevMagnitude && (prevMagnitude+magnitude)/2.0f - currentVoxelMagnitude > minAverageMag) { // Dot produt here is test
                 maxRadius[j] = radius;
                 avgRadius += radius;
+                if(dot(normalize(vec.xyz), -normalize(V_alpha.xyz)) < 0.0f) {
+                    invalid = 1;
+                    sum = 0.0f;
+                }
+                sum += 1.0f-fabs(dot(normalize(vec.xyz), e1));
                 break;
             } // End found border point
 
@@ -1640,85 +1645,13 @@ __kernel void splineTDF(
             prevMagnitude = magnitude;
         } // End for each radius
 
-        if(maxRadius[j] == 999) {
+        if(maxRadius[j] == 999 || invalid == 1) {
             invalid = 1;
             break;
         }
     } // End for arms
 
-    // Have all line searches found valid points?
-    float sum = 0.0f;
-    if(invalid == 0) {
-        /*
-        float3 planeNormal;
-        if(dot(cross(e2,e3),e1) > 0) {
-            planeNormal = -e1.xyz;
-        } else {
-            planeNormal = e1.xyz;
-        }
-        */
-        // Create spline segments
-        for(int j = 0; j < arms && invalid == 0; j++) {
-            /*
-            // The four control points for each spline segment
-            float4 Pk_1, Pk, Pk1, Pk2, V_alpha;
-            float alpha;
-            if(j == 0) {
-                alpha = 2 * M_PI_F * (arms-1) / arms;
-                V_alpha = cos(alpha)*e3.xyzz + sin(alpha)*e2.xyzz ;
-                Pk_1 = convert_float4(pos) + maxRadius[arms-1]*V_alpha;
-            } else {
-                alpha = 2 * M_PI_F * (j-1) / arms;
-                V_alpha = cos(alpha)*e3.xyzz + sin(alpha)*e2.xyzz ;
-                Pk_1 = convert_float4(pos) + maxRadius[j-1]*V_alpha;
-            }
-            alpha = 2 * M_PI_F * (j) / arms;
-            V_alpha = cos(alpha)*e3.xyzz + sin(alpha)*e2.xyzz ;
-            Pk = convert_float4(pos) + maxRadius[j]*V_alpha;
-            alpha = 2 * M_PI_F * ((j+1) % arms) / arms;
-            V_alpha = cos(alpha)*e3.xyzz + sin(alpha)*e2.xyzz ;
-            Pk1 = convert_float4(pos) + maxRadius[(j+1) % arms]*V_alpha;
-            alpha = 2 * M_PI_F * ((j+2) % arms) / arms;
-            V_alpha = cos(alpha)*e3.xyzz + sin(alpha)*e2.xyzz ;
-            Pk2 = convert_float4(pos) + maxRadius[(j+2) % arms]*V_alpha;
-
-            float4 prevPos = Pk;
-            for(int i = 1; i < samples; i++) {
-                float4 position = blendingFunctions[i*4]*Pk_1 +
-                    blendingFunctions[i*4+1]*Pk +
-                    blendingFunctions[i*4+2]*Pk1 +
-                    blendingFunctions[i*4+3]*Pk2;
-
-                // Sample from normalized vector field, sign is important
-                float4 Fn = read_imagef(vectorField, interpolationSampler, position);
-                //Fn = -Fn;
-                Fn.w = 0.0f;
-                Fn = -normalize(Fn); // Normalize
-
-                // Estimate spline normal
-                float3 tangent = normalize(position.xyz - prevPos.xyz);
-                float3 normal = normalize(cross(tangent, planeNormal));
-
-                prevPos = position;
-            } // End For each sample on the spline segment
-            */
-            const float alpha = 2 * M_PI_F * (j) / arms;
-            const float4 V_alpha = cos(alpha)*e3.xyzz + sin(alpha)*e2.xyzz ;
-            const float4 Pk = convert_float4(pos) + maxRadius[j]*V_alpha;
-            const float4 Fn = normalize(read_imagef(vectorField, interpolationSampler, Pk));
-            if(dot(Fn.xyz, -normalize(V_alpha.xyz)) < 0.0f) {
-                invalid = 1;
-                sum = 0.0f;
-                //break;
-            }
-            sum += 1-fabs(dot(Fn.xyz, e1));
-
-        }
-        avgRadius = avgRadius / arms;
-    } else {// End valid
-        avgRadius = 0.0;
-    }
-
+    avgRadius = avgRadius / arms;
     R[LPOS(pos)] = avgRadius;
     if(invalid != 1) {
         float avgSymmetry = 0.0f;
