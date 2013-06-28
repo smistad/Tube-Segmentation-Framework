@@ -2199,7 +2199,7 @@ __kernel void GVFgaussSeidel2(
         if(i % 2 == 0) {
             // Copy red
             float value = read_imagef(v_read, sampler, pos).x;
-            v_write[LPOS(writePos)] = value;
+            v_write[LPOS(writePos)] = FLOAT_TO_SNORM16(value);
         } else {
             // Compute black
                 float value = native_divide(2.0f*mu*(
