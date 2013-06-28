@@ -1013,7 +1013,7 @@ float * createBlurMask(float sigma, int * maskSizePointer) {
     return mask;
 }
 
-Image3D initSolutionToZero(OpenCL &ocl, SIPL::int3 size, int imageType) {
+Image3D initSolutionToZero(OpenCL &ocl, SIPL::int3 size, int imageType, int bufferSize, bool no3Dwrite) {
     Image3D v = Image3D(
             ocl.context,
             CL_MEM_READ_WRITE,
@@ -1023,14 +1023,36 @@ Image3D initSolutionToZero(OpenCL &ocl, SIPL::int3 size, int imageType) {
             size.z
     );
 
-    Kernel initToZeroKernel(ocl.program, "init3DFloat");
-    initToZeroKernel.setArg(0,v);
-    ocl.queue.enqueueNDRangeKernel(
-            initToZeroKernel,
-            NullRange,
-            NDRange(size.x,size.y,size.z),
-            NullRange
-    );
+    if(no3Dwrite) {
+        Kernel initToZeroKernel(ocl.program, "initFloatBuffer");
+        Buffer vBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, bufferSize*size.x*size.y*size.z);
+        initToZeroKernel.setArg(0,vBuffer);
+        ocl.queue.enqueueNDRangeKernel(
+                initToZeroKernel,
+                NullRange,
+                NDRange(size.x,size.y,size.z),
+                NullRange
+        );
+		cl::size_t<3> offset;
+		offset[0] = 0;
+		offset[1] = 0;
+		offset[2] = 0;
+		cl::size_t<3> region;
+		region[0] = size.x;
+		region[1] = size.y;
+		region[2] = size.z;
+        ocl.queue.enqueueCopyBufferToImage(vBuffer,v,0,offset,region);
+    } else {
+        Kernel initToZeroKernel(ocl.program, "init3DFloat");
+        initToZeroKernel.setArg(0,v);
+        ocl.queue.enqueueNDRangeKernel(
+                initToZeroKernel,
+                NullRange,
+                NDRange(size.x,size.y,size.z),
+                NullRange
+        );
+
+    }
 
     return v;
 }
@@ -1043,10 +1065,14 @@ void gaussSeidelSmoothing(
         SIPL::int3 size,
         float mu,
         float spacing,
-        int imageType
+        int imageType,
+        int bufferSize,
+        bool no3Dwrite
         ) {
 
-    if(iterations > 0) {
+    if(iterations <= 0)
+        return;
+
     Kernel gaussSeidelKernel = Kernel(ocl.program, "GVFgaussSeidel");
     Kernel gaussSeidelKernel2 = Kernel(ocl.program, "GVFgaussSeidel2");
 
@@ -1068,29 +1094,62 @@ void gaussSeidelSmoothing(
     gaussSeidelKernel2.setArg(2, mu);
     gaussSeidelKernel2.setArg(3, spacing);
 
-    for(int i = 0; i < iterations*2; i++) {
-         if(i % 2 == 0) {
-             gaussSeidelKernel.setArg(4, v);
-             gaussSeidelKernel.setArg(5, v_2);
-             ocl.queue.enqueueNDRangeKernel(
-                gaussSeidelKernel,
-                NullRange,
-                NDRange(size.x,size.y,size.z),
-                NullRange
-            );
+    if(no3Dwrite) {
+        cl::size_t<3> offset;
+		offset[0] = 0;
+		offset[1] = 0;
+		offset[2] = 0;
+		cl::size_t<3> region;
+		region[0] = size.x;
+		region[1] = size.y;
+		region[2] = size.z;
+        Buffer v_2_buffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, bufferSize*size.x*size.y*size.z);
 
-         } else {
-             gaussSeidelKernel2.setArg(4, v_2);
-             gaussSeidelKernel2.setArg(5, v);
-             ocl.queue.enqueueNDRangeKernel(
-                gaussSeidelKernel2,
-                NullRange,
-                NDRange(size.x,size.y,size.z),
-                NullRange
-            );
-         }
-
-    }
+        for(int i = 0; i < iterations*2; i++) {
+             if(i % 2 == 0) {
+                 gaussSeidelKernel.setArg(4, v);
+                 gaussSeidelKernel.setArg(5, v_2_buffer);
+                 ocl.queue.enqueueNDRangeKernel(
+                    gaussSeidelKernel,
+                    NullRange,
+                    NDRange(size.x,size.y,size.z),
+                    NullRange
+                );
+                ocl.queue.enqueueCopyBufferToImage(v_2_buffer, v_2,0,offset,region);
+             } else {
+                 gaussSeidelKernel2.setArg(4, v_2);
+                 gaussSeidelKernel2.setArg(5, v_2_buffer);
+                 ocl.queue.enqueueNDRangeKernel(
+                    gaussSeidelKernel2,
+                    NullRange,
+                    NDRange(size.x,size.y,size.z),
+                    NullRange
+                );
+                ocl.queue.enqueueCopyBufferToImage(v_2_buffer, v,0,offset,region);
+             }
+        }
+    } else {
+         for(int i = 0; i < iterations*2; i++) {
+             if(i % 2 == 0) {
+                 gaussSeidelKernel.setArg(4, v);
+                 gaussSeidelKernel.setArg(5, v_2);
+                 ocl.queue.enqueueNDRangeKernel(
+                    gaussSeidelKernel,
+                    NullRange,
+                    NDRange(size.x,size.y,size.z),
+                    NullRange
+                );
+             } else {
+                 gaussSeidelKernel2.setArg(4, v_2);
+                 gaussSeidelKernel2.setArg(5, v);
+                 ocl.queue.enqueueNDRangeKernel(
+                    gaussSeidelKernel2,
+                    NullRange,
+                    NDRange(size.x,size.y,size.z),
+                    NullRange
+                );
+             }
+        }
     }
 }
 
@@ -1098,7 +1157,9 @@ Image3D restrictVolume(
         OpenCL &ocl,
         Image3D &v,
         SIPL::int3 newSize,
-        int imageType
+        int imageType,
+        int bufferSize,
+        bool no3Dwrite
         ) {
 
     // Check to see if size is a power of 2 and equal in all dimensions
@@ -1113,14 +1174,35 @@ Image3D restrictVolume(
     );
 
     Kernel restrictKernel = Kernel(ocl.program, "restrictVolume");
-    restrictKernel.setArg(0, v);
-    restrictKernel.setArg(1, v_2);
-    ocl.queue.enqueueNDRangeKernel(
-            restrictKernel,
-            NullRange,
-            NDRange(newSize.x,newSize.y,newSize.z),
-            NullRange
-    );
+    if(no3Dwrite) {
+        cl::size_t<3> offset;
+		offset[0] = 0;
+		offset[1] = 0;
+		offset[2] = 0;
+		cl::size_t<3> region;
+		region[0] = newSize.x;
+		region[1] = newSize.y;
+		region[2] = newSize.z;
+        Buffer v_2_buffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, bufferSize*newSize.x*newSize.y*newSize.z);
+        restrictKernel.setArg(0, v);
+        restrictKernel.setArg(1, v_2_buffer);
+        ocl.queue.enqueueNDRangeKernel(
+                restrictKernel,
+                NullRange,
+                NDRange(newSize.x,newSize.y,newSize.z),
+                NullRange
+        );
+        ocl.queue.enqueueCopyBufferToImage(v_2_buffer, v_2,0,offset,region);
+    } else {
+        restrictKernel.setArg(0, v);
+        restrictKernel.setArg(1, v_2);
+        ocl.queue.enqueueNDRangeKernel(
+                restrictKernel,
+                NullRange,
+                NDRange(newSize.x,newSize.y,newSize.z),
+                NullRange
+        );
+    }
 
     return v_2;
 }
@@ -1130,7 +1212,9 @@ Image3D prolongateVolume(
         Image3D &v_l,
         Image3D &v_l_p1,
         SIPL::int3 size,
-        int imageType
+        int imageType,
+        int bufferSize,
+        bool no3Dwrite
         ) {
     Image3D v_2 = Image3D(
             ocl.context,
@@ -1142,15 +1226,38 @@ Image3D prolongateVolume(
     );
 
     Kernel prolongateKernel = Kernel(ocl.program, "prolongate");
-    prolongateKernel.setArg(0, v_l);
-    prolongateKernel.setArg(1, v_l_p1);
-    prolongateKernel.setArg(2, v_2);
-    ocl.queue.enqueueNDRangeKernel(
-            prolongateKernel,
-            NullRange,
-            NDRange(size.x,size.y,size.z),
-            NullRange
-    );
+    if(no3Dwrite) {
+        cl::size_t<3> offset;
+		offset[0] = 0;
+		offset[1] = 0;
+		offset[2] = 0;
+		cl::size_t<3> region;
+		region[0] = size.x;
+		region[1] = size.y;
+		region[2] = size.z;
+        Buffer v_2_buffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, bufferSize*size.x*size.y*size.z);
+        prolongateKernel.setArg(0, v_l);
+        prolongateKernel.setArg(1, v_l_p1);
+        prolongateKernel.setArg(2, v_2_buffer);
+        ocl.queue.enqueueNDRangeKernel(
+                prolongateKernel,
+                NullRange,
+                NDRange(size.x,size.y,size.z),
+                NullRange
+        );
+
+        ocl.queue.enqueueCopyBufferToImage(v_2_buffer, v_2,0,offset,region);
+    } else {
+        prolongateKernel.setArg(0, v_l);
+        prolongateKernel.setArg(1, v_l_p1);
+        prolongateKernel.setArg(2, v_2);
+        ocl.queue.enqueueNDRangeKernel(
+                prolongateKernel,
+                NullRange,
+                NDRange(size.x,size.y,size.z),
+                NullRange
+        );
+    }
 
     return v_2;
 }
@@ -1159,7 +1266,9 @@ Image3D prolongateVolume2(
         OpenCL &ocl,
         Image3D &v_l_p1,
         SIPL::int3 size,
-        int imageType
+        int imageType,
+        int bufferSize,
+        bool no3Dwrite
         ) {
     Image3D v_2 = Image3D(
             ocl.context,
@@ -1171,14 +1280,36 @@ Image3D prolongateVolume2(
     );
 
     Kernel prolongateKernel = Kernel(ocl.program, "prolongate2");
-    prolongateKernel.setArg(0, v_l_p1);
-    prolongateKernel.setArg(1, v_2);
-    ocl.queue.enqueueNDRangeKernel(
-            prolongateKernel,
-            NullRange,
-            NDRange(size.x,size.y,size.z),
-            NullRange
-    );
+    if(no3Dwrite) {
+        cl::size_t<3> offset;
+		offset[0] = 0;
+		offset[1] = 0;
+		offset[2] = 0;
+		cl::size_t<3> region;
+		region[0] = size.x;
+		region[1] = size.y;
+		region[2] = size.z;
+        Buffer v_2_buffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, bufferSize*size.x*size.y*size.z);
+        prolongateKernel.setArg(0, v_l_p1);
+        prolongateKernel.setArg(1, v_2_buffer);
+        ocl.queue.enqueueNDRangeKernel(
+                prolongateKernel,
+                NullRange,
+                NDRange(size.x,size.y,size.z),
+                NullRange
+        );
+
+        ocl.queue.enqueueCopyBufferToImage(v_2_buffer, v_2,0,offset,region);
+    } else {
+        prolongateKernel.setArg(0, v_l_p1);
+        prolongateKernel.setArg(1, v_2);
+        ocl.queue.enqueueNDRangeKernel(
+                prolongateKernel,
+                NullRange,
+                NDRange(size.x,size.y,size.z),
+                NullRange
+        );
+    }
 
     return v_2;
 }
@@ -1192,7 +1323,9 @@ Image3D residual(
         float mu,
         float spacing,
         SIPL::int3 size,
-        int imageType
+        int imageType,
+        int bufferSize,
+        bool no3Dwrite
         ) {
     Image3D newResidual = Image3D(
             ocl.context,
@@ -1204,18 +1337,44 @@ Image3D residual(
     );
 
     Kernel residualKernel(ocl.program, "residual");
-    residualKernel.setArg(0, r);
-    residualKernel.setArg(1, v);
-    residualKernel.setArg(2, sqrMag);
-    residualKernel.setArg(3, mu);
-    residualKernel.setArg(4, spacing);
-    residualKernel.setArg(5, newResidual);
-    ocl.queue.enqueueNDRangeKernel(
-            residualKernel,
-            NullRange,
-            NDRange(size.x,size.y,size.z),
-            NullRange
-    );
+    if(no3Dwrite) {
+        cl::size_t<3> offset;
+		offset[0] = 0;
+		offset[1] = 0;
+		offset[2] = 0;
+		cl::size_t<3> region;
+		region[0] = size.x;
+		region[1] = size.y;
+		region[2] = size.z;
+        Buffer newResidualBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, bufferSize*size.x*size.y*size.z);
+        residualKernel.setArg(0, r);
+        residualKernel.setArg(1, v);
+        residualKernel.setArg(2, sqrMag);
+        residualKernel.setArg(3, mu);
+        residualKernel.setArg(4, spacing);
+        residualKernel.setArg(5, newResidualBuffer);
+        ocl.queue.enqueueNDRangeKernel(
+                residualKernel,
+                NullRange,
+                NDRange(size.x,size.y,size.z),
+                NullRange
+        );
+
+        ocl.queue.enqueueCopyBufferToImage(newResidualBuffer, newResidual,0,offset,region);
+    } else {
+        residualKernel.setArg(0, r);
+        residualKernel.setArg(1, v);
+        residualKernel.setArg(2, sqrMag);
+        residualKernel.setArg(3, mu);
+        residualKernel.setArg(4, spacing);
+        residualKernel.setArg(5, newResidual);
+        ocl.queue.enqueueNDRangeKernel(
+                residualKernel,
+                NullRange,
+                NDRange(size.x,size.y,size.z),
+                NullRange
+        );
+    }
     return newResidual;
 }
 
@@ -1258,11 +1417,13 @@ void multigridVcycle(
         float mu,
         float spacing,
         SIPL::int3 size,
-        int imageType
+        int imageType,
+        int bufferSize,
+        bool no3Dwrite
         ) {
 
     // Pre-smoothing
-    gaussSeidelSmoothing(ocl,v_l,r_l,sqrMag,v1,size,mu,spacing,imageType);
+    gaussSeidelSmoothing(ocl,v_l,r_l,sqrMag,v1,size,mu,spacing,imageType,bufferSize,no3Dwrite);
     std::cout << "finished GS" << std::endl;
 
     if(l < l_max) {
@@ -1270,35 +1431,36 @@ void multigridVcycle(
     std::cout << "finished new size " << newSize.x << " " << newSize.y << " " << newSize.z << std::endl;
 
         // Compute new residual
-        Image3D p_l = residual(ocl, r_l, v_l, sqrMag, mu, spacing, size,imageType);
+        Image3D p_l = residual(ocl, r_l, v_l, sqrMag, mu, spacing, size,imageType,bufferSize,no3Dwrite);
     std::cout << "finished residual" << std::endl;
 
         // Restrict residual
-        Image3D r_l_p1 = restrictVolume(ocl, p_l, newSize,imageType);
+        Image3D r_l_p1 = restrictVolume(ocl, p_l, newSize,imageType,bufferSize,no3Dwrite);
     std::cout << "finished restrict" << std::endl;
 
         // Restrict sqrMag
-        Image3D sqrMag_l_p1 = restrictVolume(ocl, sqrMag, newSize,imageType);
+        Image3D sqrMag_l_p1 = restrictVolume(ocl, sqrMag, newSize,imageType,bufferSize,no3Dwrite);
     std::cout << "finished restrict" << std::endl;
 
         // Initialize v_l_p1
-        Image3D v_l_p1 = initSolutionToZero(ocl,newSize,imageType);
+        Image3D v_l_p1 = initSolutionToZero(ocl,newSize,imageType,bufferSize,no3Dwrite);
     std::cout << "finished initialization" << std::endl;
 
         // Solve recursively
-        multigridVcycle(ocl, r_l_p1, v_l_p1, sqrMag_l_p1, l+1,v1,v2,l_max,mu,spacing*2,newSize,imageType);
+        multigridVcycle(ocl, r_l_p1, v_l_p1, sqrMag_l_p1, l+1,v1,v2,l_max,mu,spacing*2,newSize,imageType,bufferSize,no3Dwrite);
     std::cout << "finished cycle" << std::endl;
 
         // Prolongate
-        v_l = prolongateVolume(ocl, v_l, v_l_p1, size,imageType);
+        v_l = prolongateVolume(ocl, v_l, v_l_p1, size,imageType,bufferSize,no3Dwrite);
     std::cout << "finished prolongate" << std::endl;
     }
 
     // Post-smoothing
-    gaussSeidelSmoothing(ocl,v_l,r_l,sqrMag,v2,size,mu,spacing,imageType);
+    gaussSeidelSmoothing(ocl,v_l,r_l,sqrMag,v2,size,mu,spacing,imageType,bufferSize,no3Dwrite);
     std::cout << "finished GS" << std::endl;
 }
 
+/*
 Image3D runMGGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIPL::int3 &size) {
 
     const int GVFIterations = getParam(parameters, "gvf-iterations");
@@ -1484,6 +1646,7 @@ Image3D runMGGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIPL:
 
     return finalVectorField;
 }
+*/
 
 Image3D computeNewResidual(
         OpenCL &ocl,
@@ -1493,7 +1656,9 @@ Image3D computeNewResidual(
         float spacing,
         int component,
         SIPL::int3 size,
-        int imageType
+        int imageType,
+        int bufferSize,
+        bool no3Dwrite
         ) {
     Image3D newResidual = Image3D(
             ocl.context,
@@ -1505,18 +1670,43 @@ Image3D computeNewResidual(
     );
 
     Kernel residualKernel(ocl.program, "fmgResidual");
-    residualKernel.setArg(0,vectorField);
-    residualKernel.setArg(1, f);
-    residualKernel.setArg(2, mu);
-    residualKernel.setArg(3, spacing);
-    residualKernel.setArg(4, component);
-    residualKernel.setArg(5, newResidual);
-    ocl.queue.enqueueNDRangeKernel(
-            residualKernel,
-            NullRange,
-            NDRange(size.x,size.y,size.z),
-            NullRange
-    );
+    if(no3Dwrite) {
+        cl::size_t<3> offset;
+		offset[0] = 0;
+		offset[1] = 0;
+		offset[2] = 0;
+		cl::size_t<3> region;
+		region[0] = size.x;
+		region[1] = size.y;
+		region[2] = size.z;
+        Buffer newResidualBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, bufferSize*size.x*size.y*size.z);
+        residualKernel.setArg(0,vectorField);
+        residualKernel.setArg(1, f);
+        residualKernel.setArg(2, mu);
+        residualKernel.setArg(3, spacing);
+        residualKernel.setArg(4, component);
+        residualKernel.setArg(5, newResidualBuffer);
+        ocl.queue.enqueueNDRangeKernel(
+                residualKernel,
+                NullRange,
+                NDRange(size.x,size.y,size.z),
+                NullRange
+        );
+        ocl.queue.enqueueCopyBufferToImage(newResidualBuffer, newResidual,0,offset,region);
+    } else {
+        residualKernel.setArg(0,vectorField);
+        residualKernel.setArg(1, f);
+        residualKernel.setArg(2, mu);
+        residualKernel.setArg(3, spacing);
+        residualKernel.setArg(4, component);
+        residualKernel.setArg(5, newResidual);
+        ocl.queue.enqueueNDRangeKernel(
+                residualKernel,
+                NullRange,
+                NDRange(size.x,size.y,size.z),
+                NullRange
+        );
+    }
 
     return newResidual;
 }
@@ -1533,21 +1723,23 @@ Image3D fullMultigrid(
         float mu,
         float spacing,
         SIPL::int3 size,
-        int imageType
+        int imageType,
+        int bufferSize,
+        bool no3Dwrite
         ) {
     Image3D v_l;
     if(l < l_max) {
         SIPL::int3 newSize = calculateNewSize(size);
-        Image3D r_l_p1 = restrictVolume(ocl, r_l, newSize, imageType);
-        Image3D sqrMag_l = restrictVolume(ocl,sqrMag,newSize,imageType);
-        Image3D v_l_p1 = fullMultigrid(ocl,r_l_p1,sqrMag_l,l+1,v0,v1,v2,l_max,mu,spacing*2,newSize, imageType);
-        v_l = prolongateVolume2(ocl,v_l_p1, size,imageType);
+        Image3D r_l_p1 = restrictVolume(ocl, r_l, newSize, imageType,bufferSize,no3Dwrite);
+        Image3D sqrMag_l = restrictVolume(ocl,sqrMag,newSize,imageType,bufferSize,no3Dwrite);
+        Image3D v_l_p1 = fullMultigrid(ocl,r_l_p1,sqrMag_l,l+1,v0,v1,v2,l_max,mu,spacing*2,newSize, imageType,bufferSize,no3Dwrite);
+        v_l = prolongateVolume2(ocl,v_l_p1, size,imageType,bufferSize,no3Dwrite);
     } else {
-        v_l = initSolutionToZero(ocl,size,imageType);
+        v_l = initSolutionToZero(ocl,size,imageType,bufferSize,no3Dwrite);
     }
 
     for(int i = 0; i < v0; i++) {
-        multigridVcycle(ocl,r_l,v_l,sqrMag,l,v1,v2,l_max,mu,spacing,size,imageType);
+        multigridVcycle(ocl,r_l,v_l,sqrMag,l,v1,v2,l_max,mu,spacing,size,imageType,bufferSize,no3Dwrite);
     }
 
     return v_l;
@@ -1561,11 +1753,13 @@ Image3D runFMGGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIPL
     const float MU = getParam(parameters, "gvf-mu");
     const int totalSize = size.x*size.y*size.z;
     const bool use16bit = getParamBool(parameters, "16bit-vectors");
-    int imageType;
+    int imageType, bufferTypeSize;
     if(use16bit) {
         imageType = CL_SNORM_INT16;
+        bufferTypeSize = sizeof(short);
     } else {
         imageType = CL_FLOAT;
+        bufferTypeSize = sizeof(float);
     }
 
     Kernel initKernel = Kernel(ocl.program, "MGGVFInit");
@@ -1586,116 +1780,202 @@ Image3D runFMGGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIPL
             size.y,
             size.z
     );
+    cl::size_t<3> offset;
+    offset[0] = 0;
+    offset[1] = 0;
+    offset[2] = 0;
+    cl::size_t<3> region;
+    region[0] = size.x;
+    region[1] = size.y;
+    region[2] = size.z;
 
-    createSqrMagKernel.setArg(0, *vectorField);
-    createSqrMagKernel.setArg(1, sqrMag);
-    ocl.queue.enqueueNDRangeKernel(
-            createSqrMagKernel,
-            NullRange,
-            NDRange(size.x,size.y,size.z),
-            NullRange
-    );
+    if(no3Dwrite) {
+        Buffer sqrMagBuffer = Buffer(
+                ocl.context,
+                CL_MEM_WRITE_ONLY,
+                totalSize*bufferTypeSize
+        );
+        createSqrMagKernel.setArg(0, *vectorField);
+        createSqrMagKernel.setArg(1, sqrMagBuffer);
+        ocl.queue.enqueueNDRangeKernel(
+                createSqrMagKernel,
+                NullRange,
+                NDRange(size.x,size.y,size.z),
+                NullRange
+        );
+        ocl.queue.enqueueCopyBufferToImage(sqrMagBuffer,sqrMag,0,offset,region);
+    } else {
+        createSqrMagKernel.setArg(0, *vectorField);
+        createSqrMagKernel.setArg(1, sqrMag);
+        ocl.queue.enqueueNDRangeKernel(
+                createSqrMagKernel,
+                NullRange,
+                NDRange(size.x,size.y,size.z),
+                NullRange
+        );
+    }
     std::cout << "sqrMag created" << std::endl;
 
     // create fx and rx
 
     std::cout << "fx initialized" << std::endl;
     Kernel addKernel(ocl.program, "addTwoImages");
-    Image3D fx = initSolutionToZero(ocl,size,imageType);
-    Image3D fx3 = Image3D(
-            ocl.context,
-            CL_MEM_READ_WRITE,
-            ImageFormat(CL_R, imageType),
-            size.x,
-            size.y,
-            size.z
-    );
-
+    Image3D fx = initSolutionToZero(ocl,size,imageType,bufferTypeSize,no3Dwrite);
 
     // X component
     for(int i = 0; i < GVFIterations; i++) {
-        Image3D rx = computeNewResidual(ocl,fx,*vectorField,MU,spacing,1,size,imageType);
-        Image3D fx2 = fullMultigrid(ocl,rx,sqrMag,0,v0,v1,v2,l_max,MU,spacing,size,imageType);
+        Image3D rx = computeNewResidual(ocl,fx,*vectorField,MU,spacing,1,size,imageType,bufferTypeSize,no3Dwrite);
+        Image3D fx2 = fullMultigrid(ocl,rx,sqrMag,0,v0,v1,v2,l_max,MU,spacing,size,imageType,bufferTypeSize,no3Dwrite);
         ocl.queue.finish();
-        addKernel.setArg(0,fx);
-        addKernel.setArg(1,fx2);
-        addKernel.setArg(2,fx3);
-        ocl.queue.enqueueNDRangeKernel(
-                addKernel,
-                NullRange,
-                NDRange(size.x,size.y,size.z),
-                NullRange
-        );
-        ocl.queue.finish();
+        if(no3Dwrite) {
+            Buffer fx3 = Buffer(
+                    ocl.context,
+                    CL_MEM_WRITE_ONLY,
+                    totalSize*bufferTypeSize
+            );
 
-        fx = fx3;
+            addKernel.setArg(0,fx);
+            addKernel.setArg(1,fx2);
+            addKernel.setArg(2,fx3);
+            ocl.queue.enqueueNDRangeKernel(
+                    addKernel,
+                    NullRange,
+                    NDRange(size.x,size.y,size.z),
+                    NullRange
+            );
+            ocl.queue.enqueueCopyBufferToImage(fx3,fx,0,offset,region);
+            ocl.queue.finish();
+        } else {
+            Image3D fx3 = Image3D(
+                ocl.context,
+                CL_MEM_READ_WRITE,
+                ImageFormat(CL_R, imageType),
+                size.x,
+                size.y,
+                size.z
+            );
+
+            addKernel.setArg(0,fx);
+            addKernel.setArg(1,fx2);
+            addKernel.setArg(2,fx3);
+            ocl.queue.enqueueNDRangeKernel(
+                    addKernel,
+                    NullRange,
+                    NDRange(size.x,size.y,size.z),
+                    NullRange
+            );
+            ocl.queue.finish();
+
+            fx = fx3;
+        }
+
     }
     std::cout << "fx finished" << std::endl;
 
     // create fy and ry
     // Y component
-    Image3D fy = initSolutionToZero(ocl,size,imageType);
-    Image3D fy3 = Image3D(
-            ocl.context,
-            CL_MEM_READ_WRITE,
-            ImageFormat(CL_R, imageType),
-            size.x,
-            size.y,
-            size.z
-    );
-
-
-    // Y component
+    Image3D fy = initSolutionToZero(ocl,size,imageType,bufferTypeSize,no3Dwrite);
     for(int i = 0; i < GVFIterations; i++) {
-        Image3D ry = computeNewResidual(ocl,fy,*vectorField,MU,spacing,2,size,imageType);
-        Image3D fy2 = fullMultigrid(ocl,ry,sqrMag,0,v0,v1,v2,l_max,MU,spacing,size,imageType);
+        Image3D ry = computeNewResidual(ocl,fy,*vectorField,MU,spacing,2,size,imageType,bufferTypeSize,no3Dwrite);
+        Image3D fy2 = fullMultigrid(ocl,ry,sqrMag,0,v0,v1,v2,l_max,MU,spacing,size,imageType,bufferTypeSize,no3Dwrite);
         ocl.queue.finish();
-        addKernel.setArg(0,fy);
-        addKernel.setArg(1,fy2);
-        addKernel.setArg(2,fy3);
-        ocl.queue.enqueueNDRangeKernel(
-                addKernel,
-                NullRange,
-                NDRange(size.x,size.y,size.z),
-                NullRange
-        );
-        ocl.queue.finish();
+        if(no3Dwrite) {
+            Buffer fy3 = Buffer(
+                    ocl.context,
+                    CL_MEM_WRITE_ONLY,
+                    totalSize*bufferTypeSize
+            );
 
-        fy = fy3;
+            addKernel.setArg(0,fy);
+            addKernel.setArg(1,fy2);
+            addKernel.setArg(2,fy3);
+            ocl.queue.enqueueNDRangeKernel(
+                    addKernel,
+                    NullRange,
+                    NDRange(size.x,size.y,size.z),
+                    NullRange
+            );
+            ocl.queue.enqueueCopyBufferToImage(fy3,fy,0,offset,region);
+            ocl.queue.finish();
+        } else {
+            Image3D fy3 = Image3D(
+                ocl.context,
+                CL_MEM_READ_WRITE,
+                ImageFormat(CL_R, imageType),
+                size.x,
+                size.y,
+                size.z
+            );
+
+            addKernel.setArg(0,fy);
+            addKernel.setArg(1,fy2);
+            addKernel.setArg(2,fy3);
+            ocl.queue.enqueueNDRangeKernel(
+                    addKernel,
+                    NullRange,
+                    NDRange(size.x,size.y,size.z),
+                    NullRange
+            );
+            ocl.queue.finish();
+
+            fy = fy3;
+        }
+
     }
+
     std::cout << "fy finished" << std::endl;
 
     // create fz and rz
     // Z component
-    Image3D fz = initSolutionToZero(ocl,size,imageType);
-    Image3D fz3 = Image3D(
-            ocl.context,
-            CL_MEM_READ_WRITE,
-            ImageFormat(CL_R, imageType),
-            size.x,
-            size.y,
-            size.z
-    );
-
-
-    // Z component
+    Image3D fz = initSolutionToZero(ocl,size,imageType,bufferTypeSize,no3Dwrite);
     for(int i = 0; i < GVFIterations; i++) {
-        Image3D rz = computeNewResidual(ocl,fz,*vectorField,MU,spacing,3,size,imageType);
-        Image3D fz2 = fullMultigrid(ocl,rz,sqrMag,0,v0,v1,v2,l_max,MU,spacing,size,imageType);
+        Image3D rz = computeNewResidual(ocl,fz,*vectorField,MU,spacing,3,size,imageType,bufferTypeSize,no3Dwrite);
+        Image3D fz2 = fullMultigrid(ocl,rz,sqrMag,0,v0,v1,v2,l_max,MU,spacing,size,imageType,bufferTypeSize,no3Dwrite);
         ocl.queue.finish();
-        addKernel.setArg(0,fz);
-        addKernel.setArg(1,fz2);
-        addKernel.setArg(2,fz3);
-        ocl.queue.enqueueNDRangeKernel(
-                addKernel,
-                NullRange,
-                NDRange(size.x,size.y,size.z),
-                NullRange
-        );
-        ocl.queue.finish();
+        if(no3Dwrite) {
+            Buffer fz3 = Buffer(
+                    ocl.context,
+                    CL_MEM_WRITE_ONLY,
+                    totalSize*bufferTypeSize
+            );
 
-        fz = fz3;
+            addKernel.setArg(0,fz);
+            addKernel.setArg(1,fz2);
+            addKernel.setArg(2,fz3);
+            ocl.queue.enqueueNDRangeKernel(
+                    addKernel,
+                    NullRange,
+                    NDRange(size.x,size.y,size.z),
+                    NullRange
+            );
+            ocl.queue.enqueueCopyBufferToImage(fz3,fz,0,offset,region);
+            ocl.queue.finish();
+        } else {
+            Image3D fz3 = Image3D(
+                ocl.context,
+                CL_MEM_READ_WRITE,
+                ImageFormat(CL_R, imageType),
+                size.x,
+                size.y,
+                size.z
+            );
+
+            addKernel.setArg(0,fz);
+            addKernel.setArg(1,fz2);
+            addKernel.setArg(2,fz3);
+            ocl.queue.enqueueNDRangeKernel(
+                    addKernel,
+                    NullRange,
+                    NDRange(size.x,size.y,size.z),
+                    NullRange
+            );
+            ocl.queue.finish();
+
+            fz = fz3;
+        }
+
     }
+
     GC->deleteMemObject(vectorField);
 
     std::cout << "fz finished" << std::endl;
@@ -1710,16 +1990,37 @@ Image3D runFMGGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIPL
             size.z
     );
     Kernel finalizeKernel = Kernel(ocl.program, "MGGVFFinish");
-    finalizeKernel.setArg(0, fx);
-    finalizeKernel.setArg(1, fy);
-    finalizeKernel.setArg(2, fz);
-    finalizeKernel.setArg(3, finalVectorField);
-    ocl.queue.enqueueNDRangeKernel(
-            finalizeKernel,
-            NullRange,
-            NDRange(size.x,size.y,size.z),
-            NullRange
-    );
+    if(no3Dwrite) {
+        Buffer finalVectorFieldBuffer = Buffer(
+                ocl.context,
+                CL_MEM_WRITE_ONLY,
+                totalSize*bufferTypeSize
+        );
+
+        finalizeKernel.setArg(0, fx);
+        finalizeKernel.setArg(1, fy);
+        finalizeKernel.setArg(2, fz);
+        finalizeKernel.setArg(3, finalVectorFieldBuffer);
+        ocl.queue.enqueueNDRangeKernel(
+                finalizeKernel,
+                NullRange,
+                NDRange(size.x,size.y,size.z),
+                NullRange
+        );
+        ocl.queue.enqueueCopyBufferToImage(finalVectorFieldBuffer,finalVectorField,0,offset,region);
+    } else {
+        finalizeKernel.setArg(0, fx);
+        finalizeKernel.setArg(1, fy);
+        finalizeKernel.setArg(2, fz);
+        finalizeKernel.setArg(3, finalVectorField);
+        ocl.queue.enqueueNDRangeKernel(
+                finalizeKernel,
+                NullRange,
+                NDRange(size.x,size.y,size.z),
+                NullRange
+        );
+
+    }
     std::cout << "MG GVF finished" << std::endl;
 
 
