@@ -1767,7 +1767,7 @@ Image3D runFMGGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIPL
     int v0 = 1;
     int v1 = 2;
     int v2 = 2;
-    int l_max = 8; // TODO this should be calculated
+    int l_max = 0; // TODO this should be calculated
     float spacing = 1.0f;
 
     // create sqrMag
@@ -1994,7 +1994,7 @@ Image3D runFMGGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIPL
         Buffer finalVectorFieldBuffer = Buffer(
                 ocl.context,
                 CL_MEM_WRITE_ONLY,
-                totalSize*bufferTypeSize
+                4*totalSize*bufferTypeSize
         );
 
         finalizeKernel.setArg(0, fx);
