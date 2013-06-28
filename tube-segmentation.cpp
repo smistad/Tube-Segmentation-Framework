@@ -1,6 +1,6 @@
 #include "tube-segmentation.hpp"
 #include "SIPL/Types.hpp"
-#define USE_SIPL_VISUALIZATION
+//#define USE_SIPL_VISUALIZATION
 #ifdef USE_SIPL_VISUALIZATION
 #include "SIPL/Core.hpp"
 #endif
@@ -1030,7 +1030,7 @@ Image3D initSolutionToZero(OpenCL &ocl, SIPL::int3 size, int imageType, int buff
         ocl.queue.enqueueNDRangeKernel(
                 initToZeroKernel,
                 NullRange,
-                NDRange(size.x,size.y,size.z),
+                NDRange(size.x*size.y*size.z),
                 NullRange
         );
 		cl::size_t<3> offset;
@@ -1049,7 +1049,7 @@ Image3D initSolutionToZero(OpenCL &ocl, SIPL::int3 size, int imageType, int buff
                 initToZeroKernel,
                 NullRange,
                 NDRange(size.x,size.y,size.z),
-                NullRange
+                NDRange(4,4,4)
         );
 
     }
@@ -1113,7 +1113,7 @@ void gaussSeidelSmoothing(
                     gaussSeidelKernel,
                     NullRange,
                     NDRange(size.x,size.y,size.z),
-                    NullRange
+                    NDRange(4,4,4)
                 );
                 ocl.queue.enqueueCopyBufferToImage(v_2_buffer, v_2,0,offset,region);
              } else {
@@ -1123,7 +1123,7 @@ void gaussSeidelSmoothing(
                     gaussSeidelKernel2,
                     NullRange,
                     NDRange(size.x,size.y,size.z),
-                    NullRange
+                    NDRange(4,4,4)
                 );
                 ocl.queue.enqueueCopyBufferToImage(v_2_buffer, v,0,offset,region);
              }
@@ -1137,7 +1137,7 @@ void gaussSeidelSmoothing(
                     gaussSeidelKernel,
                     NullRange,
                     NDRange(size.x,size.y,size.z),
-                    NullRange
+                    NDRange(4,4,4)
                 );
              } else {
                  gaussSeidelKernel2.setArg(4, v_2);
@@ -1146,7 +1146,7 @@ void gaussSeidelSmoothing(
                     gaussSeidelKernel2,
                     NullRange,
                     NDRange(size.x,size.y,size.z),
-                    NullRange
+                    NDRange(4,4,4)
                 );
              }
         }
@@ -1190,7 +1190,7 @@ Image3D restrictVolume(
                 restrictKernel,
                 NullRange,
                 NDRange(newSize.x,newSize.y,newSize.z),
-                NullRange
+                NDRange(4,4,4)
         );
         ocl.queue.enqueueCopyBufferToImage(v_2_buffer, v_2,0,offset,region);
     } else {
@@ -1200,7 +1200,7 @@ Image3D restrictVolume(
                 restrictKernel,
                 NullRange,
                 NDRange(newSize.x,newSize.y,newSize.z),
-                NullRange
+                NDRange(4,4,4)
         );
     }
 
@@ -1243,7 +1243,7 @@ Image3D prolongateVolume(
                 prolongateKernel,
                 NullRange,
                 NDRange(size.x,size.y,size.z),
-                NullRange
+                NDRange(4,4,4)
         );
 
         ocl.queue.enqueueCopyBufferToImage(v_2_buffer, v_2,0,offset,region);
@@ -1255,7 +1255,7 @@ Image3D prolongateVolume(
                 prolongateKernel,
                 NullRange,
                 NDRange(size.x,size.y,size.z),
-                NullRange
+                NDRange(4,4,4)
         );
     }
 
@@ -1296,7 +1296,7 @@ Image3D prolongateVolume2(
                 prolongateKernel,
                 NullRange,
                 NDRange(size.x,size.y,size.z),
-                NullRange
+                NDRange(4,4,4)
         );
 
         ocl.queue.enqueueCopyBufferToImage(v_2_buffer, v_2,0,offset,region);
@@ -1307,7 +1307,7 @@ Image3D prolongateVolume2(
                 prolongateKernel,
                 NullRange,
                 NDRange(size.x,size.y,size.z),
-                NullRange
+                NDRange(4,4,4)
         );
     }
 
@@ -1357,7 +1357,7 @@ Image3D residual(
                 residualKernel,
                 NullRange,
                 NDRange(size.x,size.y,size.z),
-                NullRange
+                NDRange(4,4,4)
         );
 
         ocl.queue.enqueueCopyBufferToImage(newResidualBuffer, newResidual,0,offset,region);
@@ -1372,7 +1372,7 @@ Image3D residual(
                 residualKernel,
                 NullRange,
                 NDRange(size.x,size.y,size.z),
-                NullRange
+                NDRange(4,4,4)
         );
     }
     return newResidual;
@@ -1424,40 +1424,31 @@ void multigridVcycle(
 
     // Pre-smoothing
     gaussSeidelSmoothing(ocl,v_l,r_l,sqrMag,v1,size,mu,spacing,imageType,bufferSize,no3Dwrite);
-    std::cout << "finished GS" << std::endl;
 
     if(l < l_max) {
         SIPL::int3 newSize = calculateNewSize(size);
-    std::cout << "finished new size " << newSize.x << " " << newSize.y << " " << newSize.z << std::endl;
 
         // Compute new residual
         Image3D p_l = residual(ocl, r_l, v_l, sqrMag, mu, spacing, size,imageType,bufferSize,no3Dwrite);
-    std::cout << "finished residual" << std::endl;
 
         // Restrict residual
         Image3D r_l_p1 = restrictVolume(ocl, p_l, newSize,imageType,bufferSize,no3Dwrite);
-    std::cout << "finished restrict" << std::endl;
 
         // Restrict sqrMag
         Image3D sqrMag_l_p1 = restrictVolume(ocl, sqrMag, newSize,imageType,bufferSize,no3Dwrite);
-    std::cout << "finished restrict" << std::endl;
 
         // Initialize v_l_p1
         Image3D v_l_p1 = initSolutionToZero(ocl,newSize,imageType,bufferSize,no3Dwrite);
-    std::cout << "finished initialization" << std::endl;
 
         // Solve recursively
         multigridVcycle(ocl, r_l_p1, v_l_p1, sqrMag_l_p1, l+1,v1,v2,l_max,mu,spacing*2,newSize,imageType,bufferSize,no3Dwrite);
-    std::cout << "finished cycle" << std::endl;
 
         // Prolongate
         v_l = prolongateVolume(ocl, v_l, v_l_p1, size,imageType,bufferSize,no3Dwrite);
-    std::cout << "finished prolongate" << std::endl;
     }
 
     // Post-smoothing
     gaussSeidelSmoothing(ocl,v_l,r_l,sqrMag,v2,size,mu,spacing,imageType,bufferSize,no3Dwrite);
-    std::cout << "finished GS" << std::endl;
 }
 
 /*
@@ -1690,7 +1681,7 @@ Image3D computeNewResidual(
                 residualKernel,
                 NullRange,
                 NDRange(size.x,size.y,size.z),
-                NullRange
+                NDRange(4,4,4)
         );
         ocl.queue.enqueueCopyBufferToImage(newResidualBuffer, newResidual,0,offset,region);
     } else {
@@ -1704,7 +1695,7 @@ Image3D computeNewResidual(
                 residualKernel,
                 NullRange,
                 NDRange(size.x,size.y,size.z),
-                NullRange
+                NDRange(4,4,4)
         );
     }
 
@@ -1767,7 +1758,7 @@ Image3D runFMGGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIPL
     int v0 = 1;
     int v1 = 2;
     int v2 = 2;
-    int l_max = 0; // TODO this should be calculated
+    int l_max = 6; // TODO this should be calculated
     float spacing = 1.0f;
 
     // create sqrMag
@@ -1801,7 +1792,7 @@ Image3D runFMGGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIPL
                 createSqrMagKernel,
                 NullRange,
                 NDRange(size.x,size.y,size.z),
-                NullRange
+                NDRange(4,4,4)
         );
         ocl.queue.enqueueCopyBufferToImage(sqrMagBuffer,sqrMag,0,offset,region);
     } else {
@@ -1811,14 +1802,11 @@ Image3D runFMGGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIPL
                 createSqrMagKernel,
                 NullRange,
                 NDRange(size.x,size.y,size.z),
-                NullRange
+                NDRange(4,4,4)
         );
     }
     std::cout << "sqrMag created" << std::endl;
 
-    // create fx and rx
-
-    std::cout << "fx initialized" << std::endl;
     Kernel addKernel(ocl.program, "addTwoImages");
     Image3D fx = initSolutionToZero(ocl,size,imageType,bufferTypeSize,no3Dwrite);
 
@@ -1841,7 +1829,7 @@ Image3D runFMGGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIPL
                     addKernel,
                     NullRange,
                     NDRange(size.x,size.y,size.z),
-                    NullRange
+                    NDRange(4,4,4)
             );
             ocl.queue.enqueueCopyBufferToImage(fx3,fx,0,offset,region);
             ocl.queue.finish();
@@ -1862,7 +1850,7 @@ Image3D runFMGGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIPL
                     addKernel,
                     NullRange,
                     NDRange(size.x,size.y,size.z),
-                    NullRange
+                    NDRange(4,4,4)
             );
             ocl.queue.finish();
 
@@ -1893,7 +1881,7 @@ Image3D runFMGGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIPL
                     addKernel,
                     NullRange,
                     NDRange(size.x,size.y,size.z),
-                    NullRange
+                    NDRange(4,4,4)
             );
             ocl.queue.enqueueCopyBufferToImage(fy3,fy,0,offset,region);
             ocl.queue.finish();
@@ -1914,7 +1902,7 @@ Image3D runFMGGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIPL
                     addKernel,
                     NullRange,
                     NDRange(size.x,size.y,size.z),
-                    NullRange
+                    NDRange(4,4,4)
             );
             ocl.queue.finish();
 
@@ -1946,7 +1934,7 @@ Image3D runFMGGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIPL
                     addKernel,
                     NullRange,
                     NDRange(size.x,size.y,size.z),
-                    NullRange
+                    NDRange(4,4,4)
             );
             ocl.queue.enqueueCopyBufferToImage(fz3,fz,0,offset,region);
             ocl.queue.finish();
@@ -1967,7 +1955,7 @@ Image3D runFMGGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIPL
                     addKernel,
                     NullRange,
                     NDRange(size.x,size.y,size.z),
-                    NullRange
+                    NDRange(4,4,4)
             );
             ocl.queue.finish();
 
@@ -2005,7 +1993,7 @@ Image3D runFMGGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIPL
                 finalizeKernel,
                 NullRange,
                 NDRange(size.x,size.y,size.z),
-                NullRange
+                NDRange(4,4,4)
         );
         ocl.queue.enqueueCopyBufferToImage(finalVectorFieldBuffer,finalVectorField,0,offset,region);
     } else {
@@ -2017,7 +2005,7 @@ Image3D runFMGGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIPL
                 finalizeKernel,
                 NullRange,
                 NDRange(size.x,size.y,size.z),
-                NullRange
+                NDRange(4,4,4)
         );
 
     }
@@ -2858,16 +2846,18 @@ if(getParamBool(parameters, "timing")) {
     ocl.queue.finish(); // This finish statement is necessary. Incorrect combine result if not present.
     GC->deleteMemObject(TDFsmallBuffer);
     GC->deleteMemObject(radiusSmallBuffer);
-    } // end if radiusMin < 2.5
 
-
-if(getParamBool(parameters, "timing")) {
+    if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
     startEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &start);
     endEvent.getProfilingInfo<cl_ulong>(CL_PROFILING_COMMAND_START, &end);
     std::cout << "RUNTIME of TDF small: " << (end-start)*1.0e-6 << " ms" << std::endl;
-}
+    }
+
+    } // end if radiusMin < 2.5
+
+
     /* Large Airways */
 
 if(getParamBool(parameters, "timing")) {
