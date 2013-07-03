@@ -72,16 +72,6 @@ private:
 	OpenCL* ocl;
 };
 
-class TSFGarbageCollector {
-    public:
-        void addMemObject(cl::Memory * mem);
-        void deleteMemObject(cl::Memory * mem);
-        void deleteAllMemObjects();
-        ~TSFGarbageCollector();
-    private:
-        std::set<cl::Memory *> memObjects;
-};
-
 /*
  * For debugging.
  */

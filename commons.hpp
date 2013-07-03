@@ -1,12 +1,25 @@
 #ifndef COMMONS_H
 #define COMMONS_H
 #include "OpenCLUtilities/openCLUtilities.hpp"
+#include <set>
+
+class TSFGarbageCollector {
+    public:
+        void addMemObject(cl::Memory * mem);
+        void deleteMemObject(cl::Memory * mem);
+        void deleteAllMemObjects();
+        ~TSFGarbageCollector();
+    private:
+        std::set<cl::Memory *> memObjects;
+};
+
 typedef struct OpenCL {
     cl::Context context;
     cl::CommandQueue queue;
     cl::Program program;
     cl::Device device;
     cl::Platform platform;
+    TSFGarbageCollector GC;
 } OpenCL;
 
 #ifdef WIN32
