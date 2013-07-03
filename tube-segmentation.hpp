@@ -18,6 +18,7 @@ using boost::unordered_map;
 #include "commons.hpp"
 #include "parameters.hpp"
 #include "SIPL/Exceptions.hpp"
+#include "inputOutput.hpp"
 
 typedef struct TubeSegmentation {
     float *Fx, *Fy, *Fz; // The GVF vector field
@@ -29,48 +30,6 @@ typedef struct TubeSegmentation {
     float *intensity;
 } TubeSegmentation;
 
-class TSFOutput {
-public:
-	TSFOutput(OpenCL * ocl, SIPL::int3 * size, bool TDFis16bit = false);
-	bool hasSegmentation() { return deviceHasSegmentation || hostHasSegmentation; };
-	bool hasCenterlineVoxels() { return deviceHasCenterlineVoxels || hostHasCenterlineVoxels; };
-	bool hasTDF() { return deviceHasTDF || hostHasTDF; };
-	void setTDF(cl::Image3D *);
-	void setSegmentation(cl::Image3D *);
-	void setCenterlineVoxels(cl::Image3D *);
-	void setTDF(float *);
-	void setSegmentation(char *);
-	void setCenterlineVoxels(char *);
-	void setSize(SIPL::int3 *);
-	char * getSegmentation();
-	char * getCenterlineVoxels();
-	float * getTDF();
-	SIPL::int3 * getSize();
-	~TSFOutput();
-	SIPL::int3 getShiftVector() const;
-	void setShiftVector(SIPL::int3 shiftVector);
-	SIPL::float3 getSpacing() const;
-	void setSpacing(SIPL::float3 spacing);
-
-private:
-	cl::Image3D* oclCenterlineVoxels;
-	cl::Image3D* oclSegmentation;
-	cl::Image3D* oclTDF;
-	SIPL::int3* size;
-	SIPL::float3 spacing;
-	SIPL::int3 shiftVector;
-	bool TDFis16bit;
-	bool hostHasSegmentation;
-	bool hostHasCenterlineVoxels;
-	bool hostHasTDF;
-	bool deviceHasTDF;
-	bool deviceHasCenterlineVoxels;
-	bool deviceHasSegmentation;
-	char* segmentation;
-	char* centerlineVoxels;
-	float* TDF;
-	OpenCL* ocl;
-};
 
 /*
  * For debugging.
