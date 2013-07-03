@@ -74,6 +74,7 @@ add_library(tubeSegmentationLib
 	globalCenterlineExtraction.cpp 
 	parallelCenterlineExtraction.cpp 
 	inputOutput.cpp
+	segmentation.cpp
 )
 target_link_libraries(tubeSegmentationLib OCL-Utilities SIPL ${Boost_LIBRARIES} ${OPENCL_LIBRARIES})
 
@@ -94,6 +95,7 @@ if(SIPL_USE_GTK)
 		globalCenterlineExtraction.cpp 
 		parallelCenterlineExtraction.cpp 
 		inputOutput.cpp
+		segmentation.cpp
 	)
     target_link_libraries(tubeSegmentation SIPL OCL-Utilities ${Boost_LIBRARIES} ${OPENCL_LIBRARIES})
 endif()
