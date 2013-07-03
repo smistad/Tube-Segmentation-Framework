@@ -763,13 +763,12 @@ if(getParamBool(parameters, "timing")) {
 			}
 		}
 	}
-	vectorField = runFMGGVF(ocl,initVectorField,parameters,size);
-	/*
+	//vectorField = runFMGGVF(ocl,initVectorField,parameters,size);
 	if(useSlowGVF) {
 		vectorField = runGVF(ocl, initVectorField, parameters, size, true);
 	} else {
 		vectorField = runGVF(ocl, initVectorField, parameters, size, false);
-	}*/
+	}
 
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
