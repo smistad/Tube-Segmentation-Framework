@@ -20,10 +20,8 @@
 #include <limits>
 #include <fstream>
 #include "timing.hpp"
+#include <cmath>
 #define MAX(a,b) a > b ? a : b
-//#include "tsf-config.h"
-
-//#define TIMING
 
 // Undefine windows crap
 #ifdef WIN32
@@ -986,7 +984,7 @@ SIPL::Volume<float3> * visualizeSegments(std::vector<Segment *> segments, int3 s
 			for(int i = 0; i < distance; i++) {
 				float frac = (float)i/distance;
 				float3 n = a->pos + frac*direction;
-				int3 in(round(n.x),round(n.y),round(n.z));
+				int3 in(SIPL::round(n.x),SIPL::round(n.y),SIPL::round(n.z));
 				float3 v = connections->get(in);
 				v.x = 1.0f;
 				connections->set(in, v);
@@ -1000,7 +998,7 @@ SIPL::Volume<float3> * visualizeSegments(std::vector<Segment *> segments, int3 s
 			for(int i = 0; i < distance; i++) {
 				float frac = (float)i/distance;
 				float3 n = a->pos + frac*direction;
-				int3 in(round(n.x),round(n.y),round(n.z));
+				int3 in(SIPL::round(n.x),SIPL::round(n.y),SIPL::round(n.z));
 				float3 v = connections->get(in);
 				v.y = 1.0f;
 				connections->set(in, v);
@@ -1037,9 +1035,12 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D * dataset, SIPL::int3 * s
     TS.Fx = new float[totalSize];
     TS.Fy = new float[totalSize];
     TS.Fz = new float[totalSize];
+    TS.TDF = new float[totalSize];
+    /*
     TS.FxSmall = new float[totalSize];
     TS.FySmall = new float[totalSize];
     TS.FzSmall = new float[totalSize];
+    */
     if((no3Dwrite && !getParamBool(parameters, "16bit-vectors")) || getParamBool(parameters, "32bit-vectors")) {
     	// 32 bit vector fields
         float * Fs = new float[totalSize*4];
@@ -1051,6 +1052,7 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D * dataset, SIPL::int3 * s
             TS.Fz[i] = Fs[i*4+2];
         }
         delete[] Fs;
+        /*
         if(getParam(parameters, "radius-min") < 2.5) {
 		float * FsSmall = new float[totalSize*4];
         ocl->queue.enqueueReadImage(vectorFieldSmall, CL_TRUE, offset, region, 0, 0, FsSmall);
@@ -1062,7 +1064,8 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D * dataset, SIPL::int3 * s
         }
         delete[] FsSmall;
         }
-
+        */
+        ocl->queue.enqueueReadImage(*TDF, CL_TRUE, offset, region, 0, 0, TS.TDF);
     } else {
     	// 16 bit vector fields
         short * Fs = new short[totalSize*4];
@@ -1074,6 +1077,7 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D * dataset, SIPL::int3 * s
             TS.Fz[i] = MAX(-1.0f, Fs[i*4+2] / 32767.0f);
         }
         delete[] Fs;
+        /*
         if(getParam(parameters, "radius-min") < 2.5) {
 		short * FsSmall = new short[totalSize*4];
         ocl->queue.enqueueReadImage(vectorFieldSmall, CL_TRUE, offset, region, 0, 0, FsSmall);
@@ -1085,12 +1089,20 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D * dataset, SIPL::int3 * s
         }
         delete[] FsSmall;
         }
+        */
+
+        // Convert 16 bit TDF to 32 bit
+        unsigned short * tempTDF = new unsigned short[totalSize];
+        ocl->queue.enqueueReadImage(*TDF, CL_TRUE, offset, region, 0, 0, tempTDF);
+#pragma omp parallel for
+        for(int i = 0; i < totalSize; i++) {
+            TS.TDF[i] = (float)tempTDF[i] / 65535.0f;
+        }
+        delete[] tempTDF;
 
     }
     TS.radius = new float[totalSize];
-    TS.TDF = new float[totalSize];
     //TS.intensity = new float[totalSize];
-    ocl->queue.enqueueReadImage(*TDF, CL_TRUE, offset, region, 0, 0, TS.TDF);
     output->setTDF(TS.TDF);
     ocl->queue.enqueueReadImage(radius, CL_TRUE, offset, region, 0, 0, TS.radius);
     //ocl->queue.enqueueReadImage(dataset, CL_TRUE, offset, region, 0, 0, TS.intensity);
@@ -1185,7 +1197,7 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D * dataset, SIPL::int3 * s
 			for(int i = 0; i < distance; i++) {
 				float frac = (float)i/distance;
 				float3 n = a->pos + frac*direction;
-				int3 in(round(n.x),round(n.y),round(n.z));
+				int3 in(std::round(n.x),std::round(n.y),std::round(n.z));
 				centerline[in.x+in.y*size->x+in.z*size->x*size->y] = 1;
 			}
 		}
@@ -1204,7 +1216,7 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D * dataset, SIPL::int3 * s
 			for(int i = 0; i < distance; i++) {
 				float frac = (float)i/distance;
 				float3 n = a->pos + frac*direction;
-				int3 in(round(n.x),round(n.y),round(n.z));
+				int3 in(std::round(n.x),std::round(n.y),std::round(n.z));
 				centerline[in.x+in.y*size->x+in.z*size->x*size->y] = 1;
 			}
 

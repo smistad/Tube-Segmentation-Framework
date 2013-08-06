@@ -70,6 +70,7 @@ std::vector<CrossSection *> createGraph(TubeSegmentation &T, SIPL::int3 size) {
 
 		        if((theta < thetaLimit && r.length() < maxD-0.5f)) {
 		        	//std::cout << SQR_MAG(n) << std::endl;
+		            /*
 		        	if(T.radius[POS(pos)]<= 3) {
 		            //if(TS.TDF[POS(n)] > TS.TDF[POS(pos)]) {
 		            if(SQR_MAG_SMALL(n) < SQR_MAG_SMALL(pos)) {
@@ -77,12 +78,13 @@ std::vector<CrossSection *> createGraph(TubeSegmentation &T, SIPL::int3 size) {
 		                break;
 		            }
 		            } else {
+		            */
 		            if(SQR_MAG(n) < SQR_MAG(pos)) {
 		            //if(TS.TDF[POS(n)] > TS.TDF[POS(pos)]) {
 		                invalid = true;
 		                break;
 		            }
-		            }
+		            //}
 		        }
 		    }}}
 		    if(!invalid) {
@@ -338,9 +340,7 @@ std::vector<Segment *> createSegments(OpenCL &ocl, TubeSegmentation &TS, std::ve
 	int totalSize = crossSections.size();
 	std::cout << "number of cross sections is " << totalSize << std::endl;
 
-
     // For each label
-
 	for(int i = 0; i < labels.size(); i++) {
 		std::vector<CrossSection *> list = labels[i];
         // Do floyd warshall on all pairs
@@ -353,68 +353,65 @@ std::vector<Segment *> createSegments(OpenCL &ocl, TubeSegmentation &TS, std::ve
             U->index = u;
         }
         #define DPOS(U, V) V+U*totalSize
-	// For each cross section U
-	for(int u = 0; u < totalSize; u++) {
-		CrossSection * U = list[u];
-		// For each cross section V
-		for(int v = 0; v < totalSize; v++) {
-			dist[DPOS(u,v)] = 99999999;
-			pred[DPOS(u,v)] = -1;
-		}
-		dist[DPOS(U->index,U->index)] = 0;
-		for(int j = 0; j < U->neighbors.size(); j++) {
-			CrossSection * V = U->neighbors[j];
-			// TODO calculate more advanced weight
-			dist[DPOS(U->index,V->index)] = ceil(U->pos.distance(V->pos)) - calculateBenefit(U, V, TS, size); //(1-V->TDF);
-			pred[DPOS(U->index,V->index)] = U->index;
-		}
-	}
-	for(int t = 0; t < totalSize; t++) {
-		//CrossSection * T = crossSections[t];
-		//std::cout << "processing t=" << t << std::endl;
-		// For each cross section U
-		for(int u = 0; u < totalSize; u++) {
-			//CrossSection * U = crossSections[u];
-			// For each cross section V
-			for(int v = 0; v < totalSize; v++) {
-				//CrossSection * V = crossSections[v];
-				float newLength = dist[DPOS(u, t)] + dist[DPOS(t,v)];
-				if(newLength < dist[DPOS(u,v)]) {
-					dist[DPOS(u,v)] = newLength;
-					pred[DPOS(u,v)] = pred[DPOS(t,v)];
-				}
-			}
-		}
-}
+        // For each cross section U
+        for(int u = 0; u < totalSize; u++) {
+            CrossSection * U = list[u];
+            // For each cross section V
+            for(int v = 0; v < totalSize; v++) {
+                dist[DPOS(u,v)] = 99999999;
+                pred[DPOS(u,v)] = -1;
+            }
+            dist[DPOS(U->index,U->index)] = 0;
+            for(int j = 0; j < U->neighbors.size(); j++) {
+                CrossSection * V = U->neighbors[j];
+                // TODO calculate more advanced weight
+                dist[DPOS(U->index,V->index)] = ceil(U->pos.distance(V->pos)) - calculateBenefit(U, V, TS, size); //(1-V->TDF);
+                pred[DPOS(U->index,V->index)] = U->index;
+            }
+        }
+        for(int t = 0; t < totalSize; t++) {
+            //CrossSection * T = crossSections[t];
+            //std::cout << "processing t=" << t << std::endl;
+            // For each cross section U
+            for(int u = 0; u < totalSize; u++) {
+                //CrossSection * U = crossSections[u];
+                // For each cross section V
+                for(int v = 0; v < totalSize; v++) {
+                    //CrossSection * V = crossSections[v];
+                    float newLength = dist[DPOS(u, t)] + dist[DPOS(t,v)];
+                    if(newLength < dist[DPOS(u,v)]) {
+                        dist[DPOS(u,v)] = newLength;
+                        pred[DPOS(u,v)] = pred[DPOS(t,v)];
+                    }
+                }
+            }
+        }
 
-
-
-	for(int s = 0; s < list.size(); s++) { // Source
-		CrossSection * S = list[s];
-		for(int t = 0; t < list.size(); t++) { // Target
-			CrossSection * T = list[t];
-			if(S->label == T->label && S->index != T->index) {
-				Segment * segment = new Segment;
-				// add all cross sections in segment
-				float benefit = 0.0f;
-				segment->sections.push_back(T);
-				int current = T->index;
-				while(current != S->index) {
-					CrossSection * C = list[current];
-					segment->sections.push_back(C);
-					current = pred[DPOS(S->index,current)];// get predecessor
-					benefit += calculateBenefit(C, list[current], TS, size);
-				}
-				segment->sections.push_back(list[current]);
-				segment->benefit = benefit;
-				segments.push_back(segment);
-			}
-		}
-	}
+        for(int s = 0; s < list.size(); s++) { // Source
+            CrossSection * S = list[s];
+            for(int t = 0; t < list.size(); t++) { // Target
+                CrossSection * T = list[t];
+                if(S->label == T->label && S->index != T->index) {
+                    Segment * segment = new Segment;
+                    // add all cross sections in segment
+                    float benefit = 0.0f;
+                    segment->sections.push_back(T);
+                    int current = T->index;
+                    while(current != S->index) {
+                        CrossSection * C = list[current];
+                        segment->sections.push_back(C);
+                        current = pred[DPOS(S->index,current)];// get predecessor
+                        benefit += calculateBenefit(C, list[current], TS, size);
+                    }
+                    segment->sections.push_back(list[current]);
+                    segment->benefit = benefit;
+                    segments.push_back(segment);
+                }
+            }
+        }
 
         delete[] dist;
         delete[] pred;
-
     }
 	std::cout << "finished performing floyd warshall" << std::endl;
 
