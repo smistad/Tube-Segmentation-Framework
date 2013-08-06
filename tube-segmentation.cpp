@@ -1,3 +1,7 @@
+//#define USE_SIPL_VISUALIZATION
+#ifdef USE_SIPL_VISUALIZATION
+#include "SIPL/Core.hpp"
+#endif
 #include "tube-segmentation.hpp"
 #include "gradientVectorFlow.hpp"
 #include "tubeDetectionFilters.hpp"
@@ -8,10 +12,6 @@
 #include "inputOutput.hpp"
 #include "segmentation.hpp"
 #include "SIPL/Types.hpp"
-//#define USE_SIPL_VISUALIZATION
-#ifdef USE_SIPL_VISUALIZATION
-#include "SIPL/Core.hpp"
-#endif
 #include <boost/iostreams/device/mapped_file.hpp>
 #include <queue>
 #include <stack>
