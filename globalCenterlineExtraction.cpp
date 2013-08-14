@@ -443,11 +443,16 @@ std::vector<Segment *> createSegments(OpenCL &ocl, TubeSegmentation &TS, std::ve
 	return filteredSegments;
 }
 
-int selectRoot(std::vector<Segment *> segments) {
-	int root = 0;
-	for(int i = 1; i < segments.size(); i++) {
-		if(segments[i]->benefit > segments[root]->benefit)
-			root = i;
+int selectRoot(std::vector<Segment *> segments, float minBenefit) {
+	int root = -1;
+	for(int i = 0; i < segments.size(); i++) {
+	    if(segments[i]->benefit > minBenefit) {
+	        if(root == -1) {
+	            root = i;
+	        } else if(segments[i]->benefit > segments[root]->benefit) {
+                root = i;
+	        }
+	    }
 	}
 	return root;
 }
@@ -544,7 +549,7 @@ std::vector<Segment *> minimumSpanningTree(Segment * root, int3 size) {
 std::vector<Segment *> findOptimalSubtree(std::vector<Segment *> segments, int * depthFirstOrdering, int Ns) {
 
 	float * score = new float[Ns]();
-	float r = 2.0;
+	float r = 3.0;
 
 	// Stage 1 bottom up
 	for(int j = 0; j < Ns; j++) {
@@ -651,7 +656,7 @@ void createConnections(TubeSegmentation &TS, std::vector<Segment *> segments, in
 				CrossSection * c_k = s_k->sections[i];
 				for(int j = 0; j < s_l->sections.size(); j++){
 					CrossSection * c_l = s_l->sections[j];
-					if(c_k->pos.distance(c_l->pos) > 20)
+					if(c_k->pos.distance(c_l->pos) > 25)
 						continue;
 
 					float3 c(c_k->pos.x-c_l->pos.x, c_k->pos.y-c_l->pos.y,c_k->pos.z-c_l->pos.z);

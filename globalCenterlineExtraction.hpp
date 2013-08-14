@@ -38,7 +38,7 @@ public:
 std::vector<CrossSection *> createGraph(TubeSegmentation &T, SIPL::int3 size);
 
 std::vector<Segment *> createSegments(OpenCL &ocl, TubeSegmentation &TS, std::vector<CrossSection *> &crossSections, SIPL::int3 size);
-int selectRoot(std::vector<Segment *> segments);
+int selectRoot(std::vector<Segment *> segments, float minBenefit);
 int * createDepthFirstOrdering(std::vector<Segment *> segments, int root, int &Ns);
 
 std::vector<Segment *> minimumSpanningTree(Segment * root, int3 size);

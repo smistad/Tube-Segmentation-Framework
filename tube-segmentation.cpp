@@ -1,4 +1,4 @@
-//#define USE_SIPL_VISUALIZATION
+#define USE_SIPL_VISUALIZATION
 #ifdef USE_SIPL_VISUALIZATION
 #include "SIPL/Core.hpp"
 #endif
@@ -747,12 +747,14 @@ if(getParamBool(parameters, "timing")) {
 			}
 		}
 	}
-	//vectorField = runFMGGVF(ocl,initVectorField,parameters,size);
+	vectorField = runFMGGVF(ocl,initVectorField,parameters,size);
+	/*
 	if(useSlowGVF) {
 		vectorField = runGVF(ocl, initVectorField, parameters, size, true);
 	} else {
 		vectorField = runGVF(ocl, initVectorField, parameters, size, false);
 	}
+	*/
 
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
@@ -1139,44 +1141,53 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D * dataset, SIPL::int3 * s
     visualizeSegments(segments, *size);
 	#endif
 
+    char * centerline = new char[totalSize]();
+    std::vector<int3> vertices;
+    std::vector<SIPL::int2> edges;
     // Do minimum spanning tree on segments, where each segment is a node and the connetions are edges
     // must also select a root segment
+    while(true) {
+    int root = selectRoot(segments, 50.0f);
+    std::cout << "root is " << root << std::endl;
+    if(root == -1)
+        break;
+    std::cout << "benefit of root is " << segments[root]->benefit << std::endl;
     std::cout << "running minimum spanning tree" << std::endl;
-    int root = selectRoot(segments);
-    segments = minimumSpanningTree(segments[root], *size);
+    std::vector<Segment *> mstSegments = minimumSpanningTree(segments[root], *size);
     std::cout << "finished running minimum spanning tree" << std::endl;
-    std::cout << "number of segments is " << segments.size() << std::endl;
+    std::cout << "number of segments is " << mstSegments.size() << std::endl;
 
     // Visualize
 	#ifdef USE_SIPL_VISUALIZATION
-    visualizeSegments(segments, *size);
+    visualizeSegments(mstSegments, *size);
 	#endif
 
     // Display which connections have been retained and which are removed
 
     // create depth first ordering
-    std::cout << "creating depth first ordering..." << std::endl;
-    int Ns;
-    int * depthFirstOrderingOfSegments = createDepthFirstOrdering(segments, root, Ns);
-    std::cout << "finished creating depth first ordering" << std::endl;
-    std::cout << "Ns is " << Ns << std::endl;
-    std::cout << "root is " << root << std::endl;
+    std::vector<Segment *> finalSegments;
+    if(mstSegments.size() > 1) {
+        std::cout << "creating depth first ordering..." << std::endl;
+        int Ns;
+        int * depthFirstOrderingOfSegments = createDepthFirstOrdering(mstSegments, root, Ns);
+        std::cout << "finished creating depth first ordering" << std::endl;
+        std::cout << "Ns is " << Ns << std::endl;
 
-	// have to take into account that not all segments are part of the final tree, for instance, return Ns
-    // Do the dynamic programming algorithm for locating the best subtree
-    std::cout << "finding optimal subtree..." << std::endl;
-    std::vector<Segment *> finalSegments = findOptimalSubtree(segments, depthFirstOrderingOfSegments, Ns);
-    std::cout << "finished." << std::endl;
-    std::cout << "number of segments is " << finalSegments.size() << std::endl;
+        // have to take into account that not all segments are part of the final tree, for instance, return Ns
+        // Do the dynamic programming algorithm for locating the best subtree
+        std::cout << "finding optimal subtree..." << std::endl;
+        finalSegments = findOptimalSubtree(mstSegments, depthFirstOrderingOfSegments, Ns);
+        std::cout << "finished." << std::endl;
+        std::cout << "number of segments is " << finalSegments.size() << std::endl;
+    } else {
+       finalSegments = mstSegments;
+    }
 
     // TODO Display final segments and the connections
 	#ifdef USE_SIPL_VISUALIZATION
     visualizeSegments(finalSegments, *size);
 	#endif
 
-    char * centerline = new char[totalSize]();
-    std::vector<int3> vertices;
-    std::vector<SIPL::int2> edges;
     int counter = 0;
     for(int j = 0; j < finalSegments.size(); j++) {
     	Segment * s = finalSegments[j];
@@ -1222,6 +1233,26 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D * dataset, SIPL::int3 * s
 
 		}
     }
+
+    // Remove finalSegments from segments
+    std::cout << "removing " << finalSegments.size() << " segments.." << std::endl;
+    std::cout << "from segments of size " << segments.size() << std::endl;
+    for(int i = 0; i < finalSegments.size(); i++) {
+        for(int j = 0; j < segments.size(); j++) {
+            if(finalSegments[i] == segments[j]) {
+                segments.erase(segments.begin()+j);
+            }
+        }
+    }
+    std::cout << "finished removing segments." << std::endl;
+    std::cout << "size after is: " << segments.size() << std::endl;
+
+    } // end while true
+
+
+
+
+
     output->setCenterlineVoxels(centerline);
     if(getParamStr(parameters, "centerline-vtk-file") != "off") {
     	writeToVtkFile(parameters, vertices, edges);

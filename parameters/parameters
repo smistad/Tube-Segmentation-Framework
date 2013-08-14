@@ -20,7 +20,7 @@ min-mean-tdf num 0.5 0.0 1.0 0.01 "Minimum mean TDF response along centerline" c
 min-tree-length num 5 0 1000 5 "Minimum centerline tree length" centerline-general
 timing bool false "Timing of application" advanced
 cube-size num 4 0 10 1 "Grid size of (parallel centerline extraction)" centerline-gpu
-max-distance num 25.0 0.0 50.0 1.0 "Max distance for connecting two centerpoints (parallel centerline extraction)" centerline-gpu
+max-distance num 25.0 0.0 100.0 1.0 "Max distance for connecting two centerpoints (parallel centerline extraction)" centerline-gpu
 centerpoints-only bool false "Extract centerpoints only (parallel centerline extraction)" centerline-gpu
 tdf-only bool false "Generate TDF response only" tube-detection-filter
 no-segmentation bool false "Don't perform segmentation" general
