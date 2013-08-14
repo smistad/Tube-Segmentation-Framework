@@ -341,6 +341,7 @@ std::vector<Segment *> createSegments(OpenCL &ocl, TubeSegmentation &TS, std::ve
 	std::cout << "number of cross sections is " << totalSize << std::endl;
 
     // For each label
+#pragma omp parallel for
 	for(int i = 0; i < labels.size(); i++) {
 		std::vector<CrossSection *> list = labels[i];
         // Do floyd warshall on all pairs
@@ -395,6 +396,7 @@ std::vector<Segment *> createSegments(OpenCL &ocl, TubeSegmentation &TS, std::ve
                     Segment * segment = new Segment;
                     // add all cross sections in segment
                     float benefit = 0.0f;
+                    float avgRadius = 0.0f;
                     segment->sections.push_back(T);
                     int current = T->index;
                     while(current != S->index) {
@@ -402,9 +404,12 @@ std::vector<Segment *> createSegments(OpenCL &ocl, TubeSegmentation &TS, std::ve
                         segment->sections.push_back(C);
                         current = pred[DPOS(S->index,current)];// get predecessor
                         benefit += calculateBenefit(C, list[current], TS, size);
+                        avgRadius += TS.radius[POS(C->pos)];
                     }
                     segment->sections.push_back(list[current]);
                     segment->benefit = benefit;
+                    segment->avgRadius = avgRadius / segment->sections.size();
+#pragma omp critical
                     segments.push_back(segment);
                 }
             }
@@ -656,7 +661,7 @@ void createConnections(TubeSegmentation &TS, std::vector<Segment *> segments, in
 				CrossSection * c_k = s_k->sections[i];
 				for(int j = 0; j < s_l->sections.size(); j++){
 					CrossSection * c_l = s_l->sections[j];
-					if(c_k->pos.distance(c_l->pos) > 25)
+					if(c_k->pos.distance(c_l->pos) > 15)
 						continue;
 
 					float3 c(c_k->pos.x-c_l->pos.x, c_k->pos.y-c_l->pos.y,c_k->pos.z-c_l->pos.z);
@@ -669,12 +674,13 @@ void createConnections(TubeSegmentation &TS, std::vector<Segment *> segments, in
 					/*
                     float rk = TS.radius[POS(c_k->pos)];
                     float rl = TS.radius[POS(c_l->pos)];
-
-                    if(rk > 2 || rl > 2) {
+                    */
+					float rk = s_k->avgRadius;
+					float rl = s_l->avgRadius;
+                    if(rk > 1 || rl > 1) {
                         if(std::max(rk,rl) / std::min(rk,rl) >= 2)
                             continue;
                     }
-                    */
 
 					float cost = calculateConnectionCost(c_k, c_l, TS, size);
 					if(cost < bestCost) {

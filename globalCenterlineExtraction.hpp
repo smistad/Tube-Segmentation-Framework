@@ -23,6 +23,7 @@ public:
 	std::vector<Connection *> connections;
 	float benefit;
 	float cost;
+	float avgRadius;
 	int index;
 };
 

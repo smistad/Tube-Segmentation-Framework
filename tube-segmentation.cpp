@@ -1,4 +1,4 @@
-#define USE_SIPL_VISUALIZATION
+//#define USE_SIPL_VISUALIZATION
 #ifdef USE_SIPL_VISUALIZATION
 #include "SIPL/Core.hpp"
 #endif
@@ -747,14 +747,12 @@ if(getParamBool(parameters, "timing")) {
 			}
 		}
 	}
-	vectorField = runFMGGVF(ocl,initVectorField,parameters,size);
-	/*
+	//vectorField = runFMGGVF(ocl,initVectorField,parameters,size);
 	if(useSlowGVF) {
 		vectorField = runGVF(ocl, initVectorField, parameters, size, true);
 	} else {
 		vectorField = runGVF(ocl, initVectorField, parameters, size, false);
 	}
-	*/
 
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
@@ -1147,7 +1145,7 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D * dataset, SIPL::int3 * s
     // Do minimum spanning tree on segments, where each segment is a node and the connetions are edges
     // must also select a root segment
     while(true) {
-    int root = selectRoot(segments, 50.0f);
+    int root = selectRoot(segments, 20.0f);
     std::cout << "root is " << root << std::endl;
     if(root == -1)
         break;
@@ -1536,7 +1534,7 @@ Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &par
         ocl.queue.enqueueWriteImage(dataset, CL_FALSE, offset, region2, 0, 0, data);
         getLimits<unsigned short>(parameters, data, totalSize, &minimum, &maximum);
 
-        if(getParamStr(parameters, "parameters") == "Lung-Airways-CT") {
+        if(getParamStr(parameters, "parameters") == "Lung-Airways-CT" || getParamStr(parameters, "parameters") == "Lung-Vessels-CT") {
         	// If parameter preset is airway and the volume loaded is unsigned;
         	// Change min and max to be unsigned as well, and change Threshold in cropping
 			char * str = new char[255];
