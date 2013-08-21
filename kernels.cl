@@ -1074,9 +1074,16 @@ __kernel void circleFittingTDF(
         __global float * Radius,
         __private float rMin,
         __private float rMax,
-        __private float rStep
+        __private float rStep,
+        __private bool useMask,
+        __read_only image3d_t mask
     ) {
     const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
+    if(useMask) {
+        if(read_imagei(mask, sampler, pos).x == 0) {
+            return;
+        }
+    }
 
     // Find Hessian Matrix
     float3 Fx, Fy, Fz;

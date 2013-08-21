@@ -12,4 +12,4 @@ void runSplineTDF(
         float radiusMax,
         float radiusStep
         );
-void runCircleFittingTDF(OpenCL &ocl, SIPL::int3 &size, Image3D * vectorField, Buffer * TDF, Buffer * radius, float radiusMin, float radiusMax, float radiusStep);
+void runCircleFittingTDF(OpenCL &ocl, SIPL::int3 &size, Image3D * vectorField, Buffer * TDF, Buffer * radius, float radiusMin, float radiusMax, float radiusStep,bool useMask,char * mask);

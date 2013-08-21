@@ -111,12 +111,12 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
     }
     SIPL::int3 * size = new SIPL::int3();
     TSFOutput * output = new TSFOutput(ocl, size, getParamBool(parameters, "16bit-vectors"));
+    char * mask; // this pointer will hold the mask if one is supplied
     try {
         // Read dataset and transfer to device
         cl::Image3D * dataset = new cl::Image3D;
         ocl->GC.addMemObject(dataset);
 
-        char * mask; // this pointer will hold the mask if one is supplied
         *dataset = readDatasetAndTransfer(*ocl, filename, parameters, size, output, mask);
 
         // Calculate maximum memory usage
@@ -131,11 +131,11 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
 
         // Run specified method on dataset
         if(getParamStr(parameters, "centerline-method") == "ridge") {
-            runCircleFittingAndRidgeTraversal(ocl, dataset, size, parameters, output);
+            runCircleFittingAndRidgeTraversal(ocl, dataset, size, parameters, output, mask);
         } else if(getParamStr(parameters, "centerline-method") == "gpu") {
-            runCircleFittingAndNewCenterlineAlg(ocl, dataset, size, parameters, output);
+            runCircleFittingAndNewCenterlineAlg(ocl, dataset, size, parameters, output, mask);
         } else if(getParamStr(parameters, "centerline-method") == "test") {
-            runCircleFittingAndTest(ocl, dataset, size, parameters, output);
+            runCircleFittingAndTest(ocl, dataset, size, parameters, output, mask);
         }
     } catch(cl::Error e) {
     	std::string str = "OpenCL error: " + std::string(getCLErrorString(e.err()));
@@ -155,6 +155,7 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
 		STOP_TIMER("total")
     }
     ocl->GC.deleteAllMemObjects();
+    delete[] mask;
     return output;
 }
 
@@ -205,7 +206,7 @@ float * createBlurMask(float sigma, int * maskSizePointer) {
 
     return mask;
 }
-void runCircleFittingMethod(OpenCL &ocl, Image3D * dataset, SIPL::int3 size, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radiusImage) {
+void runCircleFittingMethod(OpenCL &ocl, Image3D * dataset, SIPL::int3 size, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radiusImage, char * mask) {
     // Set up parameters
     const float radiusMin = getParam(parameters, "radius-min");
     const float radiusMax = getParam(parameters, "radius-max");
@@ -459,7 +460,7 @@ if(getParamBool(parameters, "timing")) {
     ocl.GC.addMemObject(TDFsmallBuffer);
     Buffer * radiusSmallBuffer = new Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
     ocl.GC.addMemObject(radiusSmallBuffer);
-    runCircleFittingTDF(ocl,size,vectorFieldSmall,TDFsmallBuffer,radiusSmallBuffer,radiusMin,3.0f,0.5f);
+    runCircleFittingTDF(ocl,size,vectorFieldSmall,TDFsmallBuffer,radiusSmallBuffer,radiusMin,3.0f,0.5f, getParamStr(parameters, "mask") != "none", mask);
 
 
     if(radiusMax < 2.5) {
@@ -779,7 +780,7 @@ if(getParamBool(parameters, "timing")) {
     if(getParamBool(parameters,"use-spline-tdf")) {
         runSplineTDF(ocl,size,&vectorField,&TDFlarge,&radiusLarge,std::max(1.5f, radiusMin),radiusMax,radiusStep);
     } else {
-        runCircleFittingTDF(ocl,size,&vectorField,&TDFlarge,&radiusLarge,std::max(2.5f, radiusMin),radiusMax,radiusStep);
+        runCircleFittingTDF(ocl,size,&vectorField,&TDFlarge,&radiusLarge,std::max(2.5f, radiusMin),radiusMax,radiusStep,getParamStr(parameters, "mask") != "none", mask);
     }
 
 if(getParamBool(parameters, "timing")) {
@@ -933,7 +934,7 @@ radius->show(40, 80);
 
 
 
-void runCircleFittingAndNewCenterlineAlg(OpenCL * ocl, cl::Image3D * dataset, SIPL::int3 * size, paramList &parameters, TSFOutput * output) {
+void runCircleFittingAndNewCenterlineAlg(OpenCL * ocl, cl::Image3D * dataset, SIPL::int3 * size, paramList &parameters, TSFOutput * output, char * mask) {
     INIT_TIMER
     Image3D vectorField, radius;
     Image3D * TDF = new Image3D;
@@ -949,7 +950,7 @@ void runCircleFittingAndNewCenterlineAlg(OpenCL * ocl, cl::Image3D * dataset, SI
     region[1] = size->y;
     region[2] = size->z;
 
-    runCircleFittingMethod(*ocl, dataset, *size, parameters, vectorField, *TDF, radius);
+    runCircleFittingMethod(*ocl, dataset, *size, parameters, vectorField, *TDF, radius, mask);
 
 
     output->setTDF(TDF);
@@ -1015,7 +1016,7 @@ SIPL::Volume<float3> * visualizeSegments(std::vector<Segment *> segments, int3 s
 }
 #endif
 
-void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D * dataset, SIPL::int3 * size, paramList &parameters, TSFOutput * output) {
+void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D * dataset, SIPL::int3 * size, paramList &parameters, TSFOutput * output, char * mask) {
     INIT_TIMER
     Image3D vectorField, radius, vectorFieldSmall;
     Image3D * TDF = new Image3D;
@@ -1031,7 +1032,7 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D * dataset, SIPL::int3 * s
     region[1] = size->y;
     region[2] = size->z;
 
-    runCircleFittingMethod(*ocl, dataset, *size, parameters, vectorField, *TDF, radius);
+    runCircleFittingMethod(*ocl, dataset, *size, parameters, vectorField, *TDF, radius,mask);
 
 
     // Transfer from device to host
@@ -1252,7 +1253,7 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D * dataset, SIPL::int3 * s
 }
 
 
-void runCircleFittingAndRidgeTraversal(OpenCL * ocl, Image3D * dataset, SIPL::int3 * size, paramList &parameters, TSFOutput * output) {
+void runCircleFittingAndRidgeTraversal(OpenCL * ocl, Image3D * dataset, SIPL::int3 * size, paramList &parameters, TSFOutput * output, char * mask) {
     
     INIT_TIMER
     cl::Event startEvent, endEvent;
@@ -1260,7 +1261,7 @@ void runCircleFittingAndRidgeTraversal(OpenCL * ocl, Image3D * dataset, SIPL::in
     Image3D vectorField, radius,vectorFieldSmall;
     Image3D * TDF = new Image3D;
     TubeSegmentation TS;
-    runCircleFittingMethod(*ocl, dataset, *size, parameters, vectorField, *TDF, radius);
+    runCircleFittingMethod(*ocl, dataset, *size, parameters, vectorField, *TDF, radius, mask);
     output->setTDF(TDF);
     const int totalSize = size->x*size->y*size->z;
 	const bool no3Dwrite = !getParamBool(parameters, "3d_write");
