@@ -156,8 +156,8 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
 		STOP_TIMER("total")
     }
     ocl->GC.deleteAllMemObjects();
-    if(getParamStr(parameters, "mask") != "none")
-        delete[] output->mask;
+    //if(getParamStr(parameters, "mask") != "none")
+    //    delete[] output->mask;
     return output;
 }
 
@@ -1657,11 +1657,10 @@ Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &par
         // crop mask
         char * tmpMask2 = new char[SIZE_X*SIZE_Y*SIZE_Z];
         int i = 0;
-        for(int z = z1; z < SIZE_Z; z++) {
-        for(int y = y1; y < SIZE_Y; y++) {
-        for(int x = x1; x < SIZE_X; x++) {
-            tmpMask2[i] = tempMask[x+y*size->x+z*size->x*size->y];
-            std::cout << (int)tmpMask2[i] << std::endl;
+        for(int z = z1; z < z2; z++) {
+        for(int y = y1; y < y2; y++) {
+        for(int x = x1; x < x2; x++) {
+            tmpMask2[x-x1+(y-y1)*SIZE_X+(z-z1)*SIZE_X*SIZE_Y] = tempMask[x+y*size->x+z*size->x*size->y];
             i++;
         }}}
         std::cout << "Finished cropping mask" << std::endl;
