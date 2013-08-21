@@ -111,13 +111,14 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
     }
     SIPL::int3 * size = new SIPL::int3();
     TSFOutput * output = new TSFOutput(ocl, size, getParamBool(parameters, "16bit-vectors"));
-    char * mask; // this pointer will hold the mask if one is supplied
     try {
         // Read dataset and transfer to device
         cl::Image3D * dataset = new cl::Image3D;
         ocl->GC.addMemObject(dataset);
 
-        *dataset = readDatasetAndTransfer(*ocl, filename, parameters, size, output, mask);
+        char * dmy;
+        *dataset = readDatasetAndTransfer(*ocl, filename, parameters, size, output, dmy);
+        char * mask = output->mask;
 
         // Calculate maximum memory usage
         double totalSize = size->x*size->y*size->z;
@@ -155,7 +156,8 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
 		STOP_TIMER("total")
     }
     ocl->GC.deleteAllMemObjects();
-    delete[] mask;
+    if(getParamStr(parameters, "mask") != "none")
+        delete[] output->mask;
     return output;
 }
 
@@ -1565,12 +1567,13 @@ Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &par
     	std::string str = "unsupported data type " + typeName;
     	throw SIPL::SIPLException(str.c_str(), __LINE__, __FILE__);
     }
+    std::cout << "Dataset of size " << size->x << " " << size->y << " " << size->z << " loaded" << std::endl;
 
     SIPL::int3 shiftVector;
     if(getParamStr(parameters, "mask") != "none") {
         boost::iostreams::mapped_file_source * maskFile = new boost::iostreams::mapped_file_source[1];
         maskFile->open(getParamStr(parameters, "mask"), size->x*size->y*size->z*sizeof(char));
-        mask = (char *)maskFile->data();
+        char * tempMask = (char *)maskFile->data();
         std::cout << "Mask loaded. Finding cropping borders." << std::endl;
         // TODO move this to GPU
 
@@ -1583,7 +1586,7 @@ Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &par
         for(int z = 0; z < size->z; z++) {
         for(int y = 0; y < size->y; y++) {
         for(int x = 0; x < size->x; x++) {
-            if(mask[x+y*size->x+z*size->x*size->y] == 1) {
+            if(tempMask[x+y*size->x+z*size->x*size->y] == 1) {
                 if(x < x1)
                     x1 = x;
                 if(x > x2)
@@ -1598,6 +1601,8 @@ Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &par
                     z2 = z;
             }
         }}}
+        std::cout << "cropping borders found" << std::endl;
+
 
         int SIZE_X = x2-x1;
         int SIZE_Y = y2-y1;
@@ -1648,10 +1653,23 @@ Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &par
 			while(SIZE_Z % 4 != 0)
 				SIZE_Z--;
 	    }
+
+        // crop mask
+        char * tmpMask2 = new char[SIZE_X*SIZE_Y*SIZE_Z];
+        int i = 0;
+        for(int z = z1; z < SIZE_Z; z++) {
+        for(int y = y1; y < SIZE_Y; y++) {
+        for(int x = x1; x < SIZE_X; x++) {
+            tmpMask2[i] = tempMask[x+y*size->x+z*size->x*size->y];
+            std::cout << (int)tmpMask2[i] << std::endl;
+            i++;
+        }}}
+        std::cout << "Finished cropping mask" << std::endl;
+        maskFile->close();
+        output->mask = tmpMask2;
         size->x = SIZE_X;
         size->y = SIZE_Y;
         size->z = SIZE_Z;
-
 
         std::cout << "Dataset cropped to " << SIZE_X << ", " << SIZE_Y << ", " << SIZE_Z << std::endl;
         Image3D imageHUvolume = Image3D(ocl.context, CL_MEM_READ_ONLY, imageFormat, SIZE_X, SIZE_Y, SIZE_Z);
@@ -1673,11 +1691,10 @@ Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &par
         shiftVector.z = z1;
         ocl.queue.enqueueCopyImage(dataset, imageHUvolume, srcOffset, offset, region);
         dataset = imageHUvolume;
-        setParameter(parameters, "cropping", "none");
+        setParameter(parameters, "cropping", "no");
     }
 
 
-    std::cout << "Dataset of size " << size->x << " " << size->y << " " << size->z << " loaded" << std::endl;
     if(getParamBool(parameters, "timing")) {
         ocl.queue.enqueueMarker(&endEvent);
         ocl.queue.finish();

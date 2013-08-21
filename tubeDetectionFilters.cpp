@@ -59,6 +59,9 @@ void runCircleFittingTDF(OpenCL &ocl, SIPL::int3 &size, Image3D * vectorField, B
     Image3D clMask;
     if(useMask) {
         // Transfer mask to GPU
+        std::cout << "using mask" << std::endl;
+        std::cout << size.x << " " << size.y << " " << size.z << std::endl;
+        std::cout << (int)mask[0] << std::endl;
         clMask = Image3D(
                 ocl.context,
                 CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,

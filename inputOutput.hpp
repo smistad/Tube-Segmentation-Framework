@@ -29,7 +29,7 @@ public:
 	void setShiftVector(SIPL::int3 shiftVector);
 	SIPL::float3 getSpacing() const;
 	void setSpacing(SIPL::float3 spacing);
-
+	char * mask;
 private:
 	cl::Image3D* oclCenterlineVoxels;
 	cl::Image3D* oclSegmentation;
