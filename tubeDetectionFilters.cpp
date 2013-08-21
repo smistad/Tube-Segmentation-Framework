@@ -55,6 +55,7 @@ void runSplineTDF(
 }
 
 void runCircleFittingTDF(OpenCL &ocl, SIPL::int3 &size, Image3D * vectorField, Buffer * TDF, Buffer * radius, float radiusMin, float radiusMax, float radiusStep, bool useMask, char * mask) {
+    Kernel circleFittingTDFKernel(ocl.program, "circleFittingTDF");
     Image3D clMask;
     if(useMask) {
         // Transfer mask to GPU
@@ -66,16 +67,19 @@ void runCircleFittingTDF(OpenCL &ocl, SIPL::int3 &size, Image3D * vectorField, B
                 0, 0,
                 mask
         );
+        circleFittingTDFKernel.setArg(7, clMask);
+    } else {
+        // Setting dummy image if mask is not to be used. If not it will give error
+        circleFittingTDFKernel.setArg(7, *vectorField);
     }
-    Kernel circleFittingTDFKernel(ocl.program, "circleFittingTDF");
     circleFittingTDFKernel.setArg(0, *vectorField);
     circleFittingTDFKernel.setArg(1, *TDF);
     circleFittingTDFKernel.setArg(2, *radius);
     circleFittingTDFKernel.setArg(3, radiusMin);
     circleFittingTDFKernel.setArg(4, radiusMax);
     circleFittingTDFKernel.setArg(5, radiusStep);
-    circleFittingTDFKernel.setArg(6, useMask);
-    circleFittingTDFKernel.setArg(7, clMask);
+    char useMaskValue = useMask ? 1 : 0;
+    circleFittingTDFKernel.setArg(6, useMaskValue);
 
     ocl.queue.enqueueNDRangeKernel(
             circleFittingTDFKernel,

@@ -1075,12 +1075,14 @@ __kernel void circleFittingTDF(
         __private float rMin,
         __private float rMax,
         __private float rStep,
-        __private bool useMask,
+        __private char useMask,
         __read_only image3d_t mask
     ) {
     const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
-    if(useMask) {
+    if(useMask == 1) {
         if(read_imagei(mask, sampler, pos).x == 0) {
+            T[LPOS(pos)] = FLOAT_TO_UNORM16(0.0f);
+            Radius[LPOS(pos)] = 0.0f;
             return;
         }
     }

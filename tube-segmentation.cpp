@@ -1673,6 +1673,7 @@ Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &par
         shiftVector.z = z1;
         ocl.queue.enqueueCopyImage(dataset, imageHUvolume, srcOffset, offset, region);
         dataset = imageHUvolume;
+        setParameter(parameters, "cropping", "none");
     }
 
 
