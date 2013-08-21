@@ -115,7 +115,9 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
         // Read dataset and transfer to device
         cl::Image3D * dataset = new cl::Image3D;
         ocl->GC.addMemObject(dataset);
-        *dataset = readDatasetAndTransfer(*ocl, filename, parameters, size, output);
+
+        char * mask; // this pointer will hold the mask if one is supplied
+        *dataset = readDatasetAndTransfer(*ocl, filename, parameters, size, output, mask);
 
         // Calculate maximum memory usage
         double totalSize = size->x*size->y*size->z;
@@ -948,6 +950,8 @@ void runCircleFittingAndNewCenterlineAlg(OpenCL * ocl, cl::Image3D * dataset, SI
     region[2] = size->z;
 
     runCircleFittingMethod(*ocl, dataset, *size, parameters, vectorField, *TDF, radius);
+
+
     output->setTDF(TDF);
     if(getParamBool(parameters, "tdf-only"))
     	return;
@@ -1387,7 +1391,7 @@ void getLimits(paramList parameters, void * data, const int totalSize, float * m
 }
 
 boost::iostreams::mapped_file_source * file;
-Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &parameters, SIPL::int3 * size, TSFOutput * output) {
+Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &parameters, SIPL::int3 * size, TSFOutput * output, char * mask) {
     cl_ulong start, end;
     Event startEvent, endEvent;
     if(getParamBool(parameters, "timing")) {
@@ -1561,6 +1565,115 @@ Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &par
     	throw SIPL::SIPLException(str.c_str(), __LINE__, __FILE__);
     }
 
+    SIPL::int3 shiftVector;
+    if(getParamStr(parameters, "mask") != "none") {
+        boost::iostreams::mapped_file_source * maskFile = new boost::iostreams::mapped_file_source[1];
+        maskFile->open(getParamStr(parameters, "mask"), size->x*size->y*size->z*sizeof(char));
+        mask = (char *)maskFile->data();
+        std::cout << "Mask loaded. Finding cropping borders." << std::endl;
+        // TODO move this to GPU
+
+        int x1 = size->x;
+        int x2 = 0;
+        int y1 = size->y;
+        int y2 = 0;
+        int z1 = size->z;
+        int z2 = 0;
+        for(int z = 0; z < size->z; z++) {
+        for(int y = 0; y < size->y; y++) {
+        for(int x = 0; x < size->x; x++) {
+            if(mask[x+y*size->x+z*size->x*size->y] == 1) {
+                if(x < x1)
+                    x1 = x;
+                if(x > x2)
+                    x2 = x;
+                if(y < y1)
+                    y1 = y;
+                if(y > y2)
+                    y2 = y;
+                if(z < z1)
+                    z1 = z;
+                if(z > z2)
+                    z2 = z;
+            }
+        }}}
+
+        int SIZE_X = x2-x1;
+        int SIZE_Y = y2-y1;
+        int SIZE_Z = z2-z1;
+        if(SIZE_X == 0 || SIZE_Y == 0 || SIZE_Z == 0) {
+        	char * str = new char[255];
+        	sprintf(str, "Invalid cropping to new size %d, %d, %d", SIZE_X, SIZE_Y, SIZE_Z);
+        	throw SIPL::SIPLException(str, __LINE__, __FILE__);
+        }
+	    // Make them dividable by 4
+	    bool lower = false;
+	    while(SIZE_X % 4 != 0 && SIZE_X < size->x) {
+            if(lower && x1 > 0) {
+                x1--;
+            } else if(x2 < size->x) {
+                x2++;
+            }
+            lower = !lower;
+            SIZE_X = x2-x1;
+	    }
+	    if(SIZE_X % 4 != 0) {
+			while(SIZE_X % 4 != 0)
+				SIZE_X--;
+	    }
+	    while(SIZE_Y % 4 != 0 && SIZE_Y < size->y) {
+            if(lower && y1 > 0) {
+                y1--;
+            } else if(y2 < size->y) {
+                y2++;
+            }
+            lower = !lower;
+            SIZE_Y = y2-y1;
+	    }
+	    if(SIZE_Y % 4 != 0) {
+			while(SIZE_Y % 4 != 0)
+				SIZE_Y--;
+	    }
+	    while(SIZE_Z % 4 != 0 && SIZE_Z < size->z) {
+            if(lower && z1 > 0) {
+                z1--;
+            } else if(z2 < size->z) {
+                z2++;
+            }
+            lower = !lower;
+            SIZE_Z = z2-z1;
+	    }
+	    if(SIZE_Z % 4 != 0) {
+			while(SIZE_Z % 4 != 0)
+				SIZE_Z--;
+	    }
+        size->x = SIZE_X;
+        size->y = SIZE_Y;
+        size->z = SIZE_Z;
+
+
+        std::cout << "Dataset cropped to " << SIZE_X << ", " << SIZE_Y << ", " << SIZE_Z << std::endl;
+        Image3D imageHUvolume = Image3D(ocl.context, CL_MEM_READ_ONLY, imageFormat, SIZE_X, SIZE_Y, SIZE_Z);
+
+        cl::size_t<3> offset;
+        offset[0] = 0;
+        offset[1] = 0;
+        offset[2] = 0;
+        cl::size_t<3> region;
+        region[0] = SIZE_X;
+        region[1] = SIZE_Y;
+        region[2] = SIZE_Z;
+        cl::size_t<3> srcOffset;
+        srcOffset[0] = x1;
+        srcOffset[1] = y1;
+        srcOffset[2] = z1;
+        shiftVector.x = x1;
+        shiftVector.y = y1;
+        shiftVector.z = z1;
+        ocl.queue.enqueueCopyImage(dataset, imageHUvolume, srcOffset, offset, region);
+        dataset = imageHUvolume;
+    }
+
 
     std::cout << "Dataset of size " << size->x << " " << size->y << " " << size->z << " loaded" << std::endl;
     if(getParamBool(parameters, "timing")) {
@@ -1573,7 +1686,6 @@ Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &par
     }
     // Perform cropping if required
     std::string cropping = getParamStr(parameters, "cropping");
-    SIPL::int3 shiftVector;
     if(cropping == "lung" || cropping == "threshold") {
         std::cout << "performing cropping" << std::endl;
         Kernel cropDatasetKernel;
