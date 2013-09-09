@@ -38,7 +38,7 @@ __constant sampler_t hpSampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP
 __kernel void init2DImage(
     __write_only image2d_t image
     ) {
-    write_imageui(image, (int2)(get_global_id(0), get_global_id(1)), 0);
+    write_imageui(image, (int2)(get_global_id(0), get_global_id(1)), (uint4)(0,0,0,0));
 }
 
 // Intialize int buffer to 0
@@ -359,7 +359,7 @@ int2 readPos = writePos*2;
         read_imageui(readHistoPyramid, hpSampler, readPos+(int2)(0,1)).x + 
         read_imageui(readHistoPyramid, hpSampler, readPos+(int2)(1,1)).x;
 
-    write_imageui(writeHistoPyramid, writePos, writeValue);
+    write_imageui(writeHistoPyramid, writePos, (uint4)(writeValue,0,0,0));
 }
 
 int3 scanHPLevel2D(int target, __read_only image2d_t hp, int3 current) {
@@ -731,7 +731,7 @@ __kernel void linkLengths(
     const float3 xa = convert_float3(vload3(get_global_id(0), positions));
     const float3 xb = convert_float3(vload3(get_global_id(1), positions));
 
-    write_imagef(lengths, (int2)(get_global_id(0), get_global_id(1)), distance(xa,xb));
+    write_imagef(lengths, (int2)(get_global_id(0), get_global_id(1)), (float4)(distance(xa,xb),0.0f,0.0f,0.0f));
 }
 
 __kernel void compact(
@@ -876,8 +876,8 @@ float3 p = xa+ac*alpha;
         // Store edges
         int2 edge = {id, bestPair.x};
         int2 edge2 = {id, bestPair.y};
-        write_imageui(edges, edge, 1);
-        write_imageui(edges, edge2, 1);
+        write_imageui(edges, edge, (uint4)(1,0,0,0));
+        write_imageui(edges, edge2, (uint4)(1,0,0,0));
     }
 }
 
@@ -950,18 +950,18 @@ __kernel void removeDuplicateEdges(
 	) {
 	const int2 pos = {get_global_id(0), get_global_id(1)};
 	if(read_imageui(edgeTuples, sampler, pos).x == 0) {
-		write_imageui(edgeTuples2,pos, 0);
+		write_imageui(edgeTuples2,pos, (uint4)(0,0,0,0));
 	} else if(pos.x > pos.y) {
 		// Check if opposite is an edge
 		if(read_imageui(edgeTuples, sampler, (int2)(pos.y,pos.x)).x == 1) {
 			// opposite exists => remove this one
-			write_imageui(edgeTuples2,pos, 0);
+			write_imageui(edgeTuples2,pos, (uint4)(0,0,0,0));
 		} else {
 			// opposite doesn't exist => save this one
-			write_imageui(edgeTuples2,pos, 1);
+			write_imageui(edgeTuples2,pos, (uint4)(1,0,0,0));
 		}
 	} else {
-		write_imageui(edgeTuples2,pos, 1);
+		write_imageui(edgeTuples2,pos, (uint4)(1,0,0,0));
 	}
 }
 
