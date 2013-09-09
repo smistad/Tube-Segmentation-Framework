@@ -55,13 +55,24 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
     INIT_TIMER
     OpenCL * ocl = new OpenCL;
     cl_device_type type;
+    cl_vendor vendor = VENDOR_ANY;
     if(parameters.strings["device"].get() == "gpu") {
     	type = CL_DEVICE_TYPE_GPU;
+        ocl->context = createCLContext(type, vendor);
     } else {
+        // Prefer Intel OpenCL implementation if it exist
     	type = CL_DEVICE_TYPE_CPU;
+        vendor = VENDOR_INTEL;
+        setParameter(parameters, "16bit-vectors", "false");
+        try {
+            ocl->context = createCLContext(type, vendor);
+        } catch(cl::Error e) {
+            vendor = VENDOR_ANY;
+            ocl->context = createCLContext(type, vendor);
+        }
     }
-	ocl->context = createCLContext(type);
-	ocl->platform = getPlatform(type, VENDOR_ANY);
+    
+	ocl->platform = getPlatform(type, vendor);
 
     // Select first device
     VECTOR_CLASS<cl::Device> devices = ocl->context.getInfo<CL_CONTEXT_DEVICES>();
