@@ -62,14 +62,14 @@ link_directories(${Boost_LIBRARY_DIRS})
 #
 # tubeSegmentationLib library
 ###########
-add_library(tubeSegmentationLib tube-segmentation.cpp histogram-pyramids.cpp parameters.cpp)
+add_library(tubeSegmentationLib tube-segmentation.cpp parameters.cpp)
 target_link_libraries(tubeSegmentationLib OCL-Utilities SIPL ${Boost_LIBRARIES} ${OPENCL_LIBRARIES})
 
 #
 # tubeSegmentation executable
 ###########
 if(SIPL_USE_GTK)
-    add_executable(tubeSegmentation main.cpp tube-segmentation.cpp histogram-pyramids.cpp parameters.cpp)
+    add_executable(tubeSegmentation main.cpp tube-segmentation.cpp parameters.cpp)
     target_link_libraries(tubeSegmentation SIPL OCL-Utilities ${Boost_LIBRARIES} ${OPENCL_LIBRARIES})
 endif()
 
