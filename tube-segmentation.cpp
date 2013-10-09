@@ -1,4 +1,5 @@
 #include "tube-segmentation.hpp"
+#include "OpenCLUtilities/histogram-pyramids.hpp"
 #include "SIPL/Types.hpp"
 //#define USE_SIPL_VISUALIZATION
 #ifdef USE_SIPL_VISUALIZATION
@@ -18,7 +19,6 @@ using std::unordered_set;
 #include <boost/unordered_set.hpp>
 using boost::unordered_set;
 #endif
-#include "histogram-pyramids.hpp"
 //#include "tsf-config.h"
 
 //#define TIMING
