@@ -88,5 +88,6 @@ paramList getParameters(int argc, char ** argv);
 float getParam(paramList parameters, std::string parameterName);
 bool getParamBool(paramList parameters, std::string parameterName);
 std::string getParamStr(paramList parameters, std::string parameterName);
+void printAllParameters();
 
 #endif /* PARAMETERS_HPP_ */
