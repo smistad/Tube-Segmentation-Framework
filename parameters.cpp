@@ -39,7 +39,7 @@ void printAllParameters() {
 	unordered_map<std::string, NumericParameter>::iterator nIt;
 	unordered_map<std::string, StringParameter>::iterator sIt;
 
-    printf("%25s \t Default \t\t Choices \t\t Description\n", "Name");
+    printf("%25s \t Default \t Range \t\t\t Description\n", "Name");
     std::cout << "------------------------------------------------------------------------------------------------------" << std::endl;
 	for(bIt = parameters.bools.begin(); bIt != parameters.bools.end(); ++bIt){
 		printf("%25s \t %s \t\t true/false \t\t %s \n", bIt->first.c_str(), bIt->second.get() == 0 ? "false":"true", bIt->second.getDescription().c_str());
