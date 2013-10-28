@@ -42,7 +42,9 @@ To see the help message use the software with no arguments.
 The first arguments is the dataset to process. This has to be a metadata (.mhd) file.
 
 Some test data is available with the software. You can test the program with the following command:
-`./tubeSegmentation tests/data/synthetic/dataset_1/noisy.mhd --parameters Synthetic-Vascusynth --display`
+```bash
+./tubeSegmentation tests/data/synthetic/dataset_1/noisy.mhd --parameters Synthetic-Vascusynth --display
+```
 
 
 Parameters
@@ -57,3 +59,13 @@ This software has a lot of parameters and several parameter presets are availabl
 * Synthetic-Vascusynth
 
 The parameter preset is set with the program argument "--parameters <name>".
+
+Tests
+----------------------------------
+
+This software contains several tests written with Google Test.
+Install Google Test and run cmake again to compile the tests.
+Run the tests using the command `./tests/runTests`
+
+
+
