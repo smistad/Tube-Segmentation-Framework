@@ -15,7 +15,6 @@ using std::unordered_map;
 #include <boost/unordered_map.hpp>
 using boost::unordered_map;
 #endif
-#include "commons.hpp"
 #include "parameters.hpp"
 #include "SIPL/Exceptions.hpp"
 
