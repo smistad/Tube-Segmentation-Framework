@@ -66,7 +66,6 @@ add_library(tubeSegmentationLib
 	tube-segmentation.cpp 
 	parameters.cpp 
 	gradientVectorFlow.cpp 
-	commons.cpp 
 	tubeDetectionFilters.cpp 
 	ridgeTraversalCenterlineExtraction.cpp 
 	eigenanalysisOfHessian.cpp
@@ -86,7 +85,6 @@ if(SIPL_USE_GTK)
 		tube-segmentation.cpp 
 		parameters.cpp 
 		gradientVectorFlow.cpp 
-		commons.cpp 
 		tubeDetectionFilters.cpp 
 		ridgeTraversalCenterlineExtraction.cpp 
 		eigenanalysisOfHessian.cpp
