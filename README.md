@@ -4,7 +4,7 @@ Tube Segmentation Framework
 The tube segmentation framework is a software for fast segmentation and centerline extraction of tubular structures (e.g. blood vessels and airways) from different modalities (e.g. CT, MR and US) and organs using GPUs and OpenCL.
 
 For details about the implementation see the following publication:   
-GPU accelerated segmentation and centerline extraction of tubular structures in medical images   
+[GPU accelerated segmentation and centerline extraction of tubular structures in medical images](http://link.springer.com/article/10.1007%2Fs11548-013-0956-x)   
 Erik Smistad, Anne C. Elster and Frank Lindseth   
 International Journal of Computer Assisted Radiology and Surgery   
 2013   
