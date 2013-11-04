@@ -12,6 +12,7 @@
 #include "inputOutput.hpp"
 #include "segmentation.hpp"
 #include "SIPL/Types.hpp"
+#include "OpenCLUtilities/histogram-pyramids.hpp"
 #include <boost/iostreams/device/mapped_file.hpp>
 #include <queue>
 #include <stack>
@@ -22,7 +23,6 @@
 #include "timing.hpp"
 #include <cmath>
 #define MAX(a,b) a > b ? a : b
-
 // Undefine windows crap
 #ifdef WIN32
 #undef min

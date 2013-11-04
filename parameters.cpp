@@ -33,6 +33,37 @@ vector<string> split(string str, string delimiter) {
 	return list;
 }
 
+void printAllParameters() {
+    paramList parameters = initParameters(std::string(PARAMETERS_DIR));
+	unordered_map<std::string, BoolParameter>::iterator bIt;
+	unordered_map<std::string, NumericParameter>::iterator nIt;
+	unordered_map<std::string, StringParameter>::iterator sIt;
+
+    printf("%25s \t Default \t Range \t\t\t Description\n", "Name");
+    std::cout << "------------------------------------------------------------------------------------------------------" << std::endl;
+	for(bIt = parameters.bools.begin(); bIt != parameters.bools.end(); ++bIt){
+		printf("%25s \t %s \t\t true/false \t\t %s \n", bIt->first.c_str(), bIt->second.get() == 0 ? "false":"true", bIt->second.getDescription().c_str());
+	}
+
+	for(nIt = parameters.numerics.begin(); nIt != parameters.numerics.end(); ++nIt){
+        if(nIt->second.getStep() >= 1.0f) {
+            printf("%25s \t %.0f \t\t %.0f-%.0f \t\t %s \n", nIt->first.c_str(), nIt->second.get(), nIt->second.getMin(), nIt->second.getMax(), nIt->second.getDescription().c_str());
+        } else {
+            printf("%25s \t %.3f \t\t %.3f-%.3f \t\t %s \n", nIt->first.c_str(), nIt->second.get(), nIt->second.getMin(), nIt->second.getMax(), nIt->second.getDescription().c_str());
+        }
+	}
+	for(sIt = parameters.strings.begin(); sIt != parameters.strings.end(); ++sIt){
+        std::string possibilitiesString = "";
+        std::vector<std::string> possibilities = sIt->second.getPossibilities();
+        std::vector<std::string>::iterator it;
+        for(it = possibilities.begin(); it != possibilities.end(); ++it) {
+            possibilitiesString += *it;
+            possibilitiesString += " ";
+        }
+        printf("%25s \t %s \t\t %s \t\t %s\n", sIt->first.c_str(), sIt->second.get().c_str(), possibilitiesString.c_str(), sIt->second.getDescription().c_str());
+	}
+}
+
 void loadParameterPreset(paramList &parameters, std::string parameter_dir) {
 	// Check if parameters is set
     if(getParamStr(parameters, "parameters") != "none") {
