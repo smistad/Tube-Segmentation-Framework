@@ -64,7 +64,6 @@ link_directories(${Boost_LIBRARY_DIRS})
 ###########
 add_library(tubeSegmentationLib 
 	tube-segmentation.cpp 
-	histogram-pyramids.cpp 
 	parameters.cpp 
 	gradientVectorFlow.cpp 
 	commons.cpp 
@@ -85,7 +84,6 @@ if(SIPL_USE_GTK)
     add_executable(tubeSegmentation
     	main.cpp
 		tube-segmentation.cpp 
-		histogram-pyramids.cpp 
 		parameters.cpp 
 		gradientVectorFlow.cpp 
 		commons.cpp 
