@@ -1074,7 +1074,10 @@ __kernel void circleFittingTDF(
         __global float * Radius,
         __private float rMin,
         __private float rMax,
-        __private float rStep
+        __private float rStep,
+        __private float spacingX,
+        __private float spacingY,
+        __private float spacingZ
     ) {
     const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
 
@@ -1117,6 +1120,8 @@ __kernel void circleFittingTDF(
     float maxSum = 0.0f;
     float maxRadius = 0.0f;
     const float4 floatPos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
+    float3 spacingCompensation = {1.0f/spacingX,1.0f/spacingY,1.0f/spacingZ};
+    //float4 spacingCompensation = {1.0f,1.0f,1.0f,0.0f};
     for(float radius = rMin; radius <= rMax; radius += rStep) {
         float radiusSum = 0.0f;
         int samples = 32;
@@ -1134,7 +1139,9 @@ __kernel void circleFittingTDF(
 
         for(int j = 0; j < samples; j++) {
             float3 V_alpha = cosValues[j*stride]*e3 + sinValues[j*stride]*e2;
-            float4 position = floatPos + radius*V_alpha.xyzz;
+            //V_alpha *= spacingCompensation;
+            //V_alpha = normalize(V_alpha);
+            float4 position = floatPos + radius*V_alpha.xyzz*spacingCompensation.xyzz;
             float3 V = -read_imagef(vectorField, interpolationSampler, position).xyz;
             radiusSum += dot(V, V_alpha);
             //if(dot(normalize(V), normalize(V_alpha)) < 0.0f)

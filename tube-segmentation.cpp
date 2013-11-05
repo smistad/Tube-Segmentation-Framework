@@ -469,7 +469,7 @@ if(getParamBool(parameters, "timing")) {
     ocl.GC.addMemObject(TDFsmallBuffer);
     Buffer * radiusSmallBuffer = new Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
     ocl.GC.addMemObject(radiusSmallBuffer);
-    runCircleFittingTDF(ocl,size,vectorFieldSmall,TDFsmallBuffer,radiusSmallBuffer,radiusMin,3.0f,0.5f);
+    runCircleFittingTDF(ocl,size,spacing,vectorFieldSmall,TDFsmallBuffer,radiusSmallBuffer,radiusMin,3.0f,0.5f);
 
 
     if(radiusMax < 2.5) {
@@ -789,7 +789,7 @@ if(getParamBool(parameters, "timing")) {
     if(getParamBool(parameters,"use-spline-tdf")) {
         runSplineTDF(ocl,size,&vectorField,&TDFlarge,&radiusLarge,std::max(1.5f, radiusMin),radiusMax,radiusStep);
     } else {
-        runCircleFittingTDF(ocl,size,&vectorField,&TDFlarge,&radiusLarge,std::max(2.5f, radiusMin),radiusMax,radiusStep);
+        runCircleFittingTDF(ocl,size,spacing,&vectorField,&TDFlarge,&radiusLarge,std::max(2.5f, radiusMin),radiusMax,radiusStep);
     }
 
 if(getParamBool(parameters, "timing")) {
