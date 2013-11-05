@@ -664,7 +664,7 @@ Image3D runNewCenterlineAlgWithoutOpenCL(OpenCL &ocl, SIPL::int3 size, paramList
     return centerlines;
 }
 
-Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radius) {
+Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, SIPL::float3 spacing, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radius) {
     if(ocl.platform.getInfo<CL_PLATFORM_VENDOR>().substr(0,5) == "Apple") {
         std::cout << "Apple platform detected. Running centerline extraction without OpenCL." << std::endl;
         return runNewCenterlineAlgWithoutOpenCL(ocl,size,parameters,vectorField,TDF,radius);
@@ -844,7 +844,10 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
         }
 
         candidates2Kernel.setArg(3, *centerpointsImage2);
-        hp3.traverse(candidates2Kernel, 4);
+        candidates2Kernel.setArg(4, spacing.x);
+        candidates2Kernel.setArg(5, spacing.y);
+        candidates2Kernel.setArg(6, spacing.z);
+        hp3.traverse(candidates2Kernel, 7);
         ocl.queue.finish();
         hp3.deleteHPlevels();
         ocl.GC.deleteMemObject(centerpointsImage);

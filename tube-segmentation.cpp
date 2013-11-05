@@ -345,6 +345,9 @@ if(getParamBool(parameters, "timing")) {
         createVectorFieldKernel.setArg(3, Fmax);
         createVectorFieldKernel.setArg(4, vectorSign);
         createVectorFieldKernel.setArg(5, maxZ);
+        createVectorFieldKernel.setArg(6, spacing.x);
+        createVectorFieldKernel.setArg(7, spacing.y);
+        createVectorFieldKernel.setArg(8, spacing.z);
 
 
         ocl.queue.enqueueNDRangeKernel(
@@ -434,6 +437,9 @@ if(getParamBool(parameters, "timing")) {
         createVectorFieldKernel.setArg(1, *vectorFieldSmall);
         createVectorFieldKernel.setArg(2, Fmax);
         createVectorFieldKernel.setArg(3, vectorSign);
+        createVectorFieldKernel.setArg(4, spacing.x);
+        createVectorFieldKernel.setArg(5, spacing.y);
+        createVectorFieldKernel.setArg(6, spacing.z);
 
         ocl.queue.enqueueNDRangeKernel(
                 createVectorFieldKernel,
@@ -652,6 +658,9 @@ if(getParamBool(parameters, "timing")) {
         createVectorFieldKernel.setArg(3, Fmax);
         createVectorFieldKernel.setArg(4, vectorSign);
         createVectorFieldKernel.setArg(5, maxZ);
+        createVectorFieldKernel.setArg(6, spacing.x);
+        createVectorFieldKernel.setArg(7, spacing.y);
+        createVectorFieldKernel.setArg(8, spacing.z);
 
 
         ocl.queue.enqueueNDRangeKernel(
@@ -723,6 +732,9 @@ if(getParamBool(parameters, "timing")) {
         createVectorFieldKernel.setArg(1, *initVectorField);
         createVectorFieldKernel.setArg(2, Fmax);
         createVectorFieldKernel.setArg(3, vectorSign);
+        createVectorFieldKernel.setArg(4, spacing.x);
+        createVectorFieldKernel.setArg(5, spacing.y);
+        createVectorFieldKernel.setArg(6, spacing.z);
 
         ocl.queue.enqueueNDRangeKernel(
                 createVectorFieldKernel,
@@ -965,7 +977,7 @@ void runCircleFittingAndNewCenterlineAlg(OpenCL * ocl, cl::Image3D * dataset, SI
     	return;
 
     Image3D * centerline = new Image3D;
-    *centerline = runNewCenterlineAlg(*ocl, *size, parameters, vectorField, *TDF, radius);
+    *centerline = runNewCenterlineAlg(*ocl, *size, output->getSpacing(), parameters, vectorField, *TDF, radius);
     output->setCenterlineVoxels(centerline);
 
     Image3D * segmentation = new Image3D;
