@@ -1003,7 +1003,7 @@ Image3D runFMGGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIPL
     return finalVectorField;
 }
 
-Image3D runFastGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIPL::int3 &size) {
+Image3D runFastGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIPL::int3 &size, SIPL::float3 &spacing) {
 
     const int GVFIterations = getParam(parameters, "gvf-iterations");
     const bool no3Dwrite = !getParamBool(parameters, "3d_write");
@@ -1046,6 +1046,9 @@ Image3D runFastGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIP
         // Run iterations
         GVFIterationKernel.setArg(0, *vectorField);
         GVFIterationKernel.setArg(3, MU);
+        GVFIterationKernel.setArg(4, spacing.x);
+        GVFIterationKernel.setArg(5, spacing.y);
+        GVFIterationKernel.setArg(6, spacing.z);
 
         for(int i = 0; i < GVFIterations; i++) {
             if(i % 2 == 0) {
@@ -1132,6 +1135,9 @@ Image3D runFastGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIP
         // Run iterations
         GVFIterationKernel.setArg(0, initVectorField);
         GVFIterationKernel.setArg(3, MU);
+        GVFIterationKernel.setArg(4, spacing.x);
+        GVFIterationKernel.setArg(5, spacing.y);
+        GVFIterationKernel.setArg(6, spacing.z);
 
         for(int i = 0; i < GVFIterations; i++) {
             if(i % 2 == 0) {
@@ -1444,14 +1450,14 @@ Image3D runLowMemoryGVF(OpenCL &ocl, Image3D * vectorField, paramList &parameter
 }
 
 
-Image3D runGVF(OpenCL &ocl, Image3D * vectorField, paramList &parameters, SIPL::int3 &size, bool useLessMemory) {
+Image3D runGVF(OpenCL &ocl, Image3D * vectorField, paramList &parameters, SIPL::int3 &size, SIPL::float3 &spacing, bool useLessMemory) {
 
 	if(useLessMemory) {
 		std::cout << "NOTE: Running slow GVF that uses less memory." << std::endl;
 		return runLowMemoryGVF(ocl,vectorField,parameters,size);
 	} else {
 		std::cout << "NOTE: Running fast GVF." << std::endl;
-		return runFastGVF(ocl,vectorField,parameters,size);
+		return runFastGVF(ocl,vectorField,parameters,size,spacing);
 	}
 }
 

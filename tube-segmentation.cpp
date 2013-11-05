@@ -773,9 +773,9 @@ if(getParamBool(parameters, "timing")) {
 	}
 	//vectorField = runFMGGVF(ocl,initVectorField,parameters,size);
 	if(useSlowGVF) {
-		vectorField = runGVF(ocl, initVectorField, parameters, size, true);
+		vectorField = runGVF(ocl, initVectorField, parameters, size, spacing, true);
 	} else {
-		vectorField = runGVF(ocl, initVectorField, parameters, size, false);
+		vectorField = runGVF(ocl, initVectorField, parameters, size, spacing, false);
 	}
 
 if(getParamBool(parameters, "timing")) {

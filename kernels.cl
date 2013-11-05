@@ -1482,7 +1482,15 @@ __kernel void GVF3DFinish_one_component(
     write_imagef(vectorField2, pos, v);
 }
 
-__kernel void GVF3DIteration(__read_only image3d_t init_vector_field, __read_only image3d_t read_vector_field, __write_only image3d_t write_vector_field, __private float mu) {
+__kernel void GVF3DIteration(
+        __read_only image3d_t init_vector_field,
+        __read_only image3d_t read_vector_field,
+        __write_only image3d_t write_vector_field,
+        __private float mu,
+        __private float spacingX,
+        __private float spacingY,
+        __private float spacingZ
+        ) {
     int4 writePos = {
         get_global_id(0),
         get_global_id(1),
@@ -1507,6 +1515,9 @@ __kernel void GVF3DIteration(__read_only image3d_t init_vector_field, __read_onl
     
     // Update the vector field: Calculate Laplacian using a 3D central difference scheme
     float3 laplacian = -6*v.xyz + fx1 + fx_1 + fy1 + fy_1 + fz1 + fz_1;
+    laplacian.x *= 1.0f/(spacingX*spacingX);
+    laplacian.y *= 1.0f/(spacingY*spacingY);
+    laplacian.z *= 1.0f/(spacingZ*spacingZ);
 
     v.xyz += mu * laplacian - (v.xyz - (float3)(init_vector.x, init_vector.y, v.w))*(init_vector.x*init_vector.x+init_vector.y*init_vector.y+v.w*v.w);
 
