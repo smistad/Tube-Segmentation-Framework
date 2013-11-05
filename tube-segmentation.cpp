@@ -190,7 +190,7 @@ void __stdcall notify(cl_mem memobj, void * user_data) {
 
 
 
-float * createBlurMask(float sigma, int * maskSizePointer) {
+float * createBlurMask(float sigma, int * maskSizePointer, SIPL::float3 spacing) {
     int maskSize = (int)ceil(sigma/0.5f);
     if(maskSize < 1) // cap min mask size at 3x3x3
     	maskSize = 1;
@@ -201,8 +201,9 @@ float * createBlurMask(float sigma, int * maskSizePointer) {
     for(int a = -maskSize; a < maskSize+1; a++) {
         for(int b = -maskSize; b < maskSize+1; b++) {
             for(int c = -maskSize; c < maskSize+1; c++) {
-                sum += exp(-((float)(a*a+b*b+c*c) / (2*sigma*sigma)));
-                mask[a+maskSize+(b+maskSize)*(maskSize*2+1)+(c+maskSize)*(maskSize*2+1)*(maskSize*2+1)] = exp(-((float)(a*a+b*b+c*c) / (2*sigma*sigma)));
+                sum += exp(-((float)(a*a*spacing.x*spacing.x+b*b*spacing.y*spacing.y+c*c*spacing.z*spacing.z) / (2*sigma*sigma)));
+                mask[a+maskSize+(b+maskSize)*(maskSize*2+1)+(c+maskSize)*(maskSize*2+1)*(maskSize*2+1)] =
+                        exp(-((float)(a*a*spacing.x*spacing.x+b*b*spacing.y*spacing.y+c*c*spacing.z*spacing.z) / (2*sigma*sigma)));
 
             }
         }
@@ -214,7 +215,7 @@ float * createBlurMask(float sigma, int * maskSizePointer) {
 
     return mask;
 }
-void runCircleFittingMethod(OpenCL &ocl, Image3D * dataset, SIPL::int3 size, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radiusImage) {
+void runCircleFittingMethod(OpenCL &ocl, Image3D * dataset, SIPL::int3 size, SIPL::float3 spacing, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radiusImage) {
     // Set up parameters
     const float radiusMin = getParam(parameters, "radius-min");
     const float radiusMax = getParam(parameters, "radius-max");
@@ -251,7 +252,7 @@ void runCircleFittingMethod(OpenCL &ocl, Image3D * dataset, SIPL::int3 size, par
         ocl.GC.addMemObject(blurredVolume);
     if(smallBlurSigma > 0) {
     	int maskSize = 1;
-		float * mask = createBlurMask(smallBlurSigma, &maskSize);
+		float * mask = createBlurMask(smallBlurSigma, &maskSize, spacing);
 		Buffer blurMask = Buffer(ocl.context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(float)*(maskSize*2+1)*(maskSize*2+1)*(maskSize*2+1), mask);
         blurMask.setDestructorCallback((void (__stdcall *)(cl_mem,void *))(freeData<float>), (void *)mask);
     	if(no3Dwrite) {
@@ -542,7 +543,7 @@ if(getParamBool(parameters, "timing")) {
     ocl.GC.addMemObject(blurredVolume);
     if(largeBlurSigma > 0) {
     	int maskSize = 1;
-		float * mask = createBlurMask(largeBlurSigma, &maskSize);
+		float * mask = createBlurMask(largeBlurSigma, &maskSize, spacing);
 	    Buffer blurMask = Buffer(ocl.context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(float)*(maskSize*2+1)*(maskSize*2+1)*(maskSize*2+1), mask);
         blurMask.setDestructorCallback((void (__stdcall *)(cl_mem,void *))(freeData<float>), (void *)mask);
     	if(no3Dwrite) {
@@ -958,7 +959,7 @@ void runCircleFittingAndNewCenterlineAlg(OpenCL * ocl, cl::Image3D * dataset, SI
     region[1] = size->y;
     region[2] = size->z;
 
-    runCircleFittingMethod(*ocl, dataset, *size, parameters, vectorField, *TDF, radius);
+    runCircleFittingMethod(*ocl, dataset, *size, output->getSpacing(), parameters, vectorField, *TDF, radius);
     output->setTDF(TDF);
     if(getParamBool(parameters, "tdf-only"))
     	return;
@@ -1038,7 +1039,7 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D * dataset, SIPL::int3 * s
     region[1] = size->y;
     region[2] = size->z;
 
-    runCircleFittingMethod(*ocl, dataset, *size, parameters, vectorField, *TDF, radius);
+    runCircleFittingMethod(*ocl, dataset, *size, output->getSpacing(), parameters, vectorField, *TDF, radius);
 
 
     // Transfer from device to host
@@ -1267,7 +1268,7 @@ void runCircleFittingAndRidgeTraversal(OpenCL * ocl, Image3D * dataset, SIPL::in
     Image3D vectorField, radius,vectorFieldSmall;
     Image3D * TDF = new Image3D;
     TubeSegmentation TS;
-    runCircleFittingMethod(*ocl, dataset, *size, parameters, vectorField, *TDF, radius);
+    runCircleFittingMethod(*ocl, dataset, *size, output->getSpacing(), parameters, vectorField, *TDF, radius);
     output->setTDF(TDF);
     const int totalSize = size->x*size->y*size->z;
 	const bool no3Dwrite = !getParamBool(parameters, "3d_write");
