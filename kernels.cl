@@ -1514,10 +1514,9 @@ __kernel void GVF3DIteration(
     float3 fz_1 = read_imagef(read_vector_field, sampler, pos - (int4)(0,0,1,0)).xyz; 
     
     // Update the vector field: Calculate Laplacian using a 3D central difference scheme
-    float3 laplacian = -6*v.xyz + fx1 + fx_1 + fy1 + fy_1 + fz1 + fz_1;
-    laplacian.x *= 1.0f/(spacingX*spacingX);
-    laplacian.y *= 1.0f/(spacingY*spacingY);
-    laplacian.z *= 1.0f/(spacingZ*spacingZ);
+    float3 laplacian = (-2*v.xyz + fx1 + fx_1)/(spacingX*spacingX) +
+                        (-2*v.xyz + fy1 + fy_1)/(spacingY*spacingY) +
+                        (-2*v.xyz + fz1 + fz_1)/(spacingZ*spacingZ);
 
     v.xyz += mu * laplacian - (v.xyz - (float3)(init_vector.x, init_vector.y, v.w))*(init_vector.x*init_vector.x+init_vector.y*init_vector.y+v.w*v.w);
 
