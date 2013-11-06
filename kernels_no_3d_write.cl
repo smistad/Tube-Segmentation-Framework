@@ -90,6 +90,7 @@ __constant int4 cubeOffsets[8] = {
 float3 gradientNormalized(
         __read_only image3d_t volume,   // Volume to perform gradient on
         int4 pos,                       // Position to perform gradient on
+        float3 spacing,
         int volumeComponent,            // The volume component to perform gradient on: 0, 1 or 2
         int dimensions                  // The number of dimensions to perform gradient in: 1, 2 or 3
     ) {
@@ -134,9 +135,9 @@ float3 gradientNormalized(
     }
 
     float3 grad = {
-        0.5f*(f100/read_imagef(volume, sampler, pos+(int4)(1,0,0,0)).w-f_100/read_imagef(volume, sampler, pos-(int4)(1,0,0,0)).w), 
-        0.5f*(f010/read_imagef(volume, sampler, pos+(int4)(0,1,0,0)).w-f0_10/read_imagef(volume, sampler, pos-(int4)(0,1,0,0)).w),
-        0.5f*(f001/read_imagef(volume, sampler, pos+(int4)(0,0,1,0)).w-f00_1/read_imagef(volume, sampler, pos-(int4)(0,0,1,0)).w)
+        0.5f*(f100/read_imagef(volume, sampler, pos+(int4)(1,0,0,0)).w-f_100/read_imagef(volume, sampler, pos-(int4)(1,0,0,0)).w)/spacing.x, 
+        0.5f*(f010/read_imagef(volume, sampler, pos+(int4)(0,1,0,0)).w-f0_10/read_imagef(volume, sampler, pos-(int4)(0,1,0,0)).w)/spacing.y,
+        0.5f*(f001/read_imagef(volume, sampler, pos+(int4)(0,0,1,0)).w-f00_1/read_imagef(volume, sampler, pos-(int4)(0,0,1,0)).w)/spacing.z
     };
 
 
@@ -146,6 +147,7 @@ float3 gradientNormalized(
 float3 gradient(
         __read_only image3d_t volume,   // Volume to perform gradient on
         int4 pos,                       // Position to perform gradient on
+        float3 spacing,
         int volumeComponent,            // The volume component to perform gradient on: 0, 1 or 2
         int dimensions                  // The number of dimensions to perform gradient in: 1, 2 or 3
     ) {
@@ -190,9 +192,9 @@ float3 gradient(
     }
 
     float3 grad = {
-        0.5f*(f100-f_100), 
-        0.5f*(f010-f0_10),
-        0.5f*(f001-f00_1)
+        0.5f*(f100-f_100)/spacing.x, 
+        0.5f*(f010-f0_10)/spacing.y,
+        0.5f*(f001-f00_1)/spacing.z
     };
 
 
@@ -1021,6 +1023,9 @@ __kernel void findCandidateCenterpoints2(
     __read_only image3d_t radius,
     __read_only image3d_t vectorField,
     __global char * centerpoints,
+    __private float spacingX,
+    __private float spacingY,
+    __private float spacingZ,
     __private int HP_SIZE,
     __private int sum,
     __global uchar * hp0, // Largest HP
@@ -1047,9 +1052,10 @@ __kernel void findCandidateCenterpoints2(
 
     // Find Hessian Matrix
     float3 Fx, Fy, Fz;
-    Fx = gradientNormalized(vectorField, pos, 0, 1);
-    Fy = gradientNormalized(vectorField, pos, 1, 2);
-    Fz = gradientNormalized(vectorField, pos, 2, 3);
+    const float3 spacing = {spacingX, spacingY, spacingZ};
+    Fx = gradientNormalized(vectorField, pos, spacing, 0, 1);
+    Fy = gradientNormalized(vectorField, pos, spacing, 1, 2);
+    Fz = gradientNormalized(vectorField, pos, spacing, 2, 3);
 
     float Hessian[3][3] = {
         {Fx.x, Fy.x, Fz.x},
@@ -1473,18 +1479,21 @@ __kernel void createVectorField(
         __global VECTOR_FIELD_TYPE * vectorField2,
         __private float Fmax,
         __private int vectorSign,
-        __private int maxZ
+        __private int maxZ,
+        __private float spacingX,
+        __private float spacingY,
+        __private float spacingZ
         ) {
     const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
 
     // Gradient of volume
     float4 F; 
-    F.xyz = gradient(volume, pos, 0, 3); // The sign here is important
+    F.xyz = gradient(volume, pos, (float3)(spacingX,spacingY,spacingZ), 0, 3); // The sign here is important
     F.w = 0.0f;
 
-F.x = vectorSign*F.x;
-F.y = vectorSign*F.y;
-F.z = vectorSign*F.z;
+    F.x = vectorSign*F.x;
+    F.y = vectorSign*F.y;
+    F.z = vectorSign*F.z;
 
     // Fmax normalization
     const float l = length(F);
@@ -1506,22 +1515,25 @@ __kernel void circleFittingTDF(
         __global float * Radius,
         __private float rMin,
         __private float rMax,
-        __private float rStep
+        __private float rStep,
+        __private float spacingX,
+        __private float spacingY,
+        __private float spacingZ
     ) {
     const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
+    const float3 spacing = {spacingX, spacingY, spacingZ};
 
     // Find Hessian Matrix
     float3 Fx, Fy, Fz;
     if(rMax < 4) {
-	    Fx = gradient(vectorField, pos, 0, 1);
-	    Fy = gradient(vectorField, pos, 1, 2);
-	    Fz = gradient(vectorField, pos, 2, 3);
+	    Fx = gradient(vectorField, pos, spacing, 0, 1);
+	    Fy = gradient(vectorField, pos, spacing, 1, 2);
+	    Fz = gradient(vectorField, pos, spacing, 2, 3);
     } else {
-	    Fx = gradientNormalized(vectorField, pos, 0, 1);
-	    Fy = gradientNormalized(vectorField, pos, 1, 2);
-	    Fz = gradientNormalized(vectorField, pos, 2, 3);
+	    Fx = gradientNormalized(vectorField, pos, spacing, 0, 1);
+	    Fy = gradientNormalized(vectorField, pos, spacing, 1, 2);
+	    Fz = gradientNormalized(vectorField, pos, spacing, 2, 3);
     }
-
 
     float Hessian[3][3] = {
         {Fx.x, Fy.x, Fz.x},
@@ -1541,6 +1553,7 @@ __kernel void circleFittingTDF(
     // Circle Fitting
     float maxSum = 0.0f;
     float maxRadius = 0.0f;
+    float3 spacingCompensation = {1.0f/spacingX,1.0f/spacingY,1.0f/spacingZ};
     const float4 floatPos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
         int samples = 32;
         int stride = 1;
@@ -1549,7 +1562,7 @@ __kernel void circleFittingTDF(
         float radiusSum = 0.0f;
             for(int j = 0; j < samples && !negatives; j++) {
             float3 V_alpha = cosValues[j*stride]*e3 + sinValues[j*stride]*e2;
-            float4 position = floatPos + radius*V_alpha.xyzz;
+            float4 position = floatPos + radius*V_alpha.xyzz*spacingCompensation.xyzz;
             float3 V = -read_imagef(vectorField, interpolationSampler, position).xyz;
             radiusSum += dot(V, V_alpha);
             //if(dot(normalize(V), normalize(V_alpha)) < 0.2f)
@@ -1581,15 +1594,19 @@ __kernel void splineTDF(
         __private const int arms,
         //__private const int samples,
         __global float * R,
-        __private const float minAverageMag
+        __private const float minAverageMag,
+        __private float spacingX,
+        __private float spacingY,
+        __private float spacingZ
     ) {
     const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
+    const float3 spacing = {spacingX, spacingY, spacingZ};
     int invalid = 0;
 
     // Find Hessian Matrix
-    const float3 Fx = gradientNormalized(vectorField, pos, 0, 1);
-    const float3 Fy = gradientNormalized(vectorField, pos, 1, 2);
-    const float3 Fz = gradientNormalized(vectorField, pos, 2, 3);
+    const float3 Fx = gradientNormalized(vectorField, pos, spacing, 0, 1);
+    const float3 Fy = gradientNormalized(vectorField, pos, spacing, 1, 2);
+    const float3 Fz = gradientNormalized(vectorField, pos, spacing, 2, 3);
 
     float Hessian[3][3] = {
         {Fx.x, Fy.x, Fz.x},
@@ -1747,7 +1764,10 @@ __kernel void GVF3DIteration(
 		__read_only image3d_t init_vector_field,
 		__global VECTOR_FIELD_TYPE const * restrict read_vector_field,
 		__global VECTOR_FIELD_TYPE * write_vector_field,
-		__private float mu
+		__private float mu,
+        __private float spacingX,
+        __private float spacingY,
+        __private float spacingZ
 		) {
     int4 writePos = {
         get_global_id(0),
@@ -1774,11 +1794,9 @@ __kernel void GVF3DIteration(
     float3 fz_1 = SNORM16_TO_FLOAT_3(vload3(offset-size.x*size.y, read_vector_field));
     
     // Update the vector field: Calculate Laplacian using a 3D central difference scheme
-float3 v2;
-v2.x = -6*v.x;
-v2.y = -6*v.y;
-v2.z = -6*v.z;
-    float3 laplacian = v2 + fx1 + fx_1 + fy1 + fy_1 + fz1 + fz_1;
+    float3 laplacian = (-2*v + fx1 + fx_1)/(spacingX*spacingX) +
+                        (-2*v + fy1 + fy_1)/(spacingY*spacingY) +
+                        (-2*v + fz1 + fz_1)/(spacingZ*spacingZ);
 
     v += mu*laplacian - (v - init_vector.xyz)*(init_vector.x*init_vector.x+init_vector.y*init_vector.y+init_vector.z*init_vector.z);
 

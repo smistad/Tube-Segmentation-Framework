@@ -745,11 +745,14 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, SIPL::float3 spacing, 
         );
 
         candidates2Kernel.setArg(3, *centerpoints2);
+        candidates2Kernel.setArg(4, spacing.x);
+        candidates2Kernel.setArg(5, spacing.y);
+        candidates2Kernel.setArg(6, spacing.z);
         std::cout << "candidates: " << hp3.getSum() << std::endl;
         if(hp3.getSum() <= 0 || hp3.getSum() > 0.5*totalSize) {
         	throw SIPL::SIPLException("The number of candidate voxels is too low or too high. Something went wrong... Wrong parameters? Out of memory?", __LINE__, __FILE__);
         }
-        hp3.traverse(candidates2Kernel, 4);
+        hp3.traverse(candidates2Kernel, 7);
         ocl.queue.finish();
         hp3.deleteHPlevels();
         ocl.GC.deleteMemObject(centerpoints);

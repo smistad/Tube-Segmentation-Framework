@@ -4,6 +4,7 @@ using namespace cl;
 void runSplineTDF(
         OpenCL &ocl,
         SIPL::int3 &size,
+        SIPL::float3 &spacing,
         Image3D *vectorField,
         Buffer *TDF,
         Buffer *radius,
@@ -45,6 +46,9 @@ void runSplineTDF(
     //TDFKernel.setArg(6, samples); // samples per arm
     TDFKernel.setArg(6, *radius);
     TDFKernel.setArg(7, 0.1f);
+    TDFKernel.setArg(8, spacing.x);
+    TDFKernel.setArg(9, spacing.x);
+    TDFKernel.setArg(10, spacing.x);
 
     ocl.queue.enqueueNDRangeKernel(
             TDFKernel,
