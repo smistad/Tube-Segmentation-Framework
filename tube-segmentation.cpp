@@ -940,7 +940,7 @@ radius->show(40, 80);
         int3 pos(x,y,z);
         SIPL::float3 value(0,0,0);
         if(radius->get(pos) > 0) {
-            value = getTubeDirection(T,pos,size);
+            value = getTubeDirection(T,pos,size,spacing);
         }
         directions->set(pos,value);
     }}}
@@ -1154,7 +1154,7 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D * dataset, SIPL::int3 * s
     // Create connections between segments
     std::cout << "creating connections..." << std::endl;
     std::cout << "number of segments is " << segments.size() << std::endl;
-    createConnections(TS, segments, *size);
+    createConnections(TS, segments, *size, output->getSpacing());
     std::cout << "finished creating connections." << std::endl;
     std::cout << "number of segments is " << segments.size() << std::endl;
 

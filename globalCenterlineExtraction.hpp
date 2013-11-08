@@ -43,5 +43,5 @@ int * createDepthFirstOrdering(std::vector<Segment *> segments, int root, int &N
 
 std::vector<Segment *> minimumSpanningTree(Segment * root, int3 size);
 std::vector<Segment *> findOptimalSubtree(std::vector<Segment *> segments, int * depthFirstOrdering, int Ns);
-void createConnections(TubeSegmentation &TS, std::vector<Segment *> segments, int3 size);
+void createConnections(TubeSegmentation &TS, std::vector<Segment *> segments, int3 size, float3 spacing);
 #endif

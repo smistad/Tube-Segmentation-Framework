@@ -112,6 +112,8 @@ std::vector<CrossSection *> createGraph(TubeSegmentation &T, SIPL::int3 size, SI
 				float3 e1_j = c_j->direction;
 				int3 cint = c_i->pos - c_j->pos;
 				float3 c = cint.normalize();
+				c = c*spacing;
+				c = c.normalize();
 
 				if(acos((double)fabs(e1_i.dot(e1_j))) > 1.05) // 60 degrees
 					continue;
@@ -122,6 +124,7 @@ std::vector<CrossSection *> createGraph(TubeSegmentation &T, SIPL::int3 size, SI
 				if(acos((double)fabs(e1_j.dot(c))) > 1.05)
 					continue;
 
+				/*
 				int distance = ceil(c_i->pos.distance(c_j->pos));
 				float3 direction(c_j->pos.x-c_i->pos.x,c_j->pos.y-c_i->pos.y,c_j->pos.z-c_i->pos.z);
 				bool invalid = false;
@@ -137,7 +140,7 @@ std::vector<CrossSection *> createGraph(TubeSegmentation &T, SIPL::int3 size, SI
 						break;
 					}
 					*/
-				}
+				//}
 				//if(invalid)
 				//	continue;
 
@@ -637,7 +640,7 @@ float calculateConnectionCost(CrossSection * a, CrossSection * b, TubeSegmentati
 	return cost;
 }
 
-void createConnections(TubeSegmentation &TS, std::vector<Segment *> segments, int3 size) {
+void createConnections(TubeSegmentation &TS, std::vector<Segment *> segments, int3 size, float3 spacing) {
 	// For all pairs of segments
 	for(int k = 0; k < segments.size(); k++) {
 		Segment * s_k = segments[k];
@@ -655,6 +658,7 @@ void createConnections(TubeSegmentation &TS, std::vector<Segment *> segments, in
 						continue;
 
 					float3 c(c_k->pos.x-c_l->pos.x, c_k->pos.y-c_l->pos.y,c_k->pos.z-c_l->pos.z);
+					c = c*spacing;
 					c = c.normalize();
 					if(acos(fabs(c_k->direction.dot(c))) > 1.05f)
 						continue;
