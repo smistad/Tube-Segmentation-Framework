@@ -34,7 +34,7 @@ float sign(float a) {
 #define SQR_MAG(pos) sqrt(pow(T.Fx[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f) + pow(T.Fy[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f) + pow(T.Fz[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f))
 #define SQR_MAG_SMALL(pos) sqrt(pow(T.FxSmall[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f) + pow(T.FySmall[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f) + pow(T.FzSmall[pos.x+pos.y*size.x+pos.z*size.x*size.y],2.0f))
 
-char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList &parameters, std::stack<CenterlinePoint> centerlineStack) {
+char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, SIPL::float3 spacing, paramList &parameters, std::stack<CenterlinePoint> centerlineStack) {
 
     float Thigh = getParam(parameters, "tdf-high"); // 0.6
     int Dmin = getParam(parameters, "min-distance");
@@ -136,7 +136,7 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList &parame
         for(int direction = -1; direction < 3; direction += 2) {
             int belowTlow = 0;
             int3 position(p.x,p.y,p.z);
-            float3 t_i = getTubeDirection(T, position, size);
+            float3 t_i = getTubeDirection(T, position, size, spacing);
             t_i.x *= direction;
             t_i.y *= direction;
             t_i.z *= direction;
@@ -213,7 +213,7 @@ char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList &parame
 
                         //TODO: check if all eigenvalues are negative, if so find the egeinvector that best matches
                         float3 lambda, e1, e2, e3;
-                        doEigen(T, maxPoint, size, &lambda, &e1, &e2, &e3);
+                        doEigen(T, maxPoint, size, spacing, &lambda, &e1, &e2, &e3);
                         if((lambda.x < 0 && lambda.y < 0 && lambda.z < 0)) {
                             if(fabs(t_i.dot(e3)) > fabs(t_i.dot(e2))) {
                                 if(fabs(t_i.dot(e3)) > fabs(t_i.dot(e1))) {

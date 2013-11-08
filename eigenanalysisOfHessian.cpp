@@ -261,7 +261,7 @@ void eigen_decomposition(float A[SIZE][SIZE], float V[SIZE][SIZE], float d[SIZE]
 
 
 #define POS(pos) pos.x+pos.y*size.x+pos.z*size.x*size.y
-SIPL::float3 gradient(TubeSegmentation &TS, SIPL::int3 pos, int volumeComponent, int dimensions, int3 size) {
+SIPL::float3 gradient(TubeSegmentation &TS, SIPL::int3 pos, int volumeComponent, int dimensions, int3 size, float3 spacing) {
     float * Fx = TS.Fx;
     float * Fy = TS.Fy;
     float * Fz = TS.Fz;
@@ -333,19 +333,19 @@ SIPL::float3 gradient(TubeSegmentation &TS, SIPL::int3 pos, int volumeComponent,
     break;
     }
 
-    float3 grad(0.5f*(f100-f_100), 0.5f*(f010-f0_10), 0.5f*(f001-f00_1));
+    float3 grad(0.5f*(f100-f_100)/spacing.x, 0.5f*(f010-f0_10)/spacing.y, 0.5f*(f001-f00_1)/spacing.z);
 
 
     return grad;
 }
 
 
-float3 getTubeDirection(TubeSegmentation &T, int3 pos, int3 size) {
+float3 getTubeDirection(TubeSegmentation &T, int3 pos, int3 size, float3 spacing) {
 
     // Do gradient on Fx, Fy and Fz and normalization
-    float3 Fx = gradient(T, pos,0,1,size);
-    float3 Fy = gradient(T, pos,1,2,size);
-    float3 Fz = gradient(T, pos,2,3,size);
+    float3 Fx = gradient(T, pos,0,1,size,spacing);
+    float3 Fy = gradient(T, pos,1,2,size,spacing);
+    float3 Fz = gradient(T, pos,2,3,size,spacing);
 
     float Hessian[3][3] = {
         {Fx.x, Fy.x, Fz.x},
@@ -359,12 +359,12 @@ float3 getTubeDirection(TubeSegmentation &T, int3 pos, int3 size) {
     return e1;
 }
 
-void doEigen(TubeSegmentation &T, int3 pos, int3 size, float3 * lambda, float3 * e1, float3 * e2, float3 * e3) {
+void doEigen(TubeSegmentation &T, int3 pos, int3 size, float3 spacing, float3 * lambda, float3 * e1, float3 * e2, float3 * e3) {
 
     // Do gradient on Fx, Fy and Fz and normalization
-    float3 Fx = gradient(T, pos,0,1,size);
-    float3 Fy = gradient(T, pos,1,2,size);
-    float3 Fz = gradient(T, pos,2,3,size);
+    float3 Fx = gradient(T, pos,0,1,size,spacing);
+    float3 Fy = gradient(T, pos,1,2,size,spacing);
+    float3 Fz = gradient(T, pos,2,3,size,spacing);
 
     float Hessian[3][3] = {
         {Fx.x, Fy.x, Fz.x},

@@ -32,10 +32,10 @@ public:
 	};
 };
 
-std::vector<CrossSection *> createGraph(TubeSegmentation &T, SIPL::int3 size) {
+std::vector<CrossSection *> createGraph(TubeSegmentation &T, SIPL::int3 size, SIPL::float3 spacing) {
 	// Create vector
 	std::vector<CrossSection *> sections;
-	float threshold = 0.5f;
+	float threshold = 0.6f;
 
 	// Go through TS.TDF and add all with TDF above threshold
 	int counter = 0;
@@ -50,7 +50,7 @@ std::vector<CrossSection *> createGraph(TubeSegmentation &T, SIPL::int3 size) {
 		    //std::cout << SQR_MAG(pos) << " " << SQR_MAG_SMALL(pos) << std::endl;
 			//std::cout << "radius" << TS.radius[POS(pos)] << std::endl;
 			//std::cout << "maxD "<< maxD <<std::endl;
-			float3 e1 = getTubeDirection(T, pos, size);
+			float3 e1 = getTubeDirection(T, pos, size, spacing);
 			bool invalid = false;
 		    for(int a = -maxD; a <= maxD; a++) {
 		    for(int b = -maxD; b <= maxD; b++) {

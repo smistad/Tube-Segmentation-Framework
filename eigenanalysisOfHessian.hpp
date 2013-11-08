@@ -4,8 +4,8 @@
 #include "tube-segmentation.hpp"
 using namespace SIPL;
 
-void doEigen(TubeSegmentation &T, int3 pos, int3 size, float3 * lambda, float3 * e1, float3 * e2, float3 * e3);
+void doEigen(TubeSegmentation &T, int3 pos, int3 size, float3 spacing, float3 * lambda, float3 * e1, float3 * e2, float3 * e3);
 
-float3 getTubeDirection(TubeSegmentation &T, int3 pos, int3 size);
+float3 getTubeDirection(TubeSegmentation &T, int3 pos, int3 size, float3 spacing);
 
 #endif

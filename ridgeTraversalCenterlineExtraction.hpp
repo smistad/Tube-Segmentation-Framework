@@ -12,6 +12,6 @@ typedef struct CenterlinePoint {
     CenterlinePoint * next;
 } CenterlinePoint;
 
-char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, paramList &parameters, std::stack<CenterlinePoint> centerlineStack);
+char * runRidgeTraversal(TubeSegmentation &T, SIPL::int3 size, SIPL::float3 spacing, paramList &parameters, std::stack<CenterlinePoint> centerlineStack);
 
 #endif

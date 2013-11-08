@@ -1132,7 +1132,7 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D * dataset, SIPL::int3 * s
     //ocl->queue.enqueueReadImage(dataset, CL_TRUE, offset, region, 0, 0, TS.intensity);
 
     // Create pairs of voxels with high TDF
-    std::vector<CrossSection *> crossSections = createGraph(TS, *size);
+    std::vector<CrossSection *> crossSections = createGraph(TS, *size, output->getSpacing());
 
     // Display pairs
 	#ifdef USE_SIPL_VISUALIZATION
@@ -1337,7 +1337,7 @@ void runCircleFittingAndRidgeTraversal(OpenCL * ocl, Image3D * dataset, SIPL::in
     output->setTDF(TS.TDF);
     ocl->queue.enqueueReadImage(radius, CL_TRUE, offset, region, 0, 0, TS.radius);
     std::stack<CenterlinePoint> centerlineStack;
-    TS.centerline = runRidgeTraversal(TS, *size, parameters, centerlineStack);
+    TS.centerline = runRidgeTraversal(TS, *size, output->getSpacing(), parameters, centerlineStack);
     output->setCenterlineVoxels(TS.centerline);
 
     if(getParamBool(parameters, "timing")) {

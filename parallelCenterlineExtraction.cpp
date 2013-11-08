@@ -320,7 +320,7 @@ char * createCenterlineVoxels(
 
 	return centerlines;
 }
-Image3D runNewCenterlineAlgWithoutOpenCL(OpenCL &ocl, SIPL::int3 size, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radius) {
+Image3D runNewCenterlineAlgWithoutOpenCL(OpenCL &ocl, SIPL::int3 size, SIPL::float3 spacing, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radius) {
     const int totalSize = size.x*size.y*size.z;
 	const bool no3Dwrite = !getParamBool(parameters, "3d_write");
     const int cubeSize = getParam(parameters, "cube-size");
@@ -405,7 +405,7 @@ Image3D runNewCenterlineAlgWithoutOpenCL(OpenCL &ocl, SIPL::int3 size, paramList
         const int maxD = std::max(std::min((float)round(radii), 5.0f), 1.0f);
         bool invalid = false;
 
-        float3 e1 = getTubeDirection(T, pos, size);
+        float3 e1 = getTubeDirection(T, pos, size, spacing);
 
         for(int a = -maxD; a <= maxD; a++) {
         for(int b = -maxD; b <= maxD; b++) {
@@ -667,7 +667,7 @@ Image3D runNewCenterlineAlgWithoutOpenCL(OpenCL &ocl, SIPL::int3 size, paramList
 Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, SIPL::float3 spacing, paramList &parameters, Image3D &vectorField, Image3D &TDF, Image3D &radius) {
     if(ocl.platform.getInfo<CL_PLATFORM_VENDOR>().substr(0,5) == "Apple") {
         std::cout << "Apple platform detected. Running centerline extraction without OpenCL." << std::endl;
-        return runNewCenterlineAlgWithoutOpenCL(ocl,size,parameters,vectorField,TDF,radius);
+        return runNewCenterlineAlgWithoutOpenCL(ocl,size,spacing,parameters,vectorField,TDF,radius);
     }
     const int totalSize = size.x*size.y*size.z;
 	const bool no3Dwrite = !getParamBool(parameters, "3d_write");

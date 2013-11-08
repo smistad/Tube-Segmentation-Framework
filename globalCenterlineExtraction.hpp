@@ -35,7 +35,7 @@ public:
 	float cost;
 };
 
-std::vector<CrossSection *> createGraph(TubeSegmentation &T, SIPL::int3 size);
+std::vector<CrossSection *> createGraph(TubeSegmentation &T, SIPL::int3 size, SIPL::float3 spacing);
 
 std::vector<Segment *> createSegments(OpenCL &ocl, TubeSegmentation &TS, std::vector<CrossSection *> &crossSections, SIPL::int3 size);
 int selectRoot(std::vector<Segment *> segments);
