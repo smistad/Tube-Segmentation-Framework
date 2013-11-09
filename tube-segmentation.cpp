@@ -475,7 +475,7 @@ if(getParamBool(parameters, "timing")) {
     ocl.GC.addMemObject(TDFsmallBuffer);
     Buffer * radiusSmallBuffer = new Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
     ocl.GC.addMemObject(radiusSmallBuffer);
-    runCircleFittingTDF(ocl,size,spacing,vectorFieldSmall,TDFsmallBuffer,radiusSmallBuffer,radiusMin,3.0f,0.5f);
+    runCircleFittingTDF(ocl,size,spacing,vectorFieldSmall,TDFsmallBuffer,radiusSmallBuffer,radiusMin,1.0f,0.5f);
 
 
     if(radiusMax < 2.5) {
@@ -771,11 +771,14 @@ if(getParamBool(parameters, "timing")) {
 			}
 		}
 	}
-	//vectorField = runFMGGVF(ocl,initVectorField,parameters,size);
-	if(useSlowGVF) {
-		vectorField = runGVF(ocl, initVectorField, parameters, size, spacing, true);
+	if(getParamBool(parameters, "use-fmg-gvf")) {
+        vectorField = runFMGGVF(ocl,initVectorField,parameters,size);
 	} else {
-		vectorField = runGVF(ocl, initVectorField, parameters, size, spacing, false);
+        if(useSlowGVF) {
+                vectorField = runGVF(ocl, initVectorField, parameters, size, spacing, true);
+        } else {
+                vectorField = runGVF(ocl, initVectorField, parameters, size, spacing, false);
+        }
 	}
 
 if(getParamBool(parameters, "timing")) {
