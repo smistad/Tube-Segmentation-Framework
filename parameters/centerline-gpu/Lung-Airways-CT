@@ -1,13 +1,17 @@
 mode black
-gvf-iterations 250
-min-mean-tdf 0.5
-tdf-high 0.55
+gvf-iterations 500
+min-mean-tdf 0.55
+tdf-high 0.6
 gvf-mu 0.02
-small-blur 0.0
-large-blur 1.0
+small-blur 0.5
+large-blur 1.5
 fmax 0.3
 cropping lung
 minimum -1024
 maximum -400
 min-scan-lines-lung 128
 min-tree-length 100
+use-spline-tdf
+radius-max 50
+radius-min 1.0
+max-distance 40
