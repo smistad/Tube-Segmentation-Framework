@@ -996,7 +996,7 @@ SIPL::Volume<float3> * visualizeSegments(std::vector<Segment *> segments, int3 s
 			for(int i = 0; i < distance; i++) {
 				float frac = (float)i/distance;
 				float3 n = a->pos + frac*direction;
-				int3 in(SIPL::round(n.x),SIPL::round(n.y),SIPL::round(n.z));
+				int3 in(round(n.x),round(n.y),round(n.z));
 				float3 v = connections->get(in);
 				v.x = 1.0f;
 				connections->set(in, v);
@@ -1010,7 +1010,7 @@ SIPL::Volume<float3> * visualizeSegments(std::vector<Segment *> segments, int3 s
 			for(int i = 0; i < distance; i++) {
 				float frac = (float)i/distance;
 				float3 n = a->pos + frac*direction;
-				int3 in(SIPL::round(n.x),SIPL::round(n.y),SIPL::round(n.z));
+				int3 in(round(n.x),round(n.y),round(n.z));
 				float3 v = connections->get(in);
 				v.y = 1.0f;
 				connections->set(in, v);
@@ -1209,7 +1209,7 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D * dataset, SIPL::int3 * s
 			for(int i = 0; i < distance; i++) {
 				float frac = (float)i/distance;
 				float3 n = a->pos + frac*direction;
-				int3 in(std::round(n.x),std::round(n.y),std::round(n.z));
+				int3 in(round(n.x),round(n.y),round(n.z));
 				centerline[in.x+in.y*size->x+in.z*size->x*size->y] = 1;
 			}
 		}
@@ -1228,7 +1228,7 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D * dataset, SIPL::int3 * s
 			for(int i = 0; i < distance; i++) {
 				float frac = (float)i/distance;
 				float3 n = a->pos + frac*direction;
-				int3 in(std::round(n.x),std::round(n.y),std::round(n.z));
+				int3 in(round(n.x),round(n.y),round(n.z));
 				centerline[in.x+in.y*size->x+in.z*size->x*size->y] = 1;
 			}
 
