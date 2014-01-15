@@ -758,8 +758,9 @@ if(getParamBool(parameters, "timing")) {
 			}
 		}
 	}
-	//vectorField = runFMGGVF(ocl,initVectorField,parameters,size);
-	if(useSlowGVF) {
+    if(getParamBool(parameters, "use-fmg-gvf")) {
+        vectorField = runFMGGVF(ocl,initVectorField,parameters,size);
+    } else if(useSlowGVF) {
 		vectorField = runGVF(ocl, initVectorField, parameters, size, true);
 	} else {
 		vectorField = runGVF(ocl, initVectorField, parameters, size, false);
