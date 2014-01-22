@@ -1,5 +1,6 @@
 #ifndef COMMONS_H
 #define COMMONS_H
+#define CL_USE_DEPRECATED_OPENCL_1_1_APIS
 #include "OpenCLUtilities/openCLUtilities.hpp"
 #include "SIPL/Types.hpp"
 
