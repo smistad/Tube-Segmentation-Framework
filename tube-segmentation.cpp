@@ -1517,7 +1517,7 @@ Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &par
         ocl.queue.enqueueWriteImage(dataset, CL_FALSE, offset, region2, 0, 0, data);
         getLimits<unsigned short>(parameters, data, totalSize, &minimum, &maximum);
 
-        if(getParamStr(parameters, "parameters") == "Lung-Airways-CT") {
+        if(getParamStr(parameters, "parameters") == "Lung-Airways-CT" || getParamStr(parameters, "parameters") == "AAA-Vessels-CT") {
         	// If parameter preset is airway and the volume loaded is unsigned;
         	// Change min and max to be unsigned as well, and change Threshold in cropping
 			char * str = new char[255];
