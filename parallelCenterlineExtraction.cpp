@@ -3,7 +3,7 @@
 #include <vector>
 #include <queue>
 #include "inputOutput.hpp"
-#include "histogram-pyramids.hpp"
+#include "OpenCLUtilityLibrary/HistogramPyramids.hpp"
 #include "eigenanalysisOfHessian.hpp"
 #ifdef CPP11
 #include <unordered_set>
@@ -724,7 +724,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
                 NullRange
         );
 
-        HistogramPyramid3DBuffer hp3(ocl);
+        oul::HistogramPyramid3DBuffer hp3(ocl);
         hp3.create(*centerpoints, size.x, size.y, size.z);
 
         candidates2Kernel.setArg(0, TDF);
@@ -793,7 +793,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
         ocl.GC->deleteMemoryObject(centerpointsImage2);
 
         // Construct HP of centerpointsImage
-        HistogramPyramid3DBuffer hp(ocl);
+        oul::HistogramPyramid3DBuffer hp(ocl);
         hp.create(*centerpoints3, size.x, size.y, size.z);
         sum = hp.getSum();
         std::cout << "number of vertices detected " << sum << std::endl;
@@ -836,7 +836,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
         candidates2Kernel.setArg(1, radius);
         candidates2Kernel.setArg(2, vectorField);
 
-        HistogramPyramid3D hp3(ocl);
+        oul::HistogramPyramid3D hp3(ocl);
         hp3.create(*centerpointsImage, size.x, size.y, size.z);
         std::cout << "candidates: " << hp3.getSum() << std::endl;
 		if(hp3.getSum() <= 0 || hp3.getSum() > 0.5*totalSize) {
@@ -881,7 +881,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
         ocl.GC->deleteMemoryObject(centerpointsImage2);
 
         // Construct HP of centerpointsImage
-        HistogramPyramid3D hp(ocl);
+        oul::HistogramPyramid3D hp(ocl);
         hp.create(*centerpointsImage3, size.x, size.y, size.z);
         sum = hp.getSum();
         std::cout << "number of vertices detected " << sum << std::endl;
@@ -1038,7 +1038,7 @@ if(getParamBool(parameters, "timing")) {
 	edgeTuples = edgeTuples2;
 
     // Run HP on edgeTuples
-    HistogramPyramid2D hp2(ocl);
+    oul::HistogramPyramid2D hp2(ocl);
     hp2.create(edgeTuples, sum, sum);
 
 	std::cout << "number of edges detected " << hp2.getSum() << std::endl;

@@ -12,7 +12,6 @@
 #include "inputOutput.hpp"
 #include "segmentation.hpp"
 #include "SIPL/Types.hpp"
-#include "OpenCLUtilities/histogram-pyramids.hpp"
 #include <boost/iostreams/device/mapped_file.hpp>
 #include <queue>
 #include <stack>
@@ -22,6 +21,7 @@
 #include <fstream>
 #include "timing.hpp"
 #include <cmath>
+#include "HelperFunctions.hpp"
 #define MAX(a,b) a > b ? a : b
 // Undefine windows crap
 #ifdef WIN32
@@ -140,7 +140,7 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
             runCircleFittingAndTest(ocl, dataset, size, parameters, output);
         }
     } catch(cl::Error e) {
-    	std::string str = "OpenCL error: " + std::string(getCLErrorString(e.err()));
+    	//std::string str = "OpenCL error: " + oul::getCLErrorString(e.err());
         ocl->GC->deleteAllMemoryObjects();
         delete output;
 
@@ -150,7 +150,8 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
             return run(filename,parameters,kernel_dir);
         }
 
-        throw SIPL::SIPLException(str.c_str());
+        //throw SIPL::SIPLException(str.c_str());
+        throw SIPL::SIPLException();
     }
     ocl->queue.finish();
     if(getParamBool(parameters, "timer-total")) {
