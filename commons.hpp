@@ -1,7 +1,18 @@
 #ifndef COMMONS_H
 #define COMMONS_H
-#include "OpenCLUtilities/openCLUtilities.hpp"
+#define CL_USE_DEPRECATED_OPENCL_1_1_APIS
+
+#include "OpenCLUtilityLibrary/OpenCLManager.hpp"
 #include "SIPL/Types.hpp"
+
+typedef struct OpenCL {
+    cl::Context context;
+    cl::CommandQueue queue;
+    cl::Program program;
+    cl::Device device;
+    cl::Platform platform;
+    oul::GarbageCollector * GC;
+} OpenCL;
 
 #ifdef WIN32
 // Add some math functions that are missing from the windows math library
