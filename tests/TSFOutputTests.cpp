@@ -1,14 +1,14 @@
 #include "tests.hpp"
 
 TEST(TSFOutputTest, Initialization) {
-	TSFOutput output(new OpenCL, new SIPL::int3);
+	TSFOutput output(oul::DeviceCriteria(), new SIPL::int3);
 	EXPECT_FALSE(output.hasSegmentation());
 	EXPECT_FALSE(output.hasCenterlineVoxels());
 	EXPECT_FALSE(output.hasTDF());
 }
 
 TEST(TSFOutputTest, SetHostData) {
-	TSFOutput output(new OpenCL, new SIPL::int3);
+	TSFOutput output(oul::DeviceCriteria(), new SIPL::int3);
 	output.setTDF(new float);
 	EXPECT_TRUE(output.hasTDF());
 	EXPECT_FALSE(output.hasSegmentation());
@@ -24,7 +24,7 @@ TEST(TSFOutputTest, SetHostData) {
 }
 
 TEST(TSFOutputTest, GetHostData) {
-	TSFOutput output(new OpenCL, new SIPL::int3);
+	TSFOutput output(oul::DeviceCriteria(), new SIPL::int3);
 	float * TDF = new float[3];
 	TDF[0] = 0.5f;
 	TDF[1] = 1.0f;
@@ -55,7 +55,7 @@ TEST(TSFOutputTest, GetHostData) {
 
 TEST(TSFOutputTest, GetSize) {
 	SIPL::int3 * size = new SIPL::int3(100, 20, 1);
-	TSFOutput output(new OpenCL, size);
+	TSFOutput output(oul::DeviceCriteria(), size);
 	EXPECT_EQ(100, output.getSize()->x);
 	EXPECT_EQ(20, output.getSize()->y);
 	EXPECT_EQ(1, output.getSize()->z);
@@ -63,7 +63,7 @@ TEST(TSFOutputTest, GetSize) {
 
 TEST(TSFOutputTest, ShiftVector) {
 	SIPL::int3 shiftVector(3, 10, 2);
-	TSFOutput output(new OpenCL, new SIPL::int3);
+	TSFOutput output(oul::DeviceCriteria(), new SIPL::int3);
 	output.setShiftVector(shiftVector);
 	EXPECT_EQ(3, output.getShiftVector().x);
 	EXPECT_EQ(10, output.getShiftVector().y);

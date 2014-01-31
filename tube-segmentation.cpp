@@ -53,8 +53,6 @@ int runCounter = 0;
 TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_dir) {
 
     INIT_TIMER
-    oul::OpenCLManager * manager = oul::OpenCLManager::getInstance();
-    manager->setDebugMode(true);
     oul::DeviceCriteria criteria;
     criteria.setDeviceCountCriteria(1);
     if(parameters.strings["device"].get() == "gpu") {
@@ -64,14 +62,17 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
         criteria.setTypeCriteria(oul::DEVICE_TYPE_CPU);
     }
     
-    oul::Context c = manager->createContext(criteria);//TODO:, false, getParamBool(parameters, "timing"));
+
+    SIPL::int3 * size = new SIPL::int3();
+    TSFOutput * output = new TSFOutput(criteria, size, getParamBool(parameters, "16bit-vectors"));
+    oul::Context * c = output->getContext();
 
     OpenCL * ocl = new OpenCL;
-    ocl->context = c.getContext();
-	ocl->platform = c.getPlatform();
-	ocl->queue = c.getQueue(0);
-	ocl->device = c.getDevice(0);
-	ocl->GC = c.getGarbageCollector();
+    ocl->context = c->getContext();
+	ocl->platform = c->getPlatform();
+	ocl->queue = c->getQueue(0);
+	ocl->device = c->getDevice(0);
+	ocl->GC = c->getGarbageCollector();
 
     // Select first device
     std::cout << "Using device: " << ocl->device.getInfo<CL_DEVICE_NAME>() << std::endl;
@@ -91,7 +92,7 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
         if(getParamBool(parameters, "16bit-vectors")) {
         	buildOptions = "-D VECTORS_16BIT";
         }
-        c.createProgramFromSource(filename, buildOptions);
+        c->createProgramFromSource(filename, buildOptions);
         BoolParameter v = parameters.bools["3d_write"];
         v.set(true);
         parameters.bools["3d_write"] = v;
@@ -106,15 +107,13 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
         	buildOptions = "-D VECTORS_16BIT";
         	std::cout << "NOTE: Forcing the use of 16 bit buffers. This is slow, but uses half the memory." << std::endl;
         }
-        c.createProgramFromSource(filename, buildOptions);
+        c->createProgramFromSource(filename, buildOptions);
     }
-    ocl->program = c.getProgram(0);
+    ocl->program = c->getProgram(0);
 
     if(getParamBool(parameters, "timer-total")) {
 		START_TIMER
     }
-    SIPL::int3 * size = new SIPL::int3();
-    TSFOutput * output = new TSFOutput(ocl, size, getParamBool(parameters, "16bit-vectors"));
     try {
         // Read dataset and transfer to device
         cl::Image3D * dataset = new cl::Image3D;
