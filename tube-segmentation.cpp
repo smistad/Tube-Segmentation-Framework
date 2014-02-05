@@ -76,6 +76,7 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
 
     // Select first device
     std::cout << "Using device: " << ocl->device.getInfo<CL_DEVICE_NAME>() << std::endl;
+    std::cout << "Using platform: " << ocl->platform.getInfo<CL_PLATFORM_NAME>() << std::endl;
 
     // Query the size of available memory
     unsigned int memorySize = ocl->device.getInfo<CL_DEVICE_GLOBAL_MEM_SIZE>();
@@ -109,6 +110,7 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
         }
         c->createProgramFromSource(filename, buildOptions);
     }
+    std::cout << "program compiled" << std::endl;
     ocl->program = c->getProgram(0);
 
     if(getParamBool(parameters, "timer-total")) {
@@ -1794,6 +1796,32 @@ Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &par
             std::cout << "Cropping time: " << (end-start)*1.0e-6 << " ms" << std::endl;
             ocl.queue.enqueueMarker(&startEvent);
         }
+    } else if(getParamStr(parameters, "parameters") == "AAA-Vessels-CT") {
+        float percentToRemove = 0.15f; // Remove 10% from each side in the xy plane
+
+        cl::size_t<3> offset;
+        offset[0] = round(size->x * percentToRemove);
+        offset[1] = round(size->y * percentToRemove);
+        offset[2] = 0;
+
+        size->x = size->x - offset[0]*2;
+        size->y = size->y - offset[1]*2;
+
+        // Make sure the dataset is dividable by 4
+        while(size->x % 4 != 0)
+            size->x--;
+        while(size->y % 4 != 0)
+            size->y--;
+        while(size->z % 4 != 0)
+            size->z--;
+
+        cl::size_t<3> region = oul::createRegion(size->x, size->y, size->z);
+        Image3D imageHUvolume = Image3D(ocl.context, CL_MEM_READ_ONLY, imageFormat, size->x, size->y, size->z);
+
+        ocl.queue.enqueueCopyImage(dataset, imageHUvolume, offset, oul::createOrigoRegion(), region);
+        dataset = imageHUvolume;
+
+        std::cout << "NOTE: reduced size to " << size->x << ", " << size->y << ", " << size->z << std::endl;
     } else {// End cropping
         // If cropping is not done, shrink volume so that each dimension is dividable by 4
     	bool notDividable = false;
