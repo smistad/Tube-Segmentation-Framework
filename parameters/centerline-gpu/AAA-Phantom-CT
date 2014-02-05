@@ -1,0 +1,14 @@
+gvf-mu 0.2
+gvf-iterations 10
+max-distance 50
+maximum 1100
+minimum 100
+mode black
+radius-max 90
+radius-min 3.5
+use-spline-tdf true
+use-fmg-gvf true
+tdf-high 0.5
+min-mean-tdf 0.3
+large-blur 0.5
+fmax 0.05

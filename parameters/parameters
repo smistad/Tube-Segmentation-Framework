@@ -43,3 +43,4 @@ loop-removal bool true "Perform loop removal on centerlines on CPU" advanced
 timer-total bool false "Measure the total execution time" advanced
 max-edge-distance num 3 2 30 1 "Maxium distance between two vertices in the vtk centerline file. If an edge has a length above it, more vertices and edges will be created in between" centerline-gpu
 use-spline-tdf bool false "Use Spline TDF" tube-detection-filter
+use-fmg-gvf bool false "Use FMG GVF" gradient-vector-flow
