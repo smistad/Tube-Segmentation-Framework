@@ -760,6 +760,7 @@ if(getParamBool(parameters, "timing")) {
 	} else {
 		vectorField = runGVF(ocl, initVectorField, parameters, size, false);
 	}
+std::cout << "GVF finished" << std::endl;
 
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
@@ -786,6 +787,7 @@ if(getParamBool(parameters, "timing")) {
     } else {
         runCircleFittingTDF(ocl,size,&vectorField,&TDFlarge,&radiusLarge,std::max(2.5f, radiusMin),radiusMax,radiusStep);
     }
+std::cout << "TDF finished" << std::endl;
 
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
@@ -1471,8 +1473,8 @@ Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &par
     // Read dataset by memory mapping the file and transfer to device
     Image3D dataset;
     int type = 0;
-    void * data;
     file = new boost::iostreams::mapped_file_source[1];
+    void * data;
     cl::size_t<3> offset;
     offset[0] = 0;
     offset[1] = 0;
@@ -1488,28 +1490,14 @@ Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &par
     if(typeName == "MET_SHORT") {
         type = 1;
         file->open(rawFilename, size->x*size->y*size->z*sizeof(short));
-        imageFormat = ImageFormat(CL_R, CL_SIGNED_INT16);
-        dataset = Image3D(
-                ocl.context, 
-                CL_MEM_READ_ONLY,
-                imageFormat,
-                size->x, size->y, size->z
-        );
         data = (void *)file->data();
-        ocl.queue.enqueueWriteImage(dataset, CL_FALSE, offset, region2, 0, 0, data);
+        imageFormat = ImageFormat(CL_R, CL_SIGNED_INT16);
         getLimits<short>(parameters, data, totalSize, &minimum, &maximum);
     } else if(typeName == "MET_USHORT") {
         type = 2;
         file->open(rawFilename, size->x*size->y*size->z*sizeof(short));
-        imageFormat = ImageFormat(CL_R, CL_UNSIGNED_INT16);
-        dataset = Image3D(
-                ocl.context, 
-                CL_MEM_READ_ONLY,
-                ImageFormat(CL_R, CL_UNSIGNED_INT16),
-                size->x, size->y, size->z
-        );
         data = (void *)file->data();
-        ocl.queue.enqueueWriteImage(dataset, CL_FALSE, offset, region2, 0, 0, data);
+        imageFormat = ImageFormat(CL_R, CL_UNSIGNED_INT16);
         getLimits<unsigned short>(parameters, data, totalSize, &minimum, &maximum);
 
         if(getParamStr(parameters, "parameters") == "Lung-Airways-CT" || getParamStr(parameters, "parameters") == "AAA-Vessels-CT") {
@@ -1527,46 +1515,33 @@ Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &par
     } else if(typeName == "MET_CHAR") {
         type = 1;
         file->open(rawFilename, size->x*size->y*size->z*sizeof(char));
-        imageFormat = ImageFormat(CL_R, CL_SIGNED_INT8);
-        dataset = Image3D(
-                ocl.context, 
-                CL_MEM_READ_ONLY,
-                imageFormat,
-                size->x, size->y, size->z
-        );
         data = (void *)file->data();
-        ocl.queue.enqueueWriteImage(dataset, CL_FALSE, offset, region2, 0, 0, data);
+        imageFormat = ImageFormat(CL_R, CL_SIGNED_INT8);
         getLimits<char>(parameters, data, totalSize, &minimum, &maximum);
     } else if(typeName == "MET_UCHAR") {
         type = 2;
         file->open(rawFilename, size->x*size->y*size->z*sizeof(char));
-        imageFormat = ImageFormat(CL_R, CL_UNSIGNED_INT8);
-        dataset = Image3D(
-                ocl.context, 
-                CL_MEM_READ_ONLY,
-                imageFormat,
-                size->x, size->y, size->z
-        );
         data = (void *)file->data();
-        ocl.queue.enqueueWriteImage(dataset, CL_FALSE, offset, region2, 0, 0, data);
+        imageFormat = ImageFormat(CL_R, CL_UNSIGNED_INT8);
         getLimits<unsigned char>(parameters, data, totalSize, &minimum, &maximum);
     } else if(typeName == "MET_FLOAT") {
         type = 3;
         file->open(rawFilename, size->x*size->y*size->z*sizeof(float));
-        imageFormat = ImageFormat(CL_R, CL_FLOAT);
-        dataset = Image3D(
-                ocl.context, 
-                CL_MEM_READ_ONLY,
-                imageFormat,
-                size->x, size->y, size->z
-        );
         data = (void *)file->data();
-        ocl.queue.enqueueWriteImage(dataset, CL_FALSE, offset, region2, 0, 0, data);
+        imageFormat = ImageFormat(CL_R, CL_FLOAT);
         getLimits<float>(parameters, data, totalSize, &minimum, &maximum);
     } else {
     	std::string str = "unsupported data type " + typeName;
     	throw SIPL::SIPLException(str.c_str(), __LINE__, __FILE__);
     }
+    dataset = Image3D(
+            ocl.context,
+            CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+            imageFormat,
+            size->x, size->y, size->z,
+            0,0,
+            data
+    );
 
 
     std::cout << "Dataset of size " << size->x << " " << size->y << " " << size->z << " loaded" << std::endl;
