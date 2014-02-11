@@ -1,6 +1,6 @@
-[submodule "OpenCLUtilities"]
-	path = OpenCLUtilities
-	url = https://github.com/smistad/OpenCLUtilities.git
 [submodule "SIPL"]
 	path = SIPL
 	url = https://github.com/smistad/SIPL.git
+[submodule "OpenCLUtilityLibrary"]
+	path = OpenCLUtilityLibrary
+	url = https://github.com/smistad/OpenCLUtilityLibrary.git

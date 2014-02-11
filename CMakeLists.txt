@@ -19,11 +19,11 @@ endif()
 #------------------------------------------------------------------------------
 
 #
-# OpenCLUtilities
+# OpenCLUtilityLibrary
 ###########
-add_subdirectory(OpenCLUtilities)
-find_package(OCL-Utilities PATHS "${Tube-Segmentation-Framework_BINARY_DIR}/OpenCLUtilities" REQUIRED)
-include(${OCL-Utilities_USE_FILE})
+add_subdirectory(OpenCLUtilityLibrary)
+find_package(OpenCLUtilityLibrary PATHS "${Tube-Segmentation-Framework_BINARY_DIR}/OpenCLUtilityLibrary" REQUIRED)
+include(${OpenCLUtilityLibrary_USE_FILE})
 
 #
 # SIPL
@@ -74,7 +74,7 @@ add_library(tubeSegmentationLib
 	inputOutput.cpp
 	segmentation.cpp
 )
-target_link_libraries(tubeSegmentationLib OCL-Utilities SIPL ${Boost_LIBRARIES} ${OPENCL_LIBRARIES})
+target_link_libraries(tubeSegmentationLib OpenCLUtilityLibrary SIPL ${Boost_LIBRARIES} ${OPENCL_LIBRARIES})
 
 #
 # tubeSegmentation executable
@@ -93,7 +93,7 @@ if(SIPL_USE_GTK)
 		inputOutput.cpp
 		segmentation.cpp
 	)
-    target_link_libraries(tubeSegmentation SIPL OCL-Utilities ${Boost_LIBRARIES} ${OPENCL_LIBRARIES})
+    target_link_libraries(tubeSegmentation SIPL OpenCLUtilityLibrary ${Boost_LIBRARIES} ${OPENCL_LIBRARIES})
 endif()
 
 #------------------------------------------------------------------------------
@@ -103,7 +103,7 @@ find_package(GTest)
 if(GTEST_FOUND)
 if(SIPL_USE_GTK)
 	message("Google test framework found. Enabling testing ...")
-	target_link_libraries(tubeSegmentationLib OCL-Utilities SIPL ${Boost_LIBRARIES})
+	target_link_libraries(tubeSegmentationLib OpenCLUtilityLibrary SIPL ${Boost_LIBRARIES})
 	enable_testing()
 	add_subdirectory(tests)
 endif()

@@ -1,4 +1,5 @@
 #include "segmentation.hpp"
+#include <iostream>
 using namespace cl;
 
 Image3D runInverseGradientSegmentation(OpenCL &ocl, Image3D &centerline, Image3D &vectorField, Image3D &radius, SIPL::int3 size, paramList parameters) {

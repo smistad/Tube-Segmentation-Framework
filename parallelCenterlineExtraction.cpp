@@ -3,7 +3,7 @@
 #include <vector>
 #include <queue>
 #include "inputOutput.hpp"
-#include "histogram-pyramids.hpp"
+#include "OpenCLUtilityLibrary/HistogramPyramids.hpp"
 #include "eigenanalysisOfHessian.hpp"
 #ifdef CPP11
 #include <unordered_set>
@@ -702,7 +702,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
             ImageFormat(CL_R, CL_SIGNED_INT8),
             size.x, size.y, size.z
     );
-    ocl.GC.addMemObject(centerpointsImage2);
+    ocl.GC->addMemoryObject(centerpointsImage2);
     Buffer vertices;
     int sum = 0;
 
@@ -712,7 +712,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
                 CL_MEM_READ_WRITE,
                 sizeof(char)*totalSize
         );
-        ocl.GC.addMemObject(centerpoints);
+        ocl.GC->addMemoryObject(centerpoints);
 
         candidatesKernel.setArg(0, TDF);
         candidatesKernel.setArg(1, *centerpoints);
@@ -724,7 +724,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
                 NullRange
         );
 
-        HistogramPyramid3DBuffer hp3(ocl);
+        oul::HistogramPyramid3DBuffer hp3(ocl);
         hp3.create(*centerpoints, size.x, size.y, size.z);
 
         candidates2Kernel.setArg(0, TDF);
@@ -735,7 +735,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
                 CL_MEM_READ_WRITE,
                 sizeof(char)*totalSize
         );
-        ocl.GC.addMemObject(centerpoints2);
+        ocl.GC->addMemoryObject(centerpoints2);
         initCharBuffer.setArg(0, *centerpoints2);
         ocl.queue.enqueueNDRangeKernel(
                 initCharBuffer,
@@ -752,7 +752,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
         hp3.traverse(candidates2Kernel, 4);
         ocl.queue.finish();
         hp3.deleteHPlevels();
-        ocl.GC.deleteMemObject(centerpoints);
+        ocl.GC->deleteMemoryObject(centerpoints);
         ocl.queue.enqueueCopyBufferToImage(
             *centerpoints2,
             *centerpointsImage2,
@@ -761,7 +761,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
             region
         );
         ocl.queue.finish();
-        ocl.GC.deleteMemObject(centerpoints2);
+        ocl.GC->deleteMemoryObject(centerpoints2);
 
 		if(getParamBool(parameters, "centerpoints-only")) {
 			return *centerpointsImage2;
@@ -774,7 +774,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
                 CL_MEM_READ_WRITE,
                 sizeof(char)*totalSize
         );
-        ocl.GC.addMemObject(centerpoints3);
+        ocl.GC->addMemoryObject(centerpoints3);
         initCharBuffer.setArg(0, *centerpoints3);
         ocl.queue.enqueueNDRangeKernel(
                 initCharBuffer,
@@ -790,10 +790,10 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
                 NullRange
         );
         ocl.queue.finish();
-        ocl.GC.deleteMemObject(centerpointsImage2);
+        ocl.GC->deleteMemoryObject(centerpointsImage2);
 
         // Construct HP of centerpointsImage
-        HistogramPyramid3DBuffer hp(ocl);
+        oul::HistogramPyramid3DBuffer hp(ocl);
         hp.create(*centerpoints3, size.x, size.y, size.z);
         sum = hp.getSum();
         std::cout << "number of vertices detected " << sum << std::endl;
@@ -802,7 +802,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
         vertices = hp.createPositionBuffer();
         ocl.queue.finish();
         hp.deleteHPlevels();
-        ocl.GC.deleteMemObject(centerpoints3);
+        ocl.GC->deleteMemoryObject(centerpoints3);
     } else {
         Kernel init3DImage(ocl.program, "init3DImage");
         init3DImage.setArg(0, *centerpointsImage2);
@@ -819,7 +819,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
                 ImageFormat(CL_R, CL_SIGNED_INT8),
                 size.x, size.y, size.z
         );
-        ocl.GC.addMemObject(centerpointsImage);
+        ocl.GC->addMemoryObject(centerpointsImage);
 
         candidatesKernel.setArg(0, TDF);
         candidatesKernel.setArg(1, *centerpointsImage);
@@ -836,7 +836,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
         candidates2Kernel.setArg(1, radius);
         candidates2Kernel.setArg(2, vectorField);
 
-        HistogramPyramid3D hp3(ocl);
+        oul::HistogramPyramid3D hp3(ocl);
         hp3.create(*centerpointsImage, size.x, size.y, size.z);
         std::cout << "candidates: " << hp3.getSum() << std::endl;
 		if(hp3.getSum() <= 0 || hp3.getSum() > 0.5*totalSize) {
@@ -847,7 +847,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
         hp3.traverse(candidates2Kernel, 4);
         ocl.queue.finish();
         hp3.deleteHPlevels();
-        ocl.GC.deleteMemObject(centerpointsImage);
+        ocl.GC->deleteMemoryObject(centerpointsImage);
 
         Image3D * centerpointsImage3 = new Image3D(
                 ocl.context,
@@ -855,7 +855,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
                 ImageFormat(CL_R, CL_SIGNED_INT8),
                 size.x, size.y, size.z
         );
-        ocl.GC.addMemObject(centerpointsImage3);
+        ocl.GC->addMemoryObject(centerpointsImage3);
         init3DImage.setArg(0, *centerpointsImage3);
         ocl.queue.enqueueNDRangeKernel(
             init3DImage,
@@ -878,10 +878,10 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
                 NullRange
         );
         ocl.queue.finish();
-        ocl.GC.deleteMemObject(centerpointsImage2);
+        ocl.GC->deleteMemoryObject(centerpointsImage2);
 
         // Construct HP of centerpointsImage
-        HistogramPyramid3D hp(ocl);
+        oul::HistogramPyramid3D hp(ocl);
         hp.create(*centerpointsImage3, size.x, size.y, size.z);
         sum = hp.getSum();
         std::cout << "number of vertices detected " << sum << std::endl;
@@ -890,7 +890,7 @@ Image3D runNewCenterlineAlg(OpenCL &ocl, SIPL::int3 size, paramList &parameters,
         vertices = hp.createPositionBuffer();
         ocl.queue.finish();
         hp.deleteHPlevels();
-        ocl.GC.deleteMemObject(centerpointsImage3);
+        ocl.GC->deleteMemoryObject(centerpointsImage3);
     }
     if(sum < 8) {
     	throw SIPL::SIPLException("Too few centerpoints detected. Revise parameters.", __LINE__, __FILE__);
@@ -934,7 +934,7 @@ if(getParamBool(parameters, "timing")) {
             ImageFormat(CL_R, CL_FLOAT),
             sum, sum
     );
-    ocl.GC.addMemObject(lengths);
+    ocl.GC->addMemoryObject(lengths);
 
     // Run linkLengths kernel
     Kernel linkLengths(ocl.program, "linkLengths");
@@ -957,7 +957,7 @@ if(getParamBool(parameters, "timing")) {
             0,
             cl
     );
-    ocl.GC.addMemObject(compacted_lengths);
+    ocl.GC->addMemoryObject(compacted_lengths);
     delete[] cl;
 
     // Create and initialize incs buffer
@@ -989,7 +989,7 @@ if(getParamBool(parameters, "timing")) {
             NullRange
     );
     ocl.queue.finish();
-    ocl.GC.deleteMemObject(lengths);
+    ocl.GC->deleteMemoryObject(lengths);
 
     Kernel linkingKernel(ocl.program, "linkCenterpoints");
     linkingKernel.setArg(0, TDF);
@@ -1006,7 +1006,7 @@ if(getParamBool(parameters, "timing")) {
             NDRange(64)
     );
     ocl.queue.finish();
-    ocl.GC.deleteMemObject(compacted_lengths);
+    ocl.GC->deleteMemoryObject(compacted_lengths);
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
     ocl.queue.finish();
@@ -1038,7 +1038,7 @@ if(getParamBool(parameters, "timing")) {
 	edgeTuples = edgeTuples2;
 
     // Run HP on edgeTuples
-    HistogramPyramid2D hp2(ocl);
+    oul::HistogramPyramid2D hp2(ocl);
     hp2.create(edgeTuples, sum, sum);
 
 	std::cout << "number of edges detected " << hp2.getSum() << std::endl;
