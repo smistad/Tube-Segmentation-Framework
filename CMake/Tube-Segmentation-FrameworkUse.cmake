@@ -24,7 +24,7 @@ if(TSF_USE_EXTRNAL_OUL)
 else(TSF_USE_EXTRNAL_OUL)
     message(STATUS "Using submodule for OpenCLUtility in TSF")
     find_package(OpenCLUtilityLibrary PATHS "${Tube-Segmentation-Framework_BINARY_DIR}/OpenCLUtilityLibrary" REQUIRED)
-    include(${OCL-Utilities_USE_FILE})
+    include(${OpenCLUtilityLibrary_USE_FILE})
 endif(TSF_USE_EXTRNAL_OUL)
 
 #------------------------------------------------------------------------------
