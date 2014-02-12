@@ -5,48 +5,28 @@ project(Tube-Segmentation-Framework)
 
 cmake_minimum_required(VERSION 2.8)
 
-#
+#------------------------------------------------------------------------------
 # Set compiler flags
-###########
+#------------------------------------------------------------------------------
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -O3")
 option(USE_C++11 "use C++11 (Tube-Segmentation-Framework)" ON) # cmake option to use boost libraries instead of C++11
 if(USE_C++11)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D CPP11 -std=c++0x")
 endif()
 
+
 #------------------------------------------------------------------------------
 # External libraries
 #------------------------------------------------------------------------------
+option (TSF_USE_EXTRNAL_OUL "Use external OpenCLUtilityLibrary" OFF)
+option (TSF_EXTERNAL_OUL_PATH "Path to external OpenCLUtilityLibrary build" "")
+set(CMAKE_MODULE_PATH
+    ${CMAKE_MODULE_PATH}
+    ${PROJECT_SOURCE_DIR}/CMake
+    )
+include (tsfInitializeLibraries)
+tsf_initialize_external_libraries()
 
-#
-# OpenCLUtilityLibrary
-###########
-add_subdirectory(OpenCLUtilityLibrary)
-find_package(OpenCLUtilityLibrary PATHS "${Tube-Segmentation-Framework_BINARY_DIR}/OpenCLUtilityLibrary" REQUIRED)
-include(${OpenCLUtilityLibrary_USE_FILE})
-
-#
-# SIPL
-###########
-add_subdirectory(SIPL)
-find_package(SIPL PATHS "${Tube-Segmentation-Framework_BINARY_DIR}/SIPL" REQUIRED)
-include(${SIPL_USE_FILE})
-
-#
-# OpenMP
-###########
-find_package(OpenMP)
-if(OPENMP_FOUND)
-    message("-- OpenMP was detected. Using OpenMP to speed up some calculations.")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}" )
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}" )
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}" )
-endif()
-
-#
-# Boost
-###########
-find_package(Boost COMPONENTS iostreams REQUIRED)
 
 #------------------------------------------------------------------------------
 # Where to look for includes and libraries
@@ -99,15 +79,9 @@ endif()
 #------------------------------------------------------------------------------
 # Testing
 #------------------------------------------------------------------------------
-find_package(GTest)
-if(GTEST_FOUND)
-if(SIPL_USE_GTK)
-	message("Google test framework found. Enabling testing ...")
-	target_link_libraries(tubeSegmentationLib OpenCLUtilityLibrary SIPL ${Boost_LIBRARIES})
-	enable_testing()
-	add_subdirectory(tests)
-endif()
-endif()
+
+tsf_enable_testing()
+
 
 #------------------------------------------------------------------------------
 # Set variables
@@ -120,6 +94,10 @@ set(TESTDATA_DIR ${PROJECT_SOURCE_DIR}/tests/data)
 #------------------------------------------------------------------------------
 # Configure file for find_package module 
 #------------------------------------------------------------------------------
+
+set( Tube-Segmentation-Framework_MODULE_PATH
+    ${Tube-Segmentation-Framework_SOURCE_DIR}/CMake
+)
 
 set( Tube-Segmentation-Framework_INCLUDE_DIRS
     ${Tube-Segmentation-Framework_SOURCE_DIR}
@@ -135,7 +113,8 @@ configure_file (
     "${PROJECT_SOURCE_DIR}/CMake/Tube-Segmentation-FrameworkConfig.cmake.in"
     "${PROJECT_BINARY_DIR}/Tube-Segmentation-FrameworkConfig.cmake"
 )
- 
+
+
 #------------------------------------------------------------------------------
 # Configure file for settings, filepaths, parameters ...
 #------------------------------------------------------------------------------
