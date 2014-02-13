@@ -3,7 +3,7 @@
 #include <vector>
 #include <queue>
 #include "inputOutput.hpp"
-#include "OpenCLUtilityLibrary/HistogramPyramids.hpp"
+#include "HistogramPyramids.hpp"
 #include "eigenanalysisOfHessian.hpp"
 #ifdef CPP11
 #include <unordered_set>

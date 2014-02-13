@@ -1,7 +1,7 @@
 #ifndef COMMONS_H
 #define COMMONS_H
 #define CL_USE_DEPRECATED_OPENCL_1_1_APIS
-#include "OpenCLUtilityLibrary/OpenCLManager.hpp"
+#include "OpenCLManager.hpp"
 #include "SIPL/Types.hpp"
 
 typedef struct OpenCL {
