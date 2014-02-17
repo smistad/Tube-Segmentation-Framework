@@ -1156,6 +1156,46 @@ __kernel void circleFittingTDF(
     Radius[LPOS(pos)] = maxRadius;
 }
 
+__kernel void vesselnessTDF(
+        __read_only image3d_t vectorField,
+        __global TDF_TYPE * T,
+        __private float alpha,
+        __private float beta,
+        __private float c
+        ) {
+    const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
+
+    // Find Hessian Matrix
+    const float3 Fx = gradientNormalized(vectorField, pos, 0, 1);
+    const float3 Fy = gradientNormalized(vectorField, pos, 1, 2);
+    const float3 Fz = gradientNormalized(vectorField, pos, 2, 3);
+
+    float Hessian[3][3] = {
+        {Fx.x, Fy.x, Fz.x},
+        {Fy.x, Fy.y, Fz.y},
+        {Fz.x, Fz.y, Fz.z}
+    };
+
+    // Eigen decomposition
+    float eigenValues[3];
+    float eigenVectors[3][3];
+    eigen_decomposition(Hessian, eigenVectors, eigenValues);
+    const float3 lambda = {eigenValues[0], eigenValues[1], eigenValues[2]};
+
+    const float Ra = fabs(lambda.y) / fabs(lambda.z);
+    const float Rb = fabs(lambda.x) / sqrt(fabs(lambda.y*lambda.z));
+    const float S = length(lambda);
+
+    float result = 0;
+    if(lambda.y <= 0 && lambda.z <= 0) {
+        result = (1-exp(-Ra*Ra/(2*alpha*alpha)))*exp(-Rb*Rb/(2*beta*beta))*(1-exp(-S*S/(2*c*c)));
+        if(isnan(result))
+            result = 0;
+    }
+
+    T[LPOS(pos)] = FLOAT_TO_UNORM16(result);
+}
+
 __kernel void splineTDF(
         __read_only image3d_t vectorField,
         __global TDF_TYPE * T,
@@ -1247,7 +1287,7 @@ __kernel void splineTDF(
                 max(maxRadius[j], maxRadius[arms/2+j]);
         }
         avgSymmetry /= arms/2;
-        T[LPOS(pos)] = FLOAT_TO_UNORM16(min(1.0f, (sum / (arms))*avgSymmetry+0.2f));
+        T[LPOS(pos)] = FLOAT_TO_UNORM16(min(1.0f, (sum / (arms))*avgSymmetry+0.0f));
     } else {
         T[LPOS(pos)] = 0;
     }
