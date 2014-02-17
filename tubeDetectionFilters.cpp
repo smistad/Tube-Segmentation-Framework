@@ -1,6 +1,26 @@
 #include "tubeDetectionFilters.hpp"
 using namespace cl;
 
+void runVesselnessTDF(
+        OpenCL &ocl, 
+        SIPL::int3 &size, 
+        Image3D * vectorField, 
+        Buffer * TDF
+    ) {
+    Kernel kernel(ocl.program, "vesselnessTDF");
+    kernel.setArg(0, *vectorField);
+    kernel.setArg(1, *TDF);
+    kernel.setArg(2, 0.5f);
+    kernel.setArg(3, 0.5f);
+    kernel.setArg(4, 100.0f);
+    ocl.queue.enqueueNDRangeKernel(
+            TDFKernel,
+            NullRange,
+            NDRange(size.x,size.y,size.z),
+            NDRange(4,4,4)
+    );
+}
+
 void runSplineTDF(
         OpenCL &ocl,
         SIPL::int3 &size,
