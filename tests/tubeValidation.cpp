@@ -91,7 +91,7 @@ TubeValidation getValidationMeasures(
 		visualization->set(i, v);
 	}
 	if(visualize)
-		visualization->showMIP();
+		visualization->displayMIP();
 
 	result.percentageExtractedCenterlines = (float)detected*100.0f/(detected+undetected);
 	std::cout << "Percentage of extracted centerline: " << (float)detected*100.0f/(detected+undetected) << std::endl << std::endl;

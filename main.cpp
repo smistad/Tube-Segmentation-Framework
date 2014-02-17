@@ -67,7 +67,7 @@ int main(int argc, char ** argv) {
                 v.z = segmentation[i] ? 1.0:0.0;
             result->set(i,v);
         }
-        result->showMIP(SIPL::Y);
+        result->displayMIP();
     }
 
     // free data
