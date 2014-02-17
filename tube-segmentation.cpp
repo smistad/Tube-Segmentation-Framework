@@ -782,11 +782,14 @@ if(getParamBool(parameters, "timing")) {
     }
     Buffer radiusLarge = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
 
+    runVesselnessTDF(ocl,size,&vectorField,&TDFlarge);
+    /*
     if(getParamBool(parameters,"use-spline-tdf")) {
         runSplineTDF(ocl,size,&vectorField,&TDFlarge,&radiusLarge,std::max(1.5f, radiusMin),radiusMax,radiusStep);
     } else {
         runCircleFittingTDF(ocl,size,&vectorField,&TDFlarge,&radiusLarge,std::max(2.5f, radiusMin),radiusMax,radiusStep);
     }
+    */
 std::cout << "TDF finished" << std::endl;
 
 if(getParamBool(parameters, "timing")) {
@@ -1771,6 +1774,7 @@ Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &par
             std::cout << "Cropping time: " << (end-start)*1.0e-6 << " ms" << std::endl;
             ocl.queue.enqueueMarker(&startEvent);
         }
+/*
     } else if(getParamStr(parameters, "parameters") == "AAA-Vessels-CT") {
         float percentToRemove = 0.15f; // Remove 10% from each side in the xy plane
 
@@ -1797,6 +1801,7 @@ Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &par
         dataset = imageHUvolume;
 
         std::cout << "NOTE: reduced size to " << size->x << ", " << size->y << ", " << size->z << std::endl;
+        */
     } else {// End cropping
         // If cropping is not done, shrink volume so that each dimension is dividable by 4
     	bool notDividable = false;

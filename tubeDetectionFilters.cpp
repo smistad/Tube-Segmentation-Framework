@@ -14,7 +14,7 @@ void runVesselnessTDF(
     kernel.setArg(3, 0.5f);
     kernel.setArg(4, 100.0f);
     ocl.queue.enqueueNDRangeKernel(
-            TDFKernel,
+            kernel,
             NullRange,
             NDRange(size.x,size.y,size.z),
             NDRange(4,4,4)
