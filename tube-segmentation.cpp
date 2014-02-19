@@ -782,14 +782,12 @@ if(getParamBool(parameters, "timing")) {
     }
     Buffer radiusLarge = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
 
-    runVesselnessTDF(ocl,size,&vectorField,&TDFlarge);
-    /*
+    //runVesselnessTDF(ocl,size,&vectorField,&TDFlarge);
     if(getParamBool(parameters,"use-spline-tdf")) {
         runSplineTDF(ocl,size,&vectorField,&TDFlarge,&radiusLarge,std::max(1.5f, radiusMin),radiusMax,radiusStep);
     } else {
         runCircleFittingTDF(ocl,size,&vectorField,&TDFlarge,&radiusLarge,std::max(2.5f, radiusMin),radiusMax,radiusStep);
     }
-    */
 std::cout << "TDF finished" << std::endl;
 
 if(getParamBool(parameters, "timing")) {
@@ -909,17 +907,18 @@ if(getParamBool(parameters, "timing")) {
         delete[] tempTDF;
     }
     //vis->show();
-    magnitude->show(0.5, 1.0);
+    magnitude->display(0.5, 1.0);
 
+    /*
 
     SIPL::Volume<float> * radius= new SIPL::Volume<float>(size);
     float * rad = new float[totalSize];
 ocl.queue.enqueueReadImage(radiusImage, CL_TRUE, offset, region, 0, 0, rad);
 radius->setData(rad);
-radius->show(40, 80);
+radius->display(40, 80);
     SIPL::Volume<float> * tdf = new SIPL::Volume<float>(size);
     tdf->setData(tdfData);
-    tdf->show();
+    tdf->display();
     // Create direction map
     SIPL::Volume<SIPL::float3> * directions = new SIPL::Volume<SIPL::float3>(size);
     for(int z = 0; z < size.z; z++) {
@@ -935,7 +934,8 @@ radius->show(40, 80);
     delete[] T.Fx;
     delete[] T.Fy;
     delete[] T.Fz;
-    directions->show();
+    directions->display();
+    */
 //}
 
 #endif
@@ -996,7 +996,7 @@ SIPL::Volume<float3> * visualizeSegments(std::vector<Segment *> segments, int3 s
 			for(int i = 0; i < distance; i++) {
 				float frac = (float)i/distance;
 				float3 n = a->pos + frac*direction;
-				int3 in(round(n.x),round(n.y),round(n.z));
+				int3 in(SIPL::round(n.x),SIPL::round(n.y),SIPL::round(n.z));
 				float3 v = connections->get(in);
 				v.x = 1.0f;
 				connections->set(in, v);
@@ -1010,7 +1010,7 @@ SIPL::Volume<float3> * visualizeSegments(std::vector<Segment *> segments, int3 s
 			for(int i = 0; i < distance; i++) {
 				float frac = (float)i/distance;
 				float3 n = a->pos + frac*direction;
-				int3 in(round(n.x),round(n.y),round(n.z));
+				int3 in(SIPL::round(n.x),SIPL::round(n.y),SIPL::round(n.z));
 				float3 v = connections->get(in);
 				v.y = 1.0f;
 				connections->set(in, v);
@@ -1018,7 +1018,7 @@ SIPL::Volume<float3> * visualizeSegments(std::vector<Segment *> segments, int3 s
 
 		}
     }
-    connections->showMIP();
+    connections->displayMIP();
     return connections;
 }
 #endif
@@ -1129,7 +1129,7 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D * dataset, SIPL::int3 * s
     for(CrossSection * c : crossSections) {
     	pairs->set(c->pos, true);
     }
-    pairs->showMIP();
+    pairs->displayMIP();
 	#endif
 
     // Create segments from pairs
@@ -1209,7 +1209,7 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D * dataset, SIPL::int3 * s
 			for(int i = 0; i < distance; i++) {
 				float frac = (float)i/distance;
 				float3 n = a->pos + frac*direction;
-				int3 in(round(n.x),round(n.y),round(n.z));
+				int3 in(SIPL::round(n.x),SIPL::round(n.y),SIPL::round(n.z));
 				centerline[in.x+in.y*size->x+in.z*size->x*size->y] = 1;
 			}
 		}
@@ -1228,7 +1228,7 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D * dataset, SIPL::int3 * s
 			for(int i = 0; i < distance; i++) {
 				float frac = (float)i/distance;
 				float3 n = a->pos + frac*direction;
-				int3 in(round(n.x),round(n.y),round(n.z));
+				int3 in(SIPL::round(n.x),SIPL::round(n.y),SIPL::round(n.z));
 				centerline[in.x+in.y*size->x+in.z*size->x*size->y] = 1;
 			}
 
