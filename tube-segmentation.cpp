@@ -73,6 +73,7 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
 	ocl->queue = c->getQueue(0);
 	ocl->device = c->getDevice(0);
 	ocl->GC = c->getGarbageCollector();
+	ocl->oulContext = *c;
 
     // Select first device
     std::cout << "Using device: " << ocl->device.getInfo<CL_DEVICE_NAME>() << std::endl;
@@ -1210,7 +1211,7 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D * dataset, SIPL::int3 * s
 			for(int i = 0; i < distance; i++) {
 				float frac = (float)i/distance;
 				float3 n = a->pos + frac*direction;
-				int3 in(SIPL::round(n.x),SIPL::round(n.y),SIPL::round(n.z));
+				int3 in(std::round(n.x),std::round(n.y),std::round(n.z));
 				centerline[in.x+in.y*size->x+in.z*size->x*size->y] = 1;
 			}
 		}
@@ -1229,7 +1230,7 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D * dataset, SIPL::int3 * s
 			for(int i = 0; i < distance; i++) {
 				float frac = (float)i/distance;
 				float3 n = a->pos + frac*direction;
-				int3 in(SIPL::round(n.x),SIPL::round(n.y),SIPL::round(n.z));
+				int3 in(std::round(n.x),std::round(n.y),std::round(n.z));
 				centerline[in.x+in.y*size->x+in.z*size->x*size->y] = 1;
 			}
 

@@ -59,6 +59,7 @@ target_link_libraries(tubeSegmentationLib OpenCLUtilityLibrary SIPL ${Boost_LIBR
 #
 # tubeSegmentation executable
 ###########
+option(SIPL_USE_GTK "Use SIPL with GTK" ON)
 if(SIPL_USE_GTK)
     add_executable(tubeSegmentation
     	main.cpp
@@ -90,6 +91,11 @@ tsf_enable_testing()
 set(PARAMETERS_DIR ${PROJECT_SOURCE_DIR}/parameters)
 set(KERNELS_DIR ${PROJECT_SOURCE_DIR})
 set(TESTDATA_DIR ${PROJECT_SOURCE_DIR}/tests/data)
+if(TSF_USE_EXTRNAL_OUL)
+set(OUL_DIR ${TSF_EXTERNAL_OUL_PATH})
+else(TSF_USE_EXTRNAL_OUL)
+set(OUL_DIR ${PROJECT_SOURCE_DIR}/OpenCLUtilityLibrary)
+endif(TSF_USE_EXTRNAL_OUL)
 
 #------------------------------------------------------------------------------
 # Configure file for find_package module 

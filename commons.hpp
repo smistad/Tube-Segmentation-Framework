@@ -2,8 +2,10 @@
 #define COMMONS_H
 #define CL_USE_DEPRECATED_OPENCL_1_1_APIS
 #include "OpenCLManager.hpp"
+#include "Context.hpp"
 #include "SIPL/Types.hpp"
 
+// TODO The use of this struct will be removed eventually
 typedef struct OpenCL {
     cl::Context context;
     cl::CommandQueue queue;
@@ -11,6 +13,7 @@ typedef struct OpenCL {
     cl::Device device;
     cl::Platform platform;
     oul::GarbageCollector * GC;
+    oul::Context oulContext;
 } OpenCL;
 
 #ifdef WIN32
