@@ -102,7 +102,7 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
         if(getParamBool(parameters, "16bit-vectors")) {
         	buildOptions = "-D VECTORS_16BIT";
         }
-        buildOptions += " -I "+std::string(OUL_DIR);
+        buildOptions += " -I \""+std::string(OUL_DIR)+"\"";
         c->createProgramFromSource(filename, buildOptions);
         BoolParameter v = parameters.bools["3d_write"];
         v.set(true);
@@ -118,7 +118,7 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
         	buildOptions = "-D VECTORS_16BIT";
         	std::cout << "NOTE: Forcing the use of 16 bit buffers. This is slow, but uses half the memory." << std::endl;
         }
-        buildOptions += " -I "+std::string(OUL_DIR);
+        buildOptions += " -I \""+std::string(OUL_DIR)+"\"";
         c->createProgramFromSource(filename, buildOptions);
     }
     ocl->program = c->getProgram(0);
