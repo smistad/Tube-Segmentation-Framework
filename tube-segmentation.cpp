@@ -22,7 +22,9 @@
 #include "timing.hpp"
 #include <cmath>
 #include "HelperFunctions.hpp"
+#include "HistogramPyramids.hpp"
 #include "RuntimeMeasurement.hpp"
+#include "tsf-config.h"
 #define MAX(a,b) a > b ? a : b
 // Undefine windows crap
 #ifdef WIN32
@@ -100,6 +102,7 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
         if(getParamBool(parameters, "16bit-vectors")) {
         	buildOptions = "-D VECTORS_16BIT";
         }
+        buildOptions += " -I "+std::string(OUL_DIR);
         c->createProgramFromSource(filename, buildOptions);
         BoolParameter v = parameters.bools["3d_write"];
         v.set(true);
@@ -115,9 +118,15 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
         	buildOptions = "-D VECTORS_16BIT";
         	std::cout << "NOTE: Forcing the use of 16 bit buffers. This is slow, but uses half the memory." << std::endl;
         }
+        buildOptions += " -I "+std::string(OUL_DIR);
         c->createProgramFromSource(filename, buildOptions);
     }
     ocl->program = c->getProgram(0);
+
+    // Also compile the HP code
+    oul::HistogramPyramid::compileCode(ocl->oulContext);
+
+
     STOP_TIMER("Compiling")
 
     if(getParamBool(parameters, "timer-total")) {
