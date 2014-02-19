@@ -22,6 +22,7 @@
 #include "timing.hpp"
 #include <cmath>
 #include "HelperFunctions.hpp"
+#include "RuntimeMeasurement.hpp"
 #define MAX(a,b) a > b ? a : b
 // Undefine windows crap
 #ifdef WIN32
@@ -62,6 +63,9 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
         criteria.setTypeCriteria(oul::DEVICE_TYPE_CPU);
     }
     
+    if(getParamBool(parameters, "timing")) {
+        oul::RuntimeMeasurementsManager::enable();
+    }
 
     SIPL::int3 * size = new SIPL::int3();
     TSFOutput * output = new TSFOutput(criteria, size, getParamBool(parameters, "16bit-vectors"));
@@ -88,6 +92,8 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
         setParameter(parameters, "16bit-vectors", "false");
 
     // Compile and create program
+    START_TIMER
+    std::cout << "Compiling OpenCL code..." << std::endl;
     if(!getParamBool(parameters, "buffers-only") && (int)ocl->device.getInfo<CL_DEVICE_EXTENSIONS>().find("cl_khr_3d_image_writes") > -1) {
     	std::string filename = kernel_dir+"/kernels.cl";
         std::string buildOptions = "";
@@ -111,8 +117,8 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
         }
         c->createProgramFromSource(filename, buildOptions);
     }
-    std::cout << "program compiled" << std::endl;
     ocl->program = c->getProgram(0);
+    STOP_TIMER("Compiling")
 
     if(getParamBool(parameters, "timer-total")) {
 		START_TIMER
