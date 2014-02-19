@@ -140,8 +140,7 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
         } else if(getParamStr(parameters, "centerline-method") == "test") {
             runCircleFittingAndTest(ocl, dataset, size, parameters, output);
         }
-    } catch(cl::Error e) {
-    	//std::string str = "OpenCL error: " + oul::getCLErrorString(e.err());
+    } catch(cl::Error& e) {
         ocl->GC->deleteAllMemoryObjects();
         delete output;
 
@@ -150,9 +149,11 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
             runCounter++;
             return run(filename,parameters,kernel_dir);
         }
-
-        //throw SIPL::SIPLException(str.c_str());
-        throw SIPL::SIPLException();
+        std::string msg;
+        msg.append(e.what());
+        msg.append(" ");
+        msg += oul::getCLErrorString(e.err());
+        throw SIPL::SIPLException(msg.c_str());
     }
     ocl->queue.finish();
     if(getParamBool(parameters, "timer-total")) {

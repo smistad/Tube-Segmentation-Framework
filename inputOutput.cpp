@@ -70,7 +70,7 @@ TSFOutput::TSFOutput(oul::DeviceCriteria criteria, SIPL::int3 * size, bool TDFis
     std::vector<cl::Device> validDevices = manager->getDevicesForBestPlatform(
                             criteria, platformDevices);
 
-    this->context = new oul::Context(validDevices,false,false);//TODO:, false, getParamBool(parameters, "timing"));
+    this->context = new oul::Context(validDevices,false);//TODO:, false, getParamBool(parameters, "timing"));
 	this->TDFis16bit = TDFis16bit;
     OpenCL * ocl = new OpenCL;
     ocl->context = context->getContext();
