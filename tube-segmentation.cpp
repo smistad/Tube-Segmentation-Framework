@@ -21,8 +21,11 @@
 #include <fstream>
 #include "timing.hpp"
 #include <cmath>
+#include "HelperFunctions.hpp"
+#include "HistogramPyramids.hpp"
+#include "RuntimeMeasurement.hpp"
+#include "tsf-config.h"
 #define MAX(a,b) a > b ? a : b
-
 // Undefine windows crap
 #ifdef WIN32
 #undef min
@@ -53,42 +56,54 @@ int runCounter = 0;
 TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_dir) {
 
     INIT_TIMER
-    OpenCL * ocl = new OpenCL;
-    cl_device_type type;
+    oul::DeviceCriteria criteria;
+    criteria.setDeviceCountCriteria(1);
     if(parameters.strings["device"].get() == "gpu") {
-    	type = CL_DEVICE_TYPE_GPU;
+    	criteria.setTypeCriteria(oul::DEVICE_TYPE_GPU);
     } else {
-    	type = CL_DEVICE_TYPE_CPU;
+        setParameter(parameters, "16bit-vectors", "false");
+        criteria.setTypeCriteria(oul::DEVICE_TYPE_CPU);
     }
-	ocl->context = createCLContext(type);
-	ocl->platform = getPlatform(type, VENDOR_ANY);
+    
+    if(getParamBool(parameters, "timing")) {
+        oul::RuntimeMeasurementsManager::enable();
+    }
+
+    SIPL::int3 * size = new SIPL::int3();
+    TSFOutput * output = new TSFOutput(criteria, size, getParamBool(parameters, "16bit-vectors"));
+    oul::Context * c = output->getContext();
+
+    OpenCL * ocl = new OpenCL;
+    ocl->context = c->getContext();
+	ocl->platform = c->getPlatform();
+	ocl->queue = c->getQueue(0);
+	ocl->device = c->getDevice(0);
+	ocl->GC = c->getGarbageCollector();
+	ocl->oulContext = *c;
 
     // Select first device
-    VECTOR_CLASS<cl::Device> devices = ocl->context.getInfo<CL_CONTEXT_DEVICES>();
-    std::cout << "Using device: " << devices[0].getInfo<CL_DEVICE_NAME>() << std::endl;
-    ocl->device = devices[0];
-    if(getParamBool(parameters, "timing")) {
-        ocl->queue = cl::CommandQueue(ocl->context, devices[0], CL_QUEUE_PROFILING_ENABLE);
-    } else {
-        ocl->queue = cl::CommandQueue(ocl->context, devices[0]);
-    }
+    std::cout << "Using device: " << ocl->device.getInfo<CL_DEVICE_NAME>() << std::endl;
+    std::cout << "Using platform: " << ocl->platform.getInfo<CL_PLATFORM_NAME>() << std::endl;
 
     // Query the size of available memory
-    unsigned int memorySize = devices[0].getInfo<CL_DEVICE_GLOBAL_MEM_SIZE>();
+    unsigned int memorySize = ocl->device.getInfo<CL_DEVICE_GLOBAL_MEM_SIZE>();
     std::cout << "Available memory on selected device " << (double)memorySize/(1024*1024) << " MB "<< std::endl;
-    std::cout << "Max alloc size: " << (float)devices[0].getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE>()/(1024*1024) << " MB " << std::endl;
+    std::cout << "Max alloc size: " << (float)ocl->device.getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE>()/(1024*1024) << " MB " << std::endl;
 
     if(ocl->platform.getInfo<CL_PLATFORM_VENDOR>().substr(0,5) == "Apple")
         setParameter(parameters, "16bit-vectors", "false");
 
     // Compile and create program
-    if(!getParamBool(parameters, "buffers-only") && (int)devices[0].getInfo<CL_DEVICE_EXTENSIONS>().find("cl_khr_3d_image_writes") > -1) {
+    START_TIMER
+    std::cout << "Compiling OpenCL code..." << std::endl;
+    if(!getParamBool(parameters, "buffers-only") && (int)ocl->device.getInfo<CL_DEVICE_EXTENSIONS>().find("cl_khr_3d_image_writes") > -1) {
     	std::string filename = kernel_dir+"/kernels.cl";
         std::string buildOptions = "";
         if(getParamBool(parameters, "16bit-vectors")) {
         	buildOptions = "-D VECTORS_16BIT";
         }
-        ocl->program = buildProgramFromSource(ocl->context, filename, buildOptions);
+        buildOptions += " -I \""+std::string(OUL_DIR)+"\"";
+        c->createProgramFromSource(filename, buildOptions);
         BoolParameter v = parameters.bools["3d_write"];
         v.set(true);
         parameters.bools["3d_write"] = v;
@@ -103,22 +118,28 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
         	buildOptions = "-D VECTORS_16BIT";
         	std::cout << "NOTE: Forcing the use of 16 bit buffers. This is slow, but uses half the memory." << std::endl;
         }
-        ocl->program = buildProgramFromSource(ocl->context, filename, buildOptions);
+        buildOptions += " -I \""+std::string(OUL_DIR)+"\"";
+        c->createProgramFromSource(filename, buildOptions);
     }
+    ocl->program = c->getProgram(0);
+
+    // Also compile the HP code
+    oul::HistogramPyramid::compileCode(ocl->oulContext);
+
+
+    STOP_TIMER("Compiling")
 
     if(getParamBool(parameters, "timer-total")) {
 		START_TIMER
     }
-    SIPL::int3 * size = new SIPL::int3();
-    TSFOutput * output = new TSFOutput(ocl, size, getParamBool(parameters, "16bit-vectors"));
     try {
         // Read dataset and transfer to device
         cl::Image3D * dataset = new cl::Image3D;
-        ocl->GC.addMemObject(dataset);
 
         char * dmy;
         *dataset = readDatasetAndTransfer(*ocl, filename, parameters, size, output, dmy);
         char * mask = output->mask;
+        ocl->GC->addMemoryObject(dataset);
 
         // Calculate maximum memory usage
         double totalSize = size->x*size->y*size->z;
@@ -138,9 +159,8 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
         } else if(getParamStr(parameters, "centerline-method") == "test") {
             runCircleFittingAndTest(ocl, dataset, size, parameters, output, mask);
         }
-    } catch(cl::Error e) {
-    	std::string str = "OpenCL error: " + std::string(getCLErrorString(e.err()));
-        ocl->GC.deleteAllMemObjects();
+    } catch(cl::Error& e) {
+        ocl->GC->deleteAllMemoryObjects();
         delete output;
 
         if(e.err() == CL_INVALID_COMMAND_QUEUE && runCounter < 2) {
@@ -148,14 +168,17 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
             runCounter++;
             return run(filename,parameters,kernel_dir);
         }
-
-        throw SIPL::SIPLException(str.c_str());
+        std::string msg;
+        msg.append(e.what());
+        msg.append(" ");
+        msg += oul::getCLErrorString(e.err());
+        throw SIPL::SIPLException(msg.c_str());
     }
     ocl->queue.finish();
     if(getParamBool(parameters, "timer-total")) {
 		STOP_TIMER("total")
     }
-    ocl->GC.deleteAllMemObjects();
+    ocl->GC->deleteAllMemoryObjects();
     //if(getParamStr(parameters, "mask") != "none")
     //    delete[] output->mask;
     return output;
@@ -242,7 +265,7 @@ void runCircleFittingMethod(OpenCL &ocl, Image3D * dataset, SIPL::int3 size, par
     float * radiusSmall;
     if(radiusMin < 2.5f) {
         Image3D * blurredVolume = new Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_FLOAT), size.x, size.y, size.z);
-        ocl.GC.addMemObject(blurredVolume);
+        ocl.GC->addMemoryObject(blurredVolume);
     if(smallBlurSigma > 0) {
     	int maskSize = 1;
 		float * mask = createBlurMask(smallBlurSigma, &maskSize);
@@ -349,7 +372,7 @@ if(getParamBool(parameters, "timing")) {
 
         if(smallBlurSigma > 0) {
             ocl.queue.finish();
-            ocl.GC.deleteMemObject(blurredVolume);
+            ocl.GC->deleteMemoryObject(blurredVolume);
         }
 
         if(getParamBool(parameters, "16bit-vectors")) {
@@ -367,7 +390,7 @@ if(getParamBool(parameters, "timing")) {
                 size.x,size.y,size.z
             );
         }
-        ocl.GC.addMemObject(vectorFieldSmall);
+        ocl.GC->addMemoryObject(vectorFieldSmall);
         if(usingTwoBuffers) {
         	cl::size_t<3> region2;
         	region2[0] = size.x;
@@ -420,7 +443,7 @@ if(getParamBool(parameters, "timing")) {
             std::cout << "NOTE: Using 16 bit vectors" << std::endl;
             vectorFieldSmall = new Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
         }
-        ocl.GC.addMemObject(vectorFieldSmall);
+        ocl.GC->addMemoryObject(vectorFieldSmall);
 
         // Run create vector field
         createVectorFieldKernel.setArg(0, *blurredVolume);
@@ -437,7 +460,7 @@ if(getParamBool(parameters, "timing")) {
 
     if(smallBlurSigma > 0) {
         ocl.queue.finish();
-        ocl.GC.deleteMemObject(blurredVolume);
+        ocl.GC->deleteMemoryObject(blurredVolume);
     }
     }
 
@@ -459,11 +482,10 @@ if(getParamBool(parameters, "timing")) {
     } else {
         TDFsmallBuffer = new Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
     }
-    ocl.GC.addMemObject(TDFsmallBuffer);
+    ocl.GC->addMemoryObject(TDFsmallBuffer);
     Buffer * radiusSmallBuffer = new Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
-    ocl.GC.addMemObject(radiusSmallBuffer);
+    ocl.GC->addMemoryObject(radiusSmallBuffer);
     runCircleFittingTDF(ocl,size,vectorFieldSmall,TDFsmallBuffer,radiusSmallBuffer,radiusMin,3.0f,0.5f, getParamStr(parameters, "mask") != "none", mask);
-
 
     if(radiusMax < 2.5) {
     	// Stop here
@@ -493,11 +515,11 @@ if(getParamBool(parameters, "timing")) {
 		);
         vectorField = *vectorFieldSmall;
         ocl.queue.finish();
-        ocl.GC.deleteMemObject(dataset);
+        ocl.GC->deleteMemoryObject(dataset);
 		return;
     } else {
         ocl.queue.finish();
-        ocl.GC.deleteMemObject(vectorFieldSmall);
+        ocl.GC->deleteMemoryObject(vectorFieldSmall);
     }
 
     // TODO: cleanup the two arrays below!!!!!!!!
@@ -513,8 +535,8 @@ if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueReadBuffer(*radiusSmallBuffer, CL_FALSE, 0, sizeof(float)*totalSize, radiusSmall);
 
     ocl.queue.finish(); // This finish statement is necessary. Incorrect combine result if not present.
-    ocl.GC.deleteMemObject(TDFsmallBuffer);
-    ocl.GC.deleteMemObject(radiusSmallBuffer);
+    ocl.GC->deleteMemoryObject(TDFsmallBuffer);
+    ocl.GC->deleteMemoryObject(radiusSmallBuffer);
 
     if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
@@ -533,7 +555,7 @@ if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&startEvent);
 }
     Image3D * blurredVolume = new Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_R, CL_FLOAT), size.x, size.y, size.z);
-    ocl.GC.addMemObject(blurredVolume);
+    ocl.GC->addMemoryObject(blurredVolume);
     if(largeBlurSigma > 0) {
     	int maskSize = 1;
 		float * mask = createBlurMask(largeBlurSigma, &maskSize);
@@ -585,7 +607,7 @@ if(getParamBool(parameters, "timing")) {
     }
     if(largeBlurSigma > 0) {
         ocl.queue.finish();
-        ocl.GC.deleteMemObject(dataset);
+        ocl.GC->deleteMemoryObject(dataset);
     }
 
 
@@ -608,7 +630,7 @@ if(getParamBool(parameters, "timing")) {
         unsigned int maxBufferSize = ocl.device.getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE>();
         if(getParamBool(parameters, "16bit-vectors")) {
 			initVectorField = new Image3D(ocl.context, CL_MEM_READ_ONLY, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
-			ocl.GC.addMemObject(initVectorField);
+			ocl.GC->addMemoryObject(initVectorField);
 			if(4*sizeof(short)*totalSize < maxBufferSize) {
 				vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(short)*totalSize);
 			} else {
@@ -623,7 +645,7 @@ if(getParamBool(parameters, "timing")) {
 			}
         } else {
 			initVectorField = new Image3D(ocl.context, CL_MEM_READ_ONLY, ImageFormat(CL_RGBA, CL_FLOAT), size.x, size.y, size.z);
-			ocl.GC.addMemObject(initVectorField);
+			ocl.GC->addMemoryObject(initVectorField);
 			if(4*sizeof(float)*totalSize < maxBufferSize) {
 				vectorFieldBuffer = Buffer(ocl.context, CL_MEM_WRITE_ONLY, 4*sizeof(float)*totalSize);
 			} else {
@@ -655,7 +677,7 @@ if(getParamBool(parameters, "timing")) {
         );
 
         ocl.queue.finish();
-        ocl.GC.deleteMemObject(blurredVolume);
+        ocl.GC->deleteMemoryObject(blurredVolume);
 
         if(usingTwoBuffers) {
         	cl::size_t<3> region2;
@@ -708,7 +730,7 @@ if(getParamBool(parameters, "timing")) {
         } else {
             initVectorField = new Image3D(ocl.context, CL_MEM_READ_WRITE, ImageFormat(CL_RGBA, CL_SNORM_INT16), size.x, size.y, size.z);
         }
-        ocl.GC.addMemObject(initVectorField);
+        ocl.GC->addMemoryObject(initVectorField);
 
 
         // Run create vector field
@@ -725,7 +747,7 @@ if(getParamBool(parameters, "timing")) {
         );
 
         ocl.queue.finish();
-        ocl.GC.deleteMemObject(blurredVolume);
+        ocl.GC->deleteMemoryObject(blurredVolume);
     }
 
 if(getParamBool(parameters, "timing")) {
@@ -752,12 +774,14 @@ if(getParamBool(parameters, "timing")) {
 			}
 		}
 	}
-	//vectorField = runFMGGVF(ocl,initVectorField,parameters,size);
-	if(useSlowGVF) {
+    if(getParamBool(parameters, "use-fmg-gvf")) {
+        vectorField = runFMGGVF(ocl,initVectorField,parameters,size);
+    } else if(useSlowGVF) {
 		vectorField = runGVF(ocl, initVectorField, parameters, size, true);
 	} else {
 		vectorField = runGVF(ocl, initVectorField, parameters, size, false);
 	}
+std::cout << "GVF finished" << std::endl;
 
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
@@ -779,11 +803,13 @@ if(getParamBool(parameters, "timing")) {
     }
     Buffer radiusLarge = Buffer(ocl.context, CL_MEM_WRITE_ONLY, sizeof(float)*totalSize);
 
+    //runVesselnessTDF(ocl,size,&vectorField,&TDFlarge);
     if(getParamBool(parameters,"use-spline-tdf")) {
         runSplineTDF(ocl,size,&vectorField,&TDFlarge,&radiusLarge,std::max(1.5f, radiusMin),radiusMax,radiusStep);
     } else {
         runCircleFittingTDF(ocl,size,&vectorField,&TDFlarge,&radiusLarge,std::max(2.5f, radiusMin),radiusMax,radiusStep,getParamStr(parameters, "mask") != "none", mask);
     }
+std::cout << "TDF finished" << std::endl;
 
 if(getParamBool(parameters, "timing")) {
     ocl.queue.enqueueMarker(&endEvent);
@@ -902,17 +928,18 @@ if(getParamBool(parameters, "timing")) {
         delete[] tempTDF;
     }
     //vis->show();
-    magnitude->show(0.5, 1.0);
+    magnitude->display(0.5, 1.0);
 
+    /*
 
     SIPL::Volume<float> * radius= new SIPL::Volume<float>(size);
     float * rad = new float[totalSize];
 ocl.queue.enqueueReadImage(radiusImage, CL_TRUE, offset, region, 0, 0, rad);
 radius->setData(rad);
-radius->show(40, 80);
+radius->display(40, 80);
     SIPL::Volume<float> * tdf = new SIPL::Volume<float>(size);
     tdf->setData(tdfData);
-    tdf->show();
+    tdf->display();
     // Create direction map
     SIPL::Volume<SIPL::float3> * directions = new SIPL::Volume<SIPL::float3>(size);
     for(int z = 0; z < size.z; z++) {
@@ -928,7 +955,8 @@ radius->show(40, 80);
     delete[] T.Fx;
     delete[] T.Fy;
     delete[] T.Fz;
-    directions->show();
+    directions->display();
+    */
 //}
 
 #endif
@@ -1013,7 +1041,7 @@ SIPL::Volume<float3> * visualizeSegments(std::vector<Segment *> segments, int3 s
 
 		}
     }
-    connections->showMIP();
+    connections->displayMIP();
     return connections;
 }
 #endif
@@ -1124,7 +1152,7 @@ void runCircleFittingAndTest(OpenCL * ocl, cl::Image3D * dataset, SIPL::int3 * s
     for(CrossSection * c : crossSections) {
     	pairs->set(c->pos, true);
     }
-    pairs->showMIP();
+    pairs->displayMIP();
 	#endif
 
     // Create segments from pairs
@@ -1471,8 +1499,8 @@ Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &par
     // Read dataset by memory mapping the file and transfer to device
     Image3D dataset;
     int type = 0;
-    void * data;
     file = new boost::iostreams::mapped_file_source[1];
+    void * data;
     cl::size_t<3> offset;
     offset[0] = 0;
     offset[1] = 0;
@@ -1488,31 +1516,17 @@ Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &par
     if(typeName == "MET_SHORT") {
         type = 1;
         file->open(rawFilename, size->x*size->y*size->z*sizeof(short));
-        imageFormat = ImageFormat(CL_R, CL_SIGNED_INT16);
-        dataset = Image3D(
-                ocl.context, 
-                CL_MEM_READ_ONLY,
-                imageFormat,
-                size->x, size->y, size->z
-        );
         data = (void *)file->data();
-        ocl.queue.enqueueWriteImage(dataset, CL_FALSE, offset, region2, 0, 0, data);
+        imageFormat = ImageFormat(CL_R, CL_SIGNED_INT16);
         getLimits<short>(parameters, data, totalSize, &minimum, &maximum);
     } else if(typeName == "MET_USHORT") {
         type = 2;
         file->open(rawFilename, size->x*size->y*size->z*sizeof(short));
-        imageFormat = ImageFormat(CL_R, CL_UNSIGNED_INT16);
-        dataset = Image3D(
-                ocl.context, 
-                CL_MEM_READ_ONLY,
-                ImageFormat(CL_R, CL_UNSIGNED_INT16),
-                size->x, size->y, size->z
-        );
         data = (void *)file->data();
-        ocl.queue.enqueueWriteImage(dataset, CL_FALSE, offset, region2, 0, 0, data);
+        imageFormat = ImageFormat(CL_R, CL_UNSIGNED_INT16);
         getLimits<unsigned short>(parameters, data, totalSize, &minimum, &maximum);
 
-        if(getParamStr(parameters, "parameters") == "Lung-Airways-CT") {
+        if(getParamStr(parameters, "parameters") == "Lung-Airways-CT" || getParamStr(parameters, "parameters") == "AAA-Vessels-CT") {
         	// If parameter preset is airway and the volume loaded is unsigned;
         	// Change min and max to be unsigned as well, and change Threshold in cropping
 			char * str = new char[255];
@@ -1527,47 +1541,35 @@ Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &par
     } else if(typeName == "MET_CHAR") {
         type = 1;
         file->open(rawFilename, size->x*size->y*size->z*sizeof(char));
-        imageFormat = ImageFormat(CL_R, CL_SIGNED_INT8);
-        dataset = Image3D(
-                ocl.context, 
-                CL_MEM_READ_ONLY,
-                imageFormat,
-                size->x, size->y, size->z
-        );
         data = (void *)file->data();
-        ocl.queue.enqueueWriteImage(dataset, CL_FALSE, offset, region2, 0, 0, data);
+        imageFormat = ImageFormat(CL_R, CL_SIGNED_INT8);
         getLimits<char>(parameters, data, totalSize, &minimum, &maximum);
     } else if(typeName == "MET_UCHAR") {
         type = 2;
         file->open(rawFilename, size->x*size->y*size->z*sizeof(char));
-        imageFormat = ImageFormat(CL_R, CL_UNSIGNED_INT8);
-        dataset = Image3D(
-                ocl.context, 
-                CL_MEM_READ_ONLY,
-                imageFormat,
-                size->x, size->y, size->z
-        );
         data = (void *)file->data();
-        ocl.queue.enqueueWriteImage(dataset, CL_FALSE, offset, region2, 0, 0, data);
+        imageFormat = ImageFormat(CL_R, CL_UNSIGNED_INT8);
         getLimits<unsigned char>(parameters, data, totalSize, &minimum, &maximum);
     } else if(typeName == "MET_FLOAT") {
         type = 3;
         file->open(rawFilename, size->x*size->y*size->z*sizeof(float));
-        imageFormat = ImageFormat(CL_R, CL_FLOAT);
-        dataset = Image3D(
-                ocl.context, 
-                CL_MEM_READ_ONLY,
-                imageFormat,
-                size->x, size->y, size->z
-        );
         data = (void *)file->data();
-        ocl.queue.enqueueWriteImage(dataset, CL_FALSE, offset, region2, 0, 0, data);
+        imageFormat = ImageFormat(CL_R, CL_FLOAT);
         getLimits<float>(parameters, data, totalSize, &minimum, &maximum);
     } else {
     	std::string str = "unsupported data type " + typeName;
     	throw SIPL::SIPLException(str.c_str(), __LINE__, __FILE__);
     }
     std::cout << "Dataset of size " << size->x << " " << size->y << " " << size->z << " loaded" << std::endl;
+
+    dataset = Image3D(
+            ocl.context,
+            CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+            imageFormat,
+            size->x, size->y, size->z,
+            0,0,
+            data
+    );
 
     SIPL::int3 shiftVector;
     if(getParamStr(parameters, "mask") != "none") {
@@ -1692,7 +1694,6 @@ Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &par
         dataset = imageHUvolume;
         setParameter(parameters, "cropping", "no");
     }
-
 
     if(getParamBool(parameters, "timing")) {
         ocl.queue.enqueueMarker(&endEvent);
@@ -1919,6 +1920,32 @@ Image3D readDatasetAndTransfer(OpenCL &ocl, std::string filename, paramList &par
             std::cout << "Cropping time: " << (end-start)*1.0e-6 << " ms" << std::endl;
             ocl.queue.enqueueMarker(&startEvent);
         }
+    } else if(getParamStr(parameters, "parameters") == "AAA-Vessels-CT") {
+        float percentToRemove = 0.15f; // Remove 10% from each side in the xy plane
+
+        cl::size_t<3> offset;
+        offset[0] = round(size->x * percentToRemove);
+        offset[1] = round(size->y * percentToRemove);
+        offset[2] = 0;
+
+        size->x = size->x - offset[0]*2;
+        size->y = size->y - offset[1]*2;
+
+        // Make sure the dataset is dividable by 4
+        while(size->x % 4 != 0)
+            size->x--;
+        while(size->y % 4 != 0)
+            size->y--;
+        while(size->z % 4 != 0)
+            size->z--;
+
+        cl::size_t<3> region = oul::createRegion(size->x, size->y, size->z);
+        Image3D imageHUvolume = Image3D(ocl.context, CL_MEM_READ_ONLY, imageFormat, size->x, size->y, size->z);
+
+        ocl.queue.enqueueCopyImage(dataset, imageHUvolume, offset, oul::createOrigoRegion(), region);
+        dataset = imageHUvolume;
+
+        std::cout << "NOTE: reduced size to " << size->x << ", " << size->y << ", " << size->z << std::endl;
     } else {// End cropping
         // If cropping is not done, shrink volume so that each dimension is dividable by 4
     	bool notDividable = false;

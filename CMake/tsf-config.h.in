@@ -6,3 +6,6 @@
 
 // directory containing test data
 #define TESTDATA_DIR "@TESTDATA_DIR@"
+
+// directory containing OpenCL Utility Library
+#define OUL_DIR "@OUL_DIR@"

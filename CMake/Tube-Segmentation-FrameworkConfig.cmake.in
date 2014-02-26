@@ -1,29 +1,29 @@
-# Find the Tube-Segmentation-Framework includes and library
+# Tube-Segmentation-Frameworks (tsf) CMake configuration file for use
+# by external projects.
 #
-# Tube-Segmentation-Framework_INCLUDE_DIR - where to find include files.
-# Tube-Segmentation-Framework_LIBRARIES - List of fully qualified libraries to link against.
+# The following variabels are defined after the call to find_package
+# ----------
 # Tube-Segmentation-Framework_FOUND - set to 1 if found.
+# Tube-Segmentation-Framework_INCLUDE_DIRS - where to find include files.
+# Tube-Segmentation-Framework_LIBRARY_DIRS - where to find libraries
+# Tube-Segmentation-Framework_BINARY_DIR - build dir
+# Tube-Segmentation-Framework_PARAMETERS_DIR - path to dir where parameters are defined
+# Tube-Segmentation-Framework_KERNELS_DIR - path to dir where opencl kernels are found
+# Tube-Segmentation-Framework_MODULE_PATH - dir with cmake modules for tsf
+# Tube-Segmentation-Framework_USE_FILE - path to the use file containing implementation details
 #
 # Usage:
-# Tube-Segmentation-Framework (Tube-Segmentation-Framework)
-#----------
-# option(CX_USE_Tube-Segmentation-Framework "use Tube-Segmentation-Framework (Tube-Segmentation-Framework)" OFF)
-# if (CX_USE_Tube-Segmentation-Framework)
-#    ADD_DEFINITIONS(-DCX_USE_Tube-Segmentation-Framework)
+# Tube-Segmentation-Framework (TSF)
+# ----------
 #    find_package(Tube-Segmentation-Framework REQUIRED)
 #    include(${Tube-Segmentation-Framework_USE_FILE})
-# endif()
 #
 
 set (Tube-Segmentation-Framework_FOUND 1)
-
-set (Tube-Segmentation-Framework_BINARY_DIR "@Tube-Segmentation-Framework_BINARY_DIR@")
-
 set (Tube-Segmentation-Framework_INCLUDE_DIRS "@Tube-Segmentation-Framework_INCLUDE_DIRS@")
 set (Tube-Segmentation-Framework_LIBRARY_DIRS "@Tube-Segmentation-Framework_LIBRARY_DIRS@")
-
-set(Tube-Segmentation-Framework_PARAMETERS_DIR "@PARAMETERS_DIR@")
-set(Tube-Segmentation-Framework_KERNELS_DIR "@KERNELS_DIR@")
-
+set (Tube-Segmentation-Framework_BINARY_DIR "@Tube-Segmentation-Framework_BINARY_DIR@")
+set (Tube-Segmentation-Framework_PARAMETERS_DIR "@PARAMETERS_DIR@")
+set (Tube-Segmentation-Framework_KERNELS_DIR "@KERNELS_DIR@")
+set (Tube-Segmentation-Framework_MODULE_PATH "@Tube-Segmentation-Framework_MODULE_PATH@")
 set (Tube-Segmentation-Framework_USE_FILE "@Tube-Segmentation-Framework_SOURCE_DIR@/CMake/Tube-Segmentation-FrameworkUse.cmake")
-

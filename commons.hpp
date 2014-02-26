@@ -1,26 +1,19 @@
 #ifndef COMMONS_H
 #define COMMONS_H
-#include "OpenCLUtilities/openCLUtilities.hpp"
-#include <set>
+#define CL_USE_DEPRECATED_OPENCL_1_1_APIS
+#include "OpenCLManager.hpp"
+#include "Context.hpp"
 #include "SIPL/Types.hpp"
 
-class TSFGarbageCollector {
-    public:
-        void addMemObject(cl::Memory * mem);
-        void deleteMemObject(cl::Memory * mem);
-        void deleteAllMemObjects();
-        ~TSFGarbageCollector();
-    private:
-        std::set<cl::Memory *> memObjects;
-};
-
+// TODO The use of this struct will be removed eventually
 typedef struct OpenCL {
     cl::Context context;
     cl::CommandQueue queue;
     cl::Program program;
     cl::Device device;
     cl::Platform platform;
-    TSFGarbageCollector GC;
+    oul::GarbageCollector * GC;
+    oul::Context oulContext;
 } OpenCL;
 
 #ifdef WIN32

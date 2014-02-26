@@ -1,10 +1,10 @@
-#pragma OPENCL EXTENSION cl_amd_printf : enable
+#include "HistogramPyramids.clh"
 #pragma OPENCL EXTENSION cl_khr_3d_image_writes : enable
 
 
 __constant sampler_t sampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP_TO_EDGE | CLK_FILTER_NEAREST;
 __constant sampler_t interpolationSampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP_TO_EDGE | CLK_FILTER_LINEAR;
-__constant sampler_t hpSampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP | CLK_FILTER_NEAREST;
+__constant sampler_t samplerClamp = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP | CLK_FILTER_NEAREST;
 
 #define LPOS(pos) pos.x+pos.y*get_global_size(0)+pos.z*get_global_size(0)*get_global_size(1)
 
@@ -52,277 +52,12 @@ __kernel void initIntBufferID(
     __global int * buffer,
     __private int sum
     ) {
-    int id = get_global_id(0); 
+    int id = get_global_id(0);
     if(id >= sum)
         id = 0;
     buffer[id] = id;
 }
 
-
-
-__constant int4 cubeOffsets2D[4] = {
-    {0, 0, 0, 0},
-    {0, 1, 0, 0},
-    {1, 0, 0, 0},
-    {1, 1, 0, 0},
-};
-
-__constant int4 cubeOffsets[8] = {
-    {0, 0, 0, 0},
-    {1, 0, 0, 0},
-    {0, 0, 1, 0},
-    {1, 0, 1, 0},
-    {0, 1, 0, 0},
-    {1, 1, 0, 0},
-    {0, 1, 1, 0},
-    {1, 1, 1, 0},
-};
-
-__kernel void constructHPLevel3D(
-    __read_only image3d_t readHistoPyramid,
-    __write_only image3d_t writeHistoPyramid
-    ) { 
-
-    int4 writePos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
-    int4 readPos = writePos*2;
-    int writeValue = read_imagei(readHistoPyramid, hpSampler, readPos).x + // 0
-    read_imagei(readHistoPyramid, hpSampler, readPos+cubeOffsets[1]).x + // 1
-    read_imagei(readHistoPyramid, hpSampler, readPos+cubeOffsets[2]).x + // 2
-    read_imagei(readHistoPyramid, hpSampler, readPos+cubeOffsets[3]).x + // 3
-    read_imagei(readHistoPyramid, hpSampler, readPos+cubeOffsets[4]).x + // 4
-    read_imagei(readHistoPyramid, hpSampler, readPos+cubeOffsets[5]).x + // 5
-    read_imagei(readHistoPyramid, hpSampler, readPos+cubeOffsets[6]).x + // 6
-    read_imagei(readHistoPyramid, hpSampler, readPos+cubeOffsets[7]).x; // 7
-
-    write_imagei(writeHistoPyramid, writePos, writeValue);
-}
-
-__kernel void constructHPLevel2D(
-    __read_only image2d_t readHistoPyramid,
-    __write_only image2d_t writeHistoPyramid
-    ) { 
-
-    int2 writePos = {get_global_id(0), get_global_id(1)};
-    int2 readPos = writePos*2;
-    int writeValue = 
-        read_imagei(readHistoPyramid, hpSampler, readPos).x + 
-        read_imagei(readHistoPyramid, hpSampler, readPos+(int2)(1,0)).x + 
-        read_imagei(readHistoPyramid, hpSampler, readPos+(int2)(0,1)).x + 
-        read_imagei(readHistoPyramid, hpSampler, readPos+(int2)(1,1)).x;
-
-    write_imagei(writeHistoPyramid, writePos, writeValue);
-}
-
-int3 scanHPLevel2D(int target, __read_only image2d_t hp, int3 current) {
-
-    int4 neighbors = {
-        read_imagei(hp, hpSampler, current.xy).x,
-        read_imagei(hp, hpSampler, current.xy + (int2)(0,1)).x,
-        read_imagei(hp, hpSampler, current.xy + (int2)(1,0)).x,
-        0
-    };
-
-    int acc = current.z + neighbors.s0;
-    int4 cmp;
-    cmp.s0 = acc <= target;
-    acc += neighbors.s1;
-    cmp.s1 = acc <= target;
-    acc += neighbors.s2;
-    cmp.s2 = acc <= target;
-
-    current += cubeOffsets2D[(cmp.s0+cmp.s1+cmp.s2)].xyz;
-    current.x = current.x*2;
-    current.y = current.y*2;
-    current.z = current.z +
-    cmp.s0*neighbors.s0 +
-    cmp.s1*neighbors.s1 +
-    cmp.s2*neighbors.s2; 
-    return current;
-
-}
-
-
-int4 scanHPLevel3D(int target, __read_only image3d_t hp, int4 current) {
-
-    int8 neighbors = {
-        read_imagei(hp, hpSampler, current).x,
-        read_imagei(hp, hpSampler, current + cubeOffsets[1]).x,
-        read_imagei(hp, hpSampler, current + cubeOffsets[2]).x,
-        read_imagei(hp, hpSampler, current + cubeOffsets[3]).x,
-        read_imagei(hp, hpSampler, current + cubeOffsets[4]).x,
-        read_imagei(hp, hpSampler, current + cubeOffsets[5]).x,
-        read_imagei(hp, hpSampler, current + cubeOffsets[6]).x,
-        0
-    };
-
-    int acc = current.s3 + neighbors.s0;
-    int8 cmp;
-    cmp.s0 = acc <= target;
-    acc += neighbors.s1;
-    cmp.s1 = acc <= target;
-    acc += neighbors.s2;
-    cmp.s2 = acc <= target;
-    acc += neighbors.s3;
-    cmp.s3 = acc <= target;
-    acc += neighbors.s4;
-    cmp.s4 = acc <= target;
-    acc += neighbors.s5;
-    cmp.s5 = acc <= target;
-    acc += neighbors.s6;
-    cmp.s6 = acc <= target;
-
-
-    current += cubeOffsets[(cmp.s0+cmp.s1+cmp.s2+cmp.s3+cmp.s4+cmp.s5+cmp.s6)];
-    current.s0 = current.s0*2;
-    current.s1 = current.s1*2;
-    current.s2 = current.s2*2;
-    current.s3 = current.s3 +
-    cmp.s0*neighbors.s0 +
-    cmp.s1*neighbors.s1 +
-    cmp.s2*neighbors.s2 +
-    cmp.s3*neighbors.s3 +
-    cmp.s4*neighbors.s4 +
-    cmp.s5*neighbors.s5 +
-    cmp.s6*neighbors.s6; 
-    return current;
-
-}
-
-int4 traverseHP3D(
-    int target,
-    int HP_SIZE,
-    image3d_t hp0,
-    image3d_t hp1,
-    image3d_t hp2,
-    image3d_t hp3,
-    image3d_t hp4,
-    image3d_t hp5,
-    image3d_t hp6,
-    image3d_t hp7,
-    image3d_t hp8,
-    image3d_t hp9
-    ) {
-    int4 position = {0,0,0,0}; // x,y,z,sum
-    if(HP_SIZE > 512)
-    position = scanHPLevel3D(target, hp9, position);
-    if(HP_SIZE > 256)
-    position = scanHPLevel3D(target, hp8, position);
-    if(HP_SIZE > 128)
-    position = scanHPLevel3D(target, hp7, position);
-    if(HP_SIZE > 64)
-    position = scanHPLevel3D(target, hp6, position);
-    if(HP_SIZE > 32)
-    position = scanHPLevel3D(target, hp5, position);
-    if(HP_SIZE > 16)
-    position = scanHPLevel3D(target, hp4, position);
-    if(HP_SIZE > 8)
-    position = scanHPLevel3D(target, hp3, position);
-    position = scanHPLevel3D(target, hp2, position);
-    position = scanHPLevel3D(target, hp1, position);
-    position = scanHPLevel3D(target, hp0, position);
-    position.x = position.x / 2;
-    position.y = position.y / 2;
-    position.z = position.z / 2;
-    return position;
-}
-
-int2 traverseHP2D(
-    int target,
-    int HP_SIZE,
-    image2d_t hp0,
-    image2d_t hp1,
-    image2d_t hp2,
-    image2d_t hp3,
-    image2d_t hp4,
-    image2d_t hp5,
-    image2d_t hp6,
-    image2d_t hp7,
-    image2d_t hp8,
-    image2d_t hp9,
-    image2d_t hp10,
-    image2d_t hp11,
-    image2d_t hp12,
-    image2d_t hp13
-    ) {
-    int3 position = {0,0,0};
-    if(HP_SIZE > 8192)
-    position = scanHPLevel2D(target, hp13, position);
-    if(HP_SIZE > 4096)
-    position = scanHPLevel2D(target, hp12, position);
-    if(HP_SIZE > 2048)
-    position = scanHPLevel2D(target, hp11, position);
-    if(HP_SIZE > 1024)
-    position = scanHPLevel2D(target, hp10, position);
-    if(HP_SIZE > 512)
-    position = scanHPLevel2D(target, hp9, position);
-    if(HP_SIZE > 256)
-    position = scanHPLevel2D(target, hp8, position);
-    if(HP_SIZE > 128)
-    position = scanHPLevel2D(target, hp7, position);
-    if(HP_SIZE > 64)
-    position = scanHPLevel2D(target, hp6, position);
-    if(HP_SIZE > 32)
-    position = scanHPLevel2D(target, hp5, position);
-    if(HP_SIZE > 16)
-    position = scanHPLevel2D(target, hp4, position);
-    if(HP_SIZE > 8)
-    position = scanHPLevel2D(target, hp3, position);
-    position = scanHPLevel2D(target, hp2, position);
-    position = scanHPLevel2D(target, hp1, position);
-    position = scanHPLevel2D(target, hp0, position);
-    position.x = position.x / 2;
-    position.y = position.y / 2;
-    return position.xy;
-}
-
-
-__kernel void createPositions3D(
-        __global int * positions,
-        __private int HP_SIZE,
-        __private int sum,
-        __read_only image3d_t hp0, // Largest HP
-        __read_only image3d_t hp1,
-        __read_only image3d_t hp2,
-        __read_only image3d_t hp3,
-        __read_only image3d_t hp4,
-        __read_only image3d_t hp5
-        ,__read_only image3d_t hp6
-        ,__read_only image3d_t hp7
-        ,__read_only image3d_t hp8
-        ,__read_only image3d_t hp9
-    ) {
-    int target = get_global_id(0);
-    if(target >= sum)
-        target = 0;
-    int4 pos = traverseHP3D(target,HP_SIZE,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,hp8,hp9);
-    vstore3(pos.xyz, target, positions);
-}
-
-__kernel void createPositions2D(
-        __global int * positions,
-        __private int HP_SIZE,
-        __private int sum,
-        __read_only image2d_t hp0, // Largest HP
-        __read_only image2d_t hp1,
-        __read_only image2d_t hp2,
-        __read_only image2d_t hp3,
-        __read_only image2d_t hp4,
-        __read_only image2d_t hp5
-        ,__read_only image2d_t hp6
-        ,__read_only image2d_t hp7
-        ,__read_only image2d_t hp8
-        ,__read_only image2d_t hp9
-        ,__read_only image2d_t hp10
-        ,__read_only image2d_t hp11
-        ,__read_only image2d_t hp12
-        ,__read_only image2d_t hp13
-    ) {
-    int target = get_global_id(0);
-    if(target >= sum)
-        target = 0;
-    int2 pos = traverseHP2D(target,HP_SIZE,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,hp8,hp9,hp10,hp11,hp12,hp13);
-    vstore2(pos, target, positions);
-}
 
 __kernel void linkLengths(
         __global int const * restrict positions,
@@ -412,7 +147,7 @@ __kernel void linkCenterpoints(
         for(int k = 0; k <= db; k++) {
             float alpha = (float)k/db;
             float3 p = xa+ab*alpha;
-            float t = read_imagef(TDF, interpolationSampler, p.xyzz).x; 
+            float t = read_imagef(TDF, interpolationSampler, p.xyzz).x;
             avgTDF += t;
         }
         avgTDF /= db+1;
@@ -425,7 +160,7 @@ __kernel void linkCenterpoints(
         for(int k = 0; k <= db; k++) {
             float alpha = (float)k/db;
             float3 p = xa+ab*alpha;
-            float t = read_imagef(TDF, interpolationSampler, p.xyzz).x; 
+            float t = read_imagef(TDF, interpolationSampler, p.xyzz).x;
             varTDF += (t-avgTDF)*(t-avgTDF);
         }
 
@@ -441,7 +176,7 @@ __kernel void linkCenterpoints(
         for(int k = 0; k <= dc; k++) {
             float alpha = (float)k/dc;
             float3 p = xa+ac*alpha;
-            float t = read_imagef(TDF, interpolationSampler, p.xyzz).x; 
+            float t = read_imagef(TDF, interpolationSampler, p.xyzz).x;
             avgTDF += t;
         }
         avgTDF /= dc+1;
@@ -454,7 +189,7 @@ __kernel void linkCenterpoints(
         for(int k = 0; k <= dc; k++) {
             float alpha = (float)k/dc;
             float3 p = xa+ac*alpha;
-            float t = read_imagef(TDF, interpolationSampler, p.xyzz).x; 
+            float t = read_imagef(TDF, interpolationSampler, p.xyzz).x;
             varTDF += (t-avgTDF)*(t-avgTDF);
         }
 
@@ -522,7 +257,7 @@ __kernel void removeSmallTrees(
         __private int minTreeLength,
         __write_only image3d_t centerlines
     ) {
-   // Find the edges that are part of the large trees 
+   // Find the edges that are part of the large trees
     const int id = get_global_id(0);
     int2 edge = vload2(id, edges);
     const int ca = C[edge.x];
@@ -581,7 +316,7 @@ __kernel void initGrowing(
     	float radius = read_imagef(avgRadius, sampler, pos).x;
     	int N = min(max(1, (int)round(radius/2.0f)), 4);
 
-	
+
         for(int a = -N; a < N+1; a++) {
         for(int b = -N; b < N+1; b++) {
         for(int c = -N; c < N+1; c++) {
@@ -624,7 +359,7 @@ __kernel void grow(
 	    Y.x = X.x + a;
 	    Y.y = X.y + b;
 	    Y.z = X.z + c;
-	    
+
 	    char valueY = read_imagei(currentSegmentation, sampler, Y).x;
 	    if(valueY != 1) {
 		float4 FNY = read_imagef(gvf, sampler, Y);
@@ -706,10 +441,10 @@ float3 gradientNormalized(
     float f100, f_100, f010, f0_10, f001, f00_1;
     switch(volumeComponent) {
         case 0:
-    f100 = read_imagef(volume, sampler, pos + (int4)(1,0,0,0)).x; 
+    f100 = read_imagef(volume, sampler, pos + (int4)(1,0,0,0)).x;
     f_100 = read_imagef(volume, sampler, pos - (int4)(1,0,0,0)).x;
     if(dimensions > 1) {
-    f010 = read_imagef(volume, sampler, pos + (int4)(0,1,0,0)).x; 
+    f010 = read_imagef(volume, sampler, pos + (int4)(0,1,0,0)).x;
     f0_10 = read_imagef(volume, sampler, pos - (int4)(0,1,0,0)).x;
     }
     if(dimensions > 2) {
@@ -744,7 +479,7 @@ float3 gradientNormalized(
     }
 
     float3 grad = {
-        0.5f*(f100/read_imagef(volume, sampler, pos+(int4)(1,0,0,0)).w-f_100/read_imagef(volume, sampler, pos-(int4)(1,0,0,0)).w), 
+        0.5f*(f100/read_imagef(volume, sampler, pos+(int4)(1,0,0,0)).w-f_100/read_imagef(volume, sampler, pos-(int4)(1,0,0,0)).w),
         0.5f*(f010/read_imagef(volume, sampler, pos+(int4)(0,1,0,0)).w-f0_10/read_imagef(volume, sampler, pos-(int4)(0,1,0,0)).w),
         0.5f*(f001/read_imagef(volume, sampler, pos+(int4)(0,0,1,0)).w-f00_1/read_imagef(volume, sampler, pos-(int4)(0,0,1,0)).w)
     };
@@ -762,10 +497,10 @@ float3 gradient(
     float f100, f_100, f010, f0_10, f001, f00_1;
     switch(volumeComponent) {
         case 0:
-    f100 = read_imagef(volume, sampler, pos + (int4)(1,0,0,0)).x; 
+    f100 = read_imagef(volume, sampler, pos + (int4)(1,0,0,0)).x;
     f_100 = read_imagef(volume, sampler, pos - (int4)(1,0,0,0)).x;
     if(dimensions > 1) {
-    f010 = read_imagef(volume, sampler, pos + (int4)(0,1,0,0)).x; 
+    f010 = read_imagef(volume, sampler, pos + (int4)(0,1,0,0)).x;
     f0_10 = read_imagef(volume, sampler, pos - (int4)(0,1,0,0)).x;
     }
     if(dimensions > 2) {
@@ -800,7 +535,7 @@ float3 gradient(
     }
 
     float3 grad = {
-        0.5f*(f100-f_100), 
+        0.5f*(f100-f_100),
         0.5f*(f010-f0_10),
         0.5f*(f001-f00_1)
     };
@@ -881,7 +616,7 @@ __kernel void cropDatasetLung(
     int Wlimit = 30;
     int Blimit = 30;
     int sliceNr = get_global_id(0);
-    short scanLines = 0;   
+    short scanLines = 0;
     int scanLineSize, scanLineElementSize;
 
     if(sliceDirection == 0) {
@@ -900,7 +635,7 @@ __kernel void cropDatasetLung(
             currentBcount = 0,
             detectedBlackAreas = 0,
             detectedWhiteAreas = 0;
-          
+
         for(int scanLineElement = 0; scanLineElement < scanLineElementSize; scanLineElement ++) {
             int4 pos;
             if(sliceDirection == 0) {
@@ -937,16 +672,16 @@ __kernel void cropDatasetLung(
                 currentBcount++;
             }
         }
-        if((detectedWhiteAreas == 2 && detectedBlackAreas == 1) || 
+        if((detectedWhiteAreas == 2 && detectedBlackAreas == 1) ||
             (detectedBlackAreas > 1 && detectedWhiteAreas > 1)) {
             scanLines++;
         } // End scan line
     }
     scanLinesInside[sliceNr] = scanLines;
-} 
+}
 
 __kernel void dilate(
-        __read_only image3d_t volume, 
+        __read_only image3d_t volume,
         __write_only image3d_t result
         ) {
     int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
@@ -964,7 +699,7 @@ __kernel void dilate(
 }
 
 __kernel void erode(
-        __read_only image3d_t volume, 
+        __read_only image3d_t volume,
         __write_only image3d_t result
         ) {
     int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
@@ -994,7 +729,7 @@ __kernel void toFloat(
         __private int type
         ) {
     int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
-    
+
     float v;
     if(type == 1) {
         v = read_imagei(volume, sampler, pos).x;
@@ -1023,7 +758,7 @@ __kernel void blurVolumeWithGaussian(
 
     int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
     int size = maskSize*2+1;
-    
+
     // Collect neighbor values and multiply with gaussian
     float sum = 0.0f;
     // Calculate the mask size based on sigma (larger sigma, larger mask)
@@ -1031,7 +766,7 @@ __kernel void blurVolumeWithGaussian(
         for(int b = -maskSize; b < maskSize+1; b++) {
             for(int a = -maskSize; a < maskSize+1; a++) {
                 sum += mask[a+maskSize+(b+maskSize)*size+(c+maskSize)*size*size]*
-                    read_imagef(volume, sampler, pos + (int4)(a,b,c,0)).x; 
+                    read_imagef(volume, sampler, pos + (int4)(a,b,c,0)).x;
             }
         }
     }
@@ -1040,15 +775,15 @@ __kernel void blurVolumeWithGaussian(
 }
 
 __kernel void createVectorField(
-        __read_only image3d_t volume, 
-        __write_only image3d_t vectorField, 
+        __read_only image3d_t volume,
+        __write_only image3d_t vectorField,
         __private float Fmax,
         __private int vsign
         ) {
     const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
 
     // Gradient of volume
-    float4 F; 
+    float4 F;
     F.xyz = vsign*gradient(volume, pos, 0, 3); // The sign here is important
     F.w = 0.0f;
 
@@ -1105,7 +840,7 @@ __kernel void circleFittingTDF(
         {Fy.x, Fy.y, Fz.y},
         {Fz.x, Fz.y, Fz.z}
     };
-    
+
     // Eigen decomposition
     float eigenValues[3];
     float eigenVectors[3][3];
@@ -1163,6 +898,46 @@ __kernel void circleFittingTDF(
 	// Store result
     T[LPOS(pos)] = FLOAT_TO_UNORM16(maxSum);
     Radius[LPOS(pos)] = maxRadius;
+}
+
+__kernel void vesselnessTDF(
+        __read_only image3d_t vectorField,
+        __global TDF_TYPE * T,
+        __private float alpha,
+        __private float beta,
+        __private float c
+        ) {
+    const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
+
+    // Find Hessian Matrix
+    const float3 Fx = gradientNormalized(vectorField, pos, 0, 1);
+    const float3 Fy = gradientNormalized(vectorField, pos, 1, 2);
+    const float3 Fz = gradientNormalized(vectorField, pos, 2, 3);
+
+    float Hessian[3][3] = {
+        {Fx.x, Fy.x, Fz.x},
+        {Fy.x, Fy.y, Fz.y},
+        {Fz.x, Fz.y, Fz.z}
+    };
+
+    // Eigen decomposition
+    float eigenValues[3];
+    float eigenVectors[3][3];
+    eigen_decomposition(Hessian, eigenVectors, eigenValues);
+    const float3 lambda = {eigenValues[0], eigenValues[1], eigenValues[2]};
+
+    const float Ra = fabs(lambda.y) / fabs(lambda.z);
+    const float Rb = fabs(lambda.x) / sqrt(fabs(lambda.y*lambda.z));
+    const float S = length(lambda);
+
+    float result = 0;
+    if(lambda.y <= 0 && lambda.z <= 0) {
+        result = (1-exp(-Ra*Ra/(2*alpha*alpha)))*exp(-Rb*Rb/(2*beta*beta))*(1-exp(-S*S/(2*c*c)));
+        if(isnan(result))
+            result = 0;
+    }
+
+    T[LPOS(pos)] = FLOAT_TO_UNORM16(result);
 }
 
 __kernel void splineTDF(
@@ -1256,7 +1031,7 @@ __kernel void splineTDF(
                 max(maxRadius[j], maxRadius[arms/2+j]);
         }
         avgSymmetry /= arms/2;
-        T[LPOS(pos)] = FLOAT_TO_UNORM16(min(1.0f, (sum / (arms))*avgSymmetry+0.2f));
+        T[LPOS(pos)] = FLOAT_TO_UNORM16(min(1.0f, (sum / (arms))*avgSymmetry+0.0f));
     } else {
         T[LPOS(pos)] = 0;
     }
@@ -1354,7 +1129,7 @@ __kernel void findCandidateCenterpoints2(
         {Fy.x, Fy.y, Fz.y},
         {Fz.x, Fz.y, Fz.z}
     };
-    
+
     // Eigen decomposition
     float eigenValues[3];
     float eigenVectors[3][3];
@@ -1491,8 +1266,8 @@ __kernel void GVF3DIteration(__read_only image3d_t init_vector_field, __read_onl
     float3 fy1 = read_imagef(read_vector_field, sampler, pos + (int4)(0,1,0,0)).xyz;
     float3 fy_1 = read_imagef(read_vector_field, sampler, pos - (int4)(0,1,0,0)).xyz;
     float3 fz1 = read_imagef(read_vector_field, sampler, pos + (int4)(0,0,1,0)).xyz;
-    float3 fz_1 = read_imagef(read_vector_field, sampler, pos - (int4)(0,0,1,0)).xyz; 
-    
+    float3 fz_1 = read_imagef(read_vector_field, sampler, pos - (int4)(0,0,1,0)).xyz;
+
     // Update the vector field: Calculate Laplacian using a 3D central difference scheme
     float3 laplacian = -6*v.xyz + fx1 + fx_1 + fy1 + fy_1 + fz1 + fz_1;
 
@@ -1506,7 +1281,7 @@ __kernel void GVF3DInit(__read_only image3d_t initVectorField, __write_only imag
     float4 value = read_imagef(initVectorField, sampler, pos);
     value.w = value.z;
     float4 initValue;
-   initValue.xy = value.xy; 
+   initValue.xy = value.xy;
     write_imagef(vectorField, pos, value);
     write_imagef(newInitVectorField, pos, initValue);
 }
@@ -1514,7 +1289,7 @@ __kernel void GVF3DInit(__read_only image3d_t initVectorField, __write_only imag
 //__kernel void GVF3DFinish(__global float * vectorField, __global float * vectorField2, __global float * sqrMag) {
 __kernel void GVF3DFinish(__read_only image3d_t vectorField, __write_only image3d_t vectorField2) {
     const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
-    float4 v = read_imagef(vectorField, sampler, pos); 
+    float4 v = read_imagef(vectorField, sampler, pos);
     v.w = 0;
     v.w = length(v) > 0.0f ? length(v) : 1.0f;
     //printf("%f %f %f\n", v.x,v.y,v.z);
@@ -1648,7 +1423,7 @@ void tred2(float V[SIZE][SIZE], float d[SIZE], float e[SIZE]) {
   }
   V[SIZE-1][SIZE-1] = 1.0f;
   e[0] = 0.0f;
-} 
+}
 
 // Symmetric tridiagonal QL algorithm.
 
@@ -1746,7 +1521,7 @@ void tql2(float V[SIZE][SIZE], float d[SIZE], float e[SIZE]) {
     d[l] = d[l] + f;
     e[l] = 0.0f;
   }
-  
+
   // Sort eigenvalues and corresponding vectors.
 
   for (int i = 0; i < SIZE-1; i++) {
@@ -1946,14 +1721,14 @@ __kernel void restrictVolume(
 
     const int4 readPos = pos;
     const float value = 0.125*(
-            read_imagef(v_read, hpSampler, readPos+(int4)(0,0,0,0)).x +
-            read_imagef(v_read, hpSampler, readPos+(int4)(1,0,0,0)).x +
-            read_imagef(v_read, hpSampler, readPos+(int4)(0,1,0,0)).x +
-            read_imagef(v_read, hpSampler, readPos+(int4)(0,0,1,0)).x +
-            read_imagef(v_read, hpSampler, readPos+(int4)(1,1,0,0)).x +
-            read_imagef(v_read, hpSampler, readPos+(int4)(0,1,1,0)).x +
-            read_imagef(v_read, hpSampler, readPos+(int4)(1,1,1,0)).x +
-            read_imagef(v_read, hpSampler, readPos+(int4)(1,0,1,0)).x
+            read_imagef(v_read, samplerClamp, readPos+(int4)(0,0,0,0)).x +
+            read_imagef(v_read, samplerClamp, readPos+(int4)(1,0,0,0)).x +
+            read_imagef(v_read, samplerClamp, readPos+(int4)(0,1,0,0)).x +
+            read_imagef(v_read, samplerClamp, readPos+(int4)(0,0,1,0)).x +
+            read_imagef(v_read, samplerClamp, readPos+(int4)(1,1,0,0)).x +
+            read_imagef(v_read, samplerClamp, readPos+(int4)(0,1,1,0)).x +
+            read_imagef(v_read, samplerClamp, readPos+(int4)(1,1,1,0)).x +
+            read_imagef(v_read, samplerClamp, readPos+(int4)(1,0,1,0)).x
             );
 
     write_imagef(v_write, writePos, value);
@@ -1966,7 +1741,7 @@ __kernel void prolongate(
         ) {
     const int4 writePos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
     const int4 readPos = convert_int4(floor(convert_float4(writePos)/2.0f));
-    write_imagef(v_l_write, writePos, read_imagef(v_l_read, hpSampler, writePos).x + read_imagef(v_l_p1, hpSampler, readPos).x);
+    write_imagef(v_l_write, writePos, read_imagef(v_l_read, samplerClamp, writePos).x + read_imagef(v_l_p1, samplerClamp, readPos).x);
 }
 
 __kernel void prolongate2(
@@ -1975,7 +1750,7 @@ __kernel void prolongate2(
         ) {
     const int4 writePos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
     const int4 readPos = convert_int4(floor(convert_float4(writePos)/2.0f));
-    write_imagef(v_l_write, writePos, read_imagef(v_l_p1, hpSampler, readPos).x);
+    write_imagef(v_l_write, writePos, read_imagef(v_l_p1, samplerClamp, readPos).x);
 }
 
 
@@ -1999,17 +1774,17 @@ __kernel void residual(
     pos = select(pos, (int4)(2,2,2,0), pos == (int4)(0,0,0,0));
     pos = select(pos, size-3, pos >= size-1);
 
-    const float value = read_imagef(r, hpSampler, pos).x -
+    const float value = read_imagef(r, samplerClamp, pos).x -
             ((mu*(
-                    read_imagef(v, hpSampler, pos+(int4)(1,0,0,0)).x+
-                    read_imagef(v, hpSampler, pos-(int4)(1,0,0,0)).x+
-                    read_imagef(v, hpSampler, pos+(int4)(0,1,0,0)).x+
-                    read_imagef(v, hpSampler, pos-(int4)(0,1,0,0)).x+
-                    read_imagef(v, hpSampler, pos+(int4)(0,0,1,0)).x+
-                    read_imagef(v, hpSampler, pos-(int4)(0,0,1,0)).x-
-                    6*read_imagef(v, hpSampler, pos).x
+                    read_imagef(v, samplerClamp, pos+(int4)(1,0,0,0)).x+
+                    read_imagef(v, samplerClamp, pos-(int4)(1,0,0,0)).x+
+                    read_imagef(v, samplerClamp, pos+(int4)(0,1,0,0)).x+
+                    read_imagef(v, samplerClamp, pos-(int4)(0,1,0,0)).x+
+                    read_imagef(v, samplerClamp, pos+(int4)(0,0,1,0)).x+
+                    read_imagef(v, samplerClamp, pos-(int4)(0,0,1,0)).x-
+                    6*read_imagef(v, samplerClamp, pos).x
                 ) / (spacing*spacing))
-            - read_imagef(sqrMag, hpSampler, pos).x*read_imagef(v, hpSampler, pos).x);
+            - read_imagef(sqrMag, samplerClamp, pos).x*read_imagef(v, samplerClamp, pos).x);
 
     write_imagef(newResidual, writePos, value);
 }
@@ -2046,17 +1821,17 @@ __kernel void fmgResidual(
     const float sqrMag = vector.x*vector.x+vector.y*vector.y+vector.z*vector.z;
 
     float residue = (mu*(
-                    read_imagef(v, hpSampler, pos+(int4)(1,0,0,0)).x+
-                    read_imagef(v, hpSampler, pos-(int4)(1,0,0,0)).x+
-                    read_imagef(v, hpSampler, pos+(int4)(0,1,0,0)).x+
-                    read_imagef(v, hpSampler, pos-(int4)(0,1,0,0)).x+
-                    read_imagef(v, hpSampler, pos+(int4)(0,0,1,0)).x+
-                    read_imagef(v, hpSampler, pos-(int4)(0,0,1,0)).x-
-                    6*read_imagef(v, hpSampler, pos).x)
+                    read_imagef(v, samplerClamp, pos+(int4)(1,0,0,0)).x+
+                    read_imagef(v, samplerClamp, pos-(int4)(1,0,0,0)).x+
+                    read_imagef(v, samplerClamp, pos+(int4)(0,1,0,0)).x+
+                    read_imagef(v, samplerClamp, pos-(int4)(0,1,0,0)).x+
+                    read_imagef(v, samplerClamp, pos+(int4)(0,0,1,0)).x+
+                    read_imagef(v, samplerClamp, pos-(int4)(0,0,1,0)).x-
+                    6*read_imagef(v, samplerClamp, pos).x)
                 ) / (spacing*spacing);
 
     //printf("sqrMag: %f, vector value: %f %f %f\n", sqrMag, vector.x, vector.y, vector.z);
-    const float value = -sqrMag*v0-(residue - sqrMag*read_imagef(v, hpSampler, pos).x);
+    const float value = -sqrMag*v0-(residue - sqrMag*read_imagef(v, samplerClamp, pos).x);
 
     write_imagef(newResidual, writePos, value);
 }
@@ -2068,4 +1843,3 @@ __kernel void init3DFloat(
     const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
     write_imagef(v, pos, 0.0f);
 }
-

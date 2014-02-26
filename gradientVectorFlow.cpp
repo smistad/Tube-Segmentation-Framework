@@ -1,4 +1,5 @@
 #include "gradientVectorFlow.hpp"
+#include <iostream>
 using namespace cl;
 
 Image3D initSolutionToZero(OpenCL &ocl, SIPL::int3 size, int imageType, int bufferSize, bool no3Dwrite) {
@@ -499,7 +500,7 @@ Image3D runMGGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIPL:
             size.y,
             size.z
     );
-    ocl.GC.addMemObject(rx);
+    ocl.GC->addMemoryObject(rx);
     initKernel.setArg(0, *vectorField);
     initKernel.setArg(1, fx);
     initKernel.setArg(2, *rx);
@@ -520,7 +521,7 @@ Image3D runMGGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIPL:
     std::cout << "fx finished" << std::endl;
 
     // delete rx
-    ocl.GC.deleteMemObject(rx);
+    ocl.GC->deleteMemoryObject(rx);
 
     // create fy and ry
     Image3D fy = Image3D(
@@ -539,7 +540,7 @@ Image3D runMGGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIPL:
             size.y,
             size.z
     );
-    ocl.GC.addMemObject(ry);
+    ocl.GC->addMemoryObject(ry);
     initKernel.setArg(0, *vectorField);
     initKernel.setArg(1, fy);
     initKernel.setArg(2, *ry);
@@ -559,7 +560,7 @@ Image3D runMGGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIPL:
     std::cout << "fy finished" << std::endl;
 
     // delete ry
-    ocl.GC.deleteMemObject(ry);
+    ocl.GC->deleteMemoryObject(ry);
     // create fz and rz
     Image3D fz = Image3D(
             ocl.context,
@@ -577,7 +578,7 @@ Image3D runMGGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIPL:
             size.y,
             size.z
     );
-    ocl.GC.addMemObject(rz);
+    ocl.GC->addMemoryObject(rz);
     initKernel.setArg(0, *vectorField);
     initKernel.setArg(1, fz);
     initKernel.setArg(2, *rz);
@@ -589,7 +590,7 @@ Image3D runMGGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIPL:
             NullRange
     );
     std::cout << "fz initialized" << std::endl;
-    ocl.GC.deleteMemObject(vectorField);
+    ocl.GC->deleteMemoryObject(vectorField);
     // Z component
     for(int i = 0; i < GVFIterations; i++) {
         multigridVcycle(ocl,*rz,fz,sqrMag,0,v1,v2,l_max,MU,spacing,size,imageType);
@@ -598,7 +599,7 @@ Image3D runMGGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIPL:
     std::cout << "fz finished" << std::endl;
 
     // delete rz
-    ocl.GC.deleteMemObject(rz);
+    ocl.GC->deleteMemoryObject(rz);
 
 
     Image3D finalVectorField = Image3D(
@@ -952,7 +953,7 @@ Image3D runFMGGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIPL
 
     }
 
-    ocl.GC.deleteMemObject(vectorField);
+    ocl.GC->deleteMemoryObject(vectorField);
 
     std::cout << "fz finished" << std::endl;
 
@@ -1026,13 +1027,13 @@ Image3D runFastGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIP
                 CL_MEM_READ_WRITE,
                 3*vectorFieldSize*totalSize
         );
-        ocl.GC.addMemObject(vectorFieldBuffer);
+        ocl.GC->addMemoryObject(vectorFieldBuffer);
         Buffer * vectorFieldBuffer1 = new Buffer(
                 ocl.context,
                 CL_MEM_READ_WRITE,
                 3*vectorFieldSize*totalSize
         );
-        ocl.GC.addMemObject(vectorFieldBuffer1);
+        ocl.GC->addMemoryObject(vectorFieldBuffer1);
 
         GVFInitKernel.setArg(0, *vectorField);
         GVFInitKernel.setArg(1, *vectorFieldBuffer);
@@ -1063,8 +1064,8 @@ Image3D runFastGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIP
                 );
         }
         ocl.queue.finish(); //This finish is necessary
-        ocl.GC.deleteMemObject(vectorFieldBuffer1);
-        ocl.GC.deleteMemObject(vectorField);
+        ocl.GC->deleteMemoryObject(vectorFieldBuffer1);
+        ocl.GC->deleteMemoryObject(vectorField);
 
         Buffer finalVectorFieldBuffer = Buffer(
                 ocl.context,
@@ -1083,7 +1084,7 @@ Image3D runFastGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIP
                 NDRange(4,4,4)
         );
         ocl.queue.finish();
-        ocl.GC.deleteMemObject(vectorFieldBuffer);
+        ocl.GC->deleteMemoryObject(vectorFieldBuffer);
 
 		cl::size_t<3> offset;
 		offset[0] = 0;
@@ -1149,7 +1150,7 @@ Image3D runFastGVF(OpenCL &ocl, Image3D *vectorField, paramList &parameters, SIP
                 );
         }
         ocl.queue.finish();
-        ocl.GC.deleteMemObject(vectorField);
+        ocl.GC->deleteMemoryObject(vectorField);
 
         // Copy vector field to image
 		if(getParamBool(parameters, "16bit-vectors")) {
@@ -1197,7 +1198,7 @@ Image3D runLowMemoryGVF(OpenCL &ocl, Image3D * vectorField, paramList &parameter
                 CL_MEM_READ_WRITE,
                 vectorFieldSize*totalSize
 			);
-            ocl.GC.addMemObject(vectorField1);
+            ocl.GC->addMemoryObject(vectorField1);
 			Buffer initVectorField = Buffer(
                 ocl.context,
                 CL_MEM_READ_WRITE,
@@ -1251,7 +1252,7 @@ Image3D runLowMemoryGVF(OpenCL &ocl, Image3D * vectorField, paramList &parameter
 			ocl.queue.finish();
 			std::cout << "finished component " << component << std::endl;
         }
-        ocl.GC.deleteMemObject(vectorField);
+        ocl.GC->deleteMemoryObject(vectorField);
 
 
 		bool usingTwoBuffers = false;
@@ -1303,9 +1304,9 @@ Image3D runLowMemoryGVF(OpenCL &ocl, Image3D * vectorField, paramList &parameter
         );
 
         ocl.queue.finish();
-        ocl.GC.deleteMemObject(vectorFieldX);
-        ocl.GC.deleteMemObject(vectorFieldY);
-        ocl.GC.deleteMemObject(vectorFieldZ);
+        ocl.GC->deleteMemoryObject(vectorFieldX);
+        ocl.GC->deleteMemoryObject(vectorFieldY);
+        ocl.GC->deleteMemoryObject(vectorFieldZ);
 
 		cl::size_t<3> offset;
 		offset[0] = 0;

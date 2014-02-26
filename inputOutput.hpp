@@ -9,7 +9,7 @@ using namespace SIPL;
 
 class TSFOutput {
 public:
-	TSFOutput(OpenCL * ocl, SIPL::int3 * size, bool TDFis16bit = false);
+	TSFOutput(oul::DeviceCriteria criteria, SIPL::int3 * size, bool TDFis16bit = false);
 	bool hasSegmentation() { return deviceHasSegmentation || hostHasSegmentation; };
 	bool hasCenterlineVoxels() { return deviceHasCenterlineVoxels || hostHasCenterlineVoxels; };
 	bool hasTDF() { return deviceHasTDF || hostHasTDF; };
@@ -30,7 +30,9 @@ public:
 	SIPL::float3 getSpacing() const;
 	void setSpacing(SIPL::float3 spacing);
 	char * mask;
+	oul::Context *getContext();
 private:
+	oul::Context *context;
 	cl::Image3D* oclCenterlineVoxels;
 	cl::Image3D* oclSegmentation;
 	cl::Image3D* oclTDF;

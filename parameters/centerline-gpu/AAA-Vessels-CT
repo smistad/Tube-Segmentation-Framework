@@ -3,11 +3,12 @@ minimum 50
 maximum 150
 fmax 0.3
 use-spline-tdf
-small-blur 1.0
 large-blur 2.0
-gvf-iterations 10000
+gvf-iterations 10
+gvf-mu 0.2
+use-fmg-gvf
 radius-min 3.5
-radius-max 150
+radius-max 90
 tdf-high 0.5
 min-mean-tdf 0.5
 max-distance 50

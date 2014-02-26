@@ -3,7 +3,7 @@
 
 #define CL_USE_DEPRECATED_OPENCL_1_1_APIS
 
-#include "OpenCLUtilities/openCLUtilities.hpp"
+#include "OpenCLManager.hpp"
 #include "SIPL/Types.hpp"
 #include <iostream>
 #include <string>
@@ -15,7 +15,6 @@ using std::unordered_map;
 #include <boost/unordered_map.hpp>
 using boost::unordered_map;
 #endif
-#include "commons.hpp"
 #include "parameters.hpp"
 #include "SIPL/Exceptions.hpp"
 #include "inputOutput.hpp"
