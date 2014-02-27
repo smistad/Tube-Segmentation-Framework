@@ -1,4 +1,5 @@
 #include "tubeDetectionFilters.hpp"
+#include <iostream>
 using namespace cl;
 
 void runVesselnessTDF(
