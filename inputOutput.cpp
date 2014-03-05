@@ -66,17 +66,15 @@ void writeToVtkFile(paramList &parameters, std::vector<int3> vertices, std::vect
 TSFOutput::TSFOutput(oul::DeviceCriteria criteria, SIPL::int3 * size, bool TDFis16bit) {
     oul::OpenCLManager * manager = oul::OpenCLManager::getInstance();
     //manager->setDebugMode(true);
-    std::vector<oul::PlatformDevices> platformDevices = manager->getDevices(criteria);
-    std::vector<cl::Device> validDevices = manager->getDevicesForBestPlatform(
-                            criteria, platformDevices);
 
-    this->context = new oul::Context(validDevices,false);//TODO:, false, getParamBool(parameters, "timing"));
+    oul::Context oulContext = manager->createContext(criteria);
+    this->context = oulContext;
 	this->TDFis16bit = TDFis16bit;
     OpenCL * ocl = new OpenCL;
-    ocl->context = context->getContext();
-	ocl->platform = context->getPlatform();
-	ocl->queue = context->getQueue(0);
-	ocl->device = context->getDevice(0);
+    ocl->context = context.getContext();
+	ocl->platform = context.getPlatform();
+	ocl->queue = context.getQueue(0);
+	ocl->device = context.getDevice(0);
 	this->ocl = ocl;
 	this->size = size;
 	hostHasCenterlineVoxels = false;
@@ -87,7 +85,7 @@ TSFOutput::TSFOutput(oul::DeviceCriteria criteria, SIPL::int3 * size, bool TDFis
 	deviceHasTDF = false;
 }
 
-oul::Context * TSFOutput::getContext() {
+oul::Context TSFOutput::getContext() {
     return this->context;
 }
 

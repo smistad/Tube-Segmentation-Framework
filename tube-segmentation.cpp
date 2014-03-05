@@ -71,15 +71,15 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
 
     SIPL::int3 * size = new SIPL::int3();
     TSFOutput * output = new TSFOutput(criteria, size, getParamBool(parameters, "16bit-vectors"));
-    oul::Context * c = output->getContext();
+    oul::Context c = output->getContext();
 
     OpenCL * ocl = new OpenCL;
-    ocl->context = c->getContext();
-	ocl->platform = c->getPlatform();
-	ocl->queue = c->getQueue(0);
-	ocl->device = c->getDevice(0);
-	ocl->GC = c->getGarbageCollector();
-	ocl->oulContext = *c;
+    ocl->context = c.getContext();
+	ocl->platform = c.getPlatform();
+	ocl->queue = c.getQueue(0);
+	ocl->device = c.getDevice(0);
+	ocl->GC = c.getGarbageCollector();
+	ocl->oulContext = c;
 
     // Select first device
     std::cout << "Using device: " << ocl->device.getInfo<CL_DEVICE_NAME>() << std::endl;
@@ -103,7 +103,7 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
         	buildOptions = "-D VECTORS_16BIT";
         }
         buildOptions += " -I \""+std::string(OUL_DIR)+"\"";
-        c->createProgramFromSource(filename, buildOptions);
+        c.createProgramFromSource(filename, buildOptions);
         BoolParameter v = parameters.bools["3d_write"];
         v.set(true);
         parameters.bools["3d_write"] = v;
@@ -119,9 +119,9 @@ TSFOutput * run(std::string filename, paramList &parameters, std::string kernel_
         	std::cout << "NOTE: Forcing the use of 16 bit buffers. This is slow, but uses half the memory." << std::endl;
         }
         buildOptions += " -I \""+std::string(OUL_DIR)+"\"";
-        c->createProgramFromSource(filename, buildOptions);
+        c.createProgramFromSource(filename, buildOptions);
     }
-    ocl->program = c->getProgram(0);
+    ocl->program = c.getProgram(0);
 
     // Also compile the HP code
     oul::HistogramPyramid::compileCode(ocl->oulContext);

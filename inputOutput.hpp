@@ -29,9 +29,9 @@ public:
 	void setShiftVector(SIPL::int3 shiftVector);
 	SIPL::float3 getSpacing() const;
 	void setSpacing(SIPL::float3 spacing);
-	oul::Context *getContext();
+	oul::Context getContext();
 private:
-	oul::Context *context;
+	oul::Context context;
 	cl::Image3D* oclCenterlineVoxels;
 	cl::Image3D* oclSegmentation;
 	cl::Image3D* oclTDF;
