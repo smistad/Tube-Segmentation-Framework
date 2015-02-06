@@ -1,8 +1,16 @@
 //#define USE_SIPL_VISUALIZATION
+#include <boost/iostreams/device/mapped_file.hpp>
+#include <queue>
+#include <stack>
+#include <list>
+#include <cstdio>
+#include <limits>
+#include <fstream>
+#include <cmath>
+#include "tube-segmentation.hpp"
 #ifdef USE_SIPL_VISUALIZATION
 #include "SIPL/Core.hpp"
 #endif
-#include "tube-segmentation.hpp"
 #include "gradientVectorFlow.hpp"
 #include "tubeDetectionFilters.hpp"
 #include "ridgeTraversalCenterlineExtraction.hpp"
@@ -12,15 +20,7 @@
 #include "inputOutput.hpp"
 #include "segmentation.hpp"
 #include "SIPL/Types.hpp"
-#include <boost/iostreams/device/mapped_file.hpp>
-#include <queue>
-#include <stack>
-#include <list>
-#include <cstdio>
-#include <limits>
-#include <fstream>
 #include "timing.hpp"
-#include <cmath>
 #include "HelperFunctions.hpp"
 #define MAX(a,b) a > b ? a : b
 // Undefine windows crap
